@@ -1,0 +1,76 @@
+# ═══════════════════════════════════════════════════════════════════════
+# Real Estate Negotiation Workshop — Python Dependencies
+# ═══════════════════════════════════════════════════════════════════════
+#
+# INSTALL:
+#   pip install -r requirements.txt
+#
+# PYTHON VERSION: 3.10+ required (uses match statements, TypeAlias, etc.)
+#
+# EXTERNAL REQUIREMENTS (not pip):
+#   • Node.js 18+ (for GitHub MCP server demo)
+#     Install: https://nodejs.org
+#   • npx (comes with Node.js)
+#
+# API KEYS NEEDED:
+#   Simple version: export OPENAI_API_KEY=sk-...
+#   ADK version:    export GOOGLE_API_KEY=AIza...
+#   GitHub demo:    export GITHUB_TOKEN=ghp_...
+# ═══════════════════════════════════════════════════════════════════════
+
+
+# ── MCP (Model Context Protocol) ────────────────────────────────────────────
+# Core MCP library — client and server (FastMCP included)
+mcp>=1.0.0
+
+
+# ── LLM Providers ────────────────────────────────────────────────────────────
+
+# OpenAI — powers the simple Python agents (GPT-4o)
+openai>=1.40.0
+
+# Google ADK — powers the ADK agents (Gemini 2.0 Flash)
+google-adk>=1.0.0
+
+
+# ── Orchestration ─────────────────────────────────────────────────────────────
+
+# LangGraph — stateful multi-agent workflow orchestration
+langgraph>=0.2.0
+
+# LangChain core (required by LangGraph)
+langchain-core>=0.3.0
+
+
+# ── Data Validation ───────────────────────────────────────────────────────────
+
+# Pydantic — A2A message schema validation
+pydantic>=2.0.0
+
+
+# ── Async & HTTP ─────────────────────────────────────────────────────────────
+
+# httpx — async HTTP client (used internally by some libraries)
+httpx>=0.27.0
+
+# aiofiles — async file operations (optional, for logging)
+aiofiles>=23.0.0
+
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+
+# python-dotenv — load .env files for API keys
+python-dotenv>=1.0.0
+
+# typing-extensions — backports of newer typing features
+typing-extensions>=4.0.0
+
+
+# ── Development Tools (optional) ─────────────────────────────────────────────
+
+# pytest + pytest-asyncio — for running tests
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+
+# rich — beautiful terminal output (optional, used in some demos)
+# rich>=13.0.0
