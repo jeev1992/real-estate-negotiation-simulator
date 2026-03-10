@@ -42,9 +42,36 @@ import sys
 import uuid
 from pathlib import Path
 
+
+def _load_env_file_if_present(env_path: Path) -> None:
+    """Load KEY=VALUE pairs from .env into process env without overriding existing vars."""
+    if not env_path.exists():
+        return
+
+    try:
+        with env_path.open("r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        # Non-fatal: explicit shell exports still work.
+        pass
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
+    # Ensure absolute imports work even when launched from other directories.
     sys.path.insert(0, str(REPO_ROOT))
+
+# Load .env early so check_environment() sees OPENAI_API_KEY without shell export.
+_load_env_file_if_present(REPO_ROOT / ".env")
 
 # Validate environment before importing anything
 def check_environment() -> None:
@@ -57,6 +84,7 @@ def check_environment() -> None:
     if missing:
         print("ERROR: Missing required environment variables:")
         for var in missing:
+            # Keep output shell-friendly for quick copy/paste.
             print(f"   export {var}=<your_value>")
         print()
         print("Get your OpenAI API key at: https://platform.openai.com/api-keys")

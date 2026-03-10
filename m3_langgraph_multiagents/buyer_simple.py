@@ -264,7 +264,7 @@ class BuyerAgent:
         """
         Ask GPT-4o which MCP tools to call this round.
 
-        AGENT TEACHING POINT:
+        Agent behavior note:
         This is the ReAct-style planning step. The agent reads the current
         context (round, seller counter, budget gap) and decides what information
         it needs before formulating its response. This is what makes it an agent
@@ -282,10 +282,12 @@ class BuyerAgent:
             temperature=0.0,
         )
 
+        # Parse planner JSON and normalize to a predictable list shape.
         content = response.choices[0].message.content
         parsed = json.loads(content)
         tool_calls = parsed.get("tool_calls", [])
 
+        # Safety gate: only permit known tools even if planner hallucinates.
         allowed_tools = {"get_market_price", "calculate_discount"}
         valid_calls: list[dict] = []
 
@@ -295,6 +297,7 @@ class BuyerAgent:
             if tool in allowed_tools and isinstance(arguments, dict):
                 valid_calls.append({"tool": tool, "arguments": arguments})
 
+        # Keep runtime bounded: max 2 MCP calls per buyer turn.
         return valid_calls[:2]
 
     async def _gather_mcp_context(
@@ -321,6 +324,7 @@ class BuyerAgent:
             "Need market comparables and tactical pricing guidance for next buyer response."
         )
 
+        # Initialize empty payloads so downstream code can always safely read dict keys.
         market_data: dict = {}
         discount_data: dict = {}
 
@@ -328,6 +332,7 @@ class BuyerAgent:
             planned_calls = await self._plan_mcp_tool_calls(planning_context)
             print(f"   [Buyer] Agent planned MCP calls: {[c['tool'] for c in planned_calls]}")
 
+            # Execute calls sequentially so logs/readability match teaching flow.
             for call in planned_calls:
                 tool = call["tool"]
                 arguments = call["arguments"]
@@ -358,6 +363,7 @@ class BuyerAgent:
         except Exception as e:
             print(f"   [Buyer] MCP planning error (continuing without MCP data): {e}")
 
+        # Cache most recent market snapshot for later rounds/debug visibility.
         self._market_data = market_data
         return market_data, discount_data
 
@@ -416,6 +422,7 @@ Based on the market data, what is your opening offer?
         The agent adds the seller's counter to its LLM context and
         calls GPT-4o to decide whether to increase the offer, accept, or walk away.
         """
+        # Advance round and capture message threading info for in_reply_to linking.
         self.round += 1
         self._last_seller_message_id = seller_message["message_id"]
 
@@ -477,6 +484,7 @@ What is your response?
         # Step 5: Handle acceptance
         offer_price = float(decision.get("offer_price", 0))
 
+        # Guardrail: if seller is already at/under budget and LLM target allows it, accept now.
         if seller_price <= BUYER_BUDGET and seller_price <= offer_price:
             # Seller is within our budget — accept!
             print(f"   [Buyer] Accepting seller's counter at ${seller_price:,.0f}")

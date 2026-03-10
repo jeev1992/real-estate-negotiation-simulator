@@ -56,7 +56,7 @@ class NegotiationState(TypedDict):
     """
     The shared state for the entire LangGraph negotiation workflow.
 
-    LANGGRAPH TEACHING POINT:
+    LangGraph concept:
     All nodes read from this state and return PARTIAL updates.
     LangGraph merges the updates automatically.
 
@@ -126,7 +126,7 @@ def initial_state(
     """
     Create the initial state for a new negotiation.
 
-    LANGGRAPH TEACHING POINT:
+    LangGraph concept:
     The initial state passed to graph.ainvoke() must include ALL
     required fields, even if they start as empty/None.
     Missing fields cause KeyError in nodes.
@@ -157,7 +157,7 @@ async def initialize_agents_node(state: dict) -> dict:
     """
     Initialize buyer and seller agents before the negotiation starts.
 
-    LANGGRAPH TEACHING POINT:
+    LangGraph concept:
     Nodes can do any work — including creating objects, making API calls,
     reading files. This node creates the agent objects once and stores
     references in state so subsequent nodes can reuse them.
@@ -190,7 +190,7 @@ async def buyer_node(state: dict) -> dict:
     """
     Buyer agent node — makes or updates an offer.
 
-    LANGGRAPH TEACHING POINT:
+    LangGraph concept:
     This node reads from state, calls the async buyer agent, and returns
     a PARTIAL state update. LangGraph merges this with the existing state.
 
@@ -258,7 +258,7 @@ async def seller_node(state: dict) -> dict:
     """
     Seller agent node — responds to buyer's offer.
 
-    LANGGRAPH TEACHING POINT:
+    LangGraph concept:
     Notice how the seller node reads last_buyer_message from state
     (set by buyer_node) and writes last_seller_message for buyer_node
     to read in the next iteration.
@@ -287,7 +287,7 @@ async def seller_node(state: dict) -> dict:
             "history": [{"round": round_number, "agent": "seller", "error": str(e)}],
         }
 
-    # Determine status
+    # Determine terminal/continuing status from seller message type.
     new_status = state["status"]
     agreed_price = state.get("agreed_price")
 
@@ -299,7 +299,7 @@ async def seller_node(state: dict) -> dict:
         new_status = "seller_rejected"
         print(f"[LangGraph] Seller rejects")
 
-    # Check deadlock condition
+    # Deadlock guard: if still negotiating at round limit, force terminal state.
     if round_number >= state["max_rounds"] and new_status == "negotiating":
         new_status = "deadlocked"
         print(f"[LangGraph] Max rounds reached -- deadlock")
@@ -312,6 +312,7 @@ async def seller_node(state: dict) -> dict:
         "message": seller_message.get("message", "")[:200],
     }
 
+    # Return only changed fields; LangGraph merges these into the shared state.
     return {
         "seller_current_counter": seller_message.get("price") or state["seller_current_counter"],
         "status": new_status,
@@ -327,7 +328,7 @@ def route_after_buyer(state: dict) -> Literal["to_seller", "end"]:
     """
     Determine next step after buyer node runs.
 
-    LANGGRAPH TEACHING POINT:
+    LangGraph concept:
     Router functions ONLY read state and return a string key.
     They should be fast, pure functions with no side effects.
     The string they return maps to a node name in add_conditional_edges().
@@ -339,6 +340,7 @@ def route_after_buyer(state: dict) -> Literal["to_seller", "end"]:
 
     Otherwise route to "to_seller" to continue negotiation.
     """
+    # Router decisions are driven only by state, never by side effects.
     status = state.get("status", "negotiating")
 
     if status in ("buyer_walked", "agreed", "error"):
@@ -354,12 +356,13 @@ def route_after_seller(state: dict) -> Literal["continue", "end"]:
     Route to "continue" (loops back to buyer) if negotiation is still active.
     Route to "end" for all terminal states.
     """
+    # If seller emitted any terminal status, stop graph execution.
     status = state.get("status", "negotiating")
 
     if status != "negotiating":
         return "end"
 
-    # Safety check: also check round count
+    # Secondary termination guard in case status was not flipped by a node.
     round_number = state.get("round_number", 0)
     max_rounds = state.get("max_rounds", 5)
 
@@ -375,7 +378,7 @@ def create_negotiation_graph() -> StateGraph:
     """
     Build and compile the LangGraph negotiation workflow.
 
-    LANGGRAPH TEACHING POINT — GRAPH STRUCTURE:
+    LangGraph concept — graph structure:
     We build the graph in 4 steps:
     1. Create StateGraph with state schema
     2. Add nodes (the processing functions)
@@ -503,7 +506,7 @@ async def run_negotiation(
     3. Invokes the graph asynchronously
     4. Displays and returns the final state
 
-    LANGGRAPH TEACHING POINT — ainvoke:
+    LangGraph concept — ainvoke:
     graph.ainvoke() runs the entire graph from START to END,
     following all conditional edges until a terminal state is reached.
     The returned dict is the FINAL state after all nodes have run.

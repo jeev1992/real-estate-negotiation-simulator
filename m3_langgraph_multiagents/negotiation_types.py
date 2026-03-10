@@ -1,3 +1,14 @@
+"""
+Negotiation Message Types (Module 3)
+====================================
+Defines the typed message schema used by buyer/seller agents and LangGraph state.
+
+Concept:
+- These helpers replace fragile raw-string protocols with structured payloads.
+- Every message has stable metadata (id, round, sender/receiver, type, timestamp).
+- Builders keep message creation consistent across agents and rounds.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -9,6 +20,7 @@ NegotiationStatus = Literal["negotiating", "agreed", "deadlocked", "buyer_walked
 
 
 class NegotiationMessage(TypedDict):
+    """Canonical A2A-style message schema for one negotiation turn."""
     message_id: str
     session_id: str
     from_agent: Literal["buyer", "seller"]
@@ -35,16 +47,20 @@ def _base_message(
     closing_days: Optional[int] = None,
     in_reply_to: Optional[str] = None,
 ) -> NegotiationMessage:
+    """Create a normalized message envelope shared by all message types."""
     return {
+        # Short unique ID is sufficient for workshop traceability.
         "message_id": f"msg_{uuid.uuid4().hex[:8]}",
         "session_id": session_id,
         "from_agent": from_agent,
         "to_agent": to_agent,
         "round": round_num,
+        # UTC timestamp keeps ordering consistent across environments.
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "in_reply_to": in_reply_to,
         "message_type": message_type,
         "price": price,
+        # Default to empty list to avoid None checks in downstream code.
         "conditions": conditions or [],
         "closing_timeline_days": closing_days,
         "message": message,
@@ -52,6 +68,7 @@ def _base_message(
 
 
 def create_offer(session_id: str, round_num: int, price: float, message: str, in_reply_to: Optional[str] = None) -> NegotiationMessage:
+    """Buyer -> Seller opening/subsequent offer message."""
     return _base_message(
         session_id=session_id,
         from_agent="buyer",
@@ -67,6 +84,7 @@ def create_offer(session_id: str, round_num: int, price: float, message: str, in
 
 
 def create_counter_offer(session_id: str, round_num: int, price: float, message: str, in_reply_to: Optional[str] = None) -> NegotiationMessage:
+    """Seller -> Buyer counter-offer message."""
     return _base_message(
         session_id=session_id,
         from_agent="seller",
@@ -89,6 +107,7 @@ def create_acceptance(
     message: str,
     in_reply_to: Optional[str] = None,
 ) -> NegotiationMessage:
+    """Create ACCEPT message and automatically infer the opposite recipient."""
     to_agent: Literal["buyer", "seller"] = "seller" if from_agent == "buyer" else "buyer"
     return _base_message(
         session_id=session_id,
@@ -103,6 +122,7 @@ def create_acceptance(
 
 
 def create_withdrawal(session_id: str, round_num: int, reason: str, in_reply_to: Optional[str] = None) -> NegotiationMessage:
+    """Buyer withdrawal message when budget/strategy thresholds are exceeded."""
     return _base_message(
         session_id=session_id,
         from_agent="buyer",

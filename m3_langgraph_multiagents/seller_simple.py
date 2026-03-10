@@ -171,7 +171,7 @@ class SellerAgent:
     3. Strategy is to hold firm and drop slowly
     4. Accepts any offer >= minimum price
 
-    INFORMATION ASYMMETRY TEACHING POINT:
+    Information asymmetry note:
     The seller knows its floor price from the inventory server.
     The buyer is trying to guess it from market data.
     This mirrors real-world real estate negotiations perfectly.
@@ -219,7 +219,7 @@ class SellerAgent:
         """
         Fetch seller's floor price from inventory MCP server.
 
-        ACCESS CONTROL TEACHING POINT:
+        Access control note:
         This is the tool the buyer does NOT call.
         In production, the inventory server would check auth headers
         and only return this data to the seller's agent.
@@ -254,7 +254,7 @@ class SellerAgent:
         """
         Ask GPT-4o which MCP tools to call this round.
 
-        AGENT TEACHING POINT:
+        Agent behavior note:
         This is the ReAct-style planning step. The agent reads the current
         context (round, buyer offer, floor price need) and decides what information
         it needs before formulating its response. This is what makes it an agent
@@ -272,10 +272,12 @@ class SellerAgent:
             temperature=0.0,
         )
 
+        # Parse planner output and coerce to expected tool-call list.
         content = response.choices[0].message.content
         parsed = json.loads(content)
         tool_calls = parsed.get("tool_calls", [])
 
+        # Safety gate: enforce tool allowlist to prevent accidental tool injection.
         allowed_tools = {
             "get_market_price", "calculate_discount",
             "get_inventory_level", "get_minimum_acceptable_price",
@@ -288,6 +290,7 @@ class SellerAgent:
             if tool in allowed_tools and isinstance(arguments, dict):
                 valid_calls.append({"tool": tool, "arguments": arguments})
 
+        # Keep seller turn bounded (max 4 calls) while still allowing richer context.
         return valid_calls[:4]
 
     async def _gather_mcp_context(
@@ -316,6 +319,7 @@ class SellerAgent:
             "Need: floor price confirmation, inventory pressure, and market comparables to formulate counter-offer."
         )
 
+        # Default empty dictionaries keep prompt generation robust when calls are skipped.
         market_data: dict = {}
         inventory_data: dict = {}
         constraints: dict = {}
@@ -324,6 +328,7 @@ class SellerAgent:
             planned_calls = await self._plan_mcp_tool_calls(planning_context)
             print(f"   [Seller] Agent planned MCP calls: {[c['tool'] for c in planned_calls]}")
 
+            # Execute planned tools in-order so call trace stays easy to teach/follow.
             for call in planned_calls:
                 tool = call["tool"]
                 arguments = call["arguments"]
@@ -344,6 +349,7 @@ class SellerAgent:
                         "property_condition": arguments.get("property_condition", "good"),
                     }
                     print("   [Seller] Calling MCP (pricing): calculate_discount...")
+                    # Discount output is optional context for seller tactics; no strict dependency.
                     await call_mcp_server(PRICING_SERVER_PATH, "calculate_discount", args)
 
                 elif tool == "get_inventory_level":
@@ -367,6 +373,7 @@ class SellerAgent:
         except Exception as e:
             print(f"   [Seller] MCP planning error (continuing without MCP data): {e}")
 
+        # Cache latest snapshots for visibility and potential reuse.
         self._market_data = market_data
         self._inventory_data = inventory_data
         self._seller_constraints = constraints
@@ -397,6 +404,7 @@ class SellerAgent:
         print(f"\n[Seller] Round {self.round}: Received offer ${buyer_price:,.0f}")
 
         # Auto-accept if buyer meets minimum
+        # Hard business rule: any offer at/above floor is an immediate acceptance.
         if buyer_price >= MINIMUM_PRICE:
             print(f"   [Seller] Buyer at ${buyer_price:,.0f} >= minimum ${MINIMUM_PRICE:,}. ACCEPTING!")
             return create_acceptance(
@@ -420,6 +428,7 @@ class SellerAgent:
         market_type = inventory_data.get("market_assessment", {}).get("condition", "balanced")
         avg_comp = market_data.get("market_statistics", {}).get("avg_comparable_price", 462_000)
 
+        # Round pressure signal for the LLM prompt.
         rounds_remaining = 5 - self.round
 
         user_message = f"""
@@ -477,6 +486,7 @@ What is your counter-offer? Remember your floor is ${MINIMUM_PRICE:,}.
 
         # Step 5: Validate counter doesn't go below floor
         counter_price = float(decision.get("counter_price", LISTING_PRICE))
+        # Final safeguard: never allow model output below contractual floor.
         if counter_price < MINIMUM_PRICE:
             # LLM went below floor -- correct it
             print(f"   [Seller] [WARN] LLM went below floor! Correcting ${counter_price:,} -> ${MINIMUM_PRICE:,}")
