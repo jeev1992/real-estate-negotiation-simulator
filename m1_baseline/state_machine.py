@@ -151,6 +151,9 @@ class NegotiationFSM:
     }
 
     def __init__(self, max_turns: int = 5):
+        # LEARNER NOTE:
+        # `state` is the control state (where we are in lifecycle),
+        # `context` is the data state (facts we carry across transitions).
         self.state = NegotiationState.IDLE
         self.context = FSMContext(max_turns=max_turns)
 
@@ -183,6 +186,8 @@ class NegotiationFSM:
         Begin the negotiation. Returns False if already started.
         IDLE -> NEGOTIATING
         """
+        # Only valid once: IDLE -> NEGOTIATING.
+        # Any second call is rejected (returns False) to keep lifecycle clean.
         if self.state != NegotiationState.IDLE:
             return False
         self.state = NegotiationState.NEGOTIATING
@@ -205,8 +210,11 @@ class NegotiationFSM:
         if not self.is_active:
             return False
 
+        # One call = one negotiation step.
         self.context.turn_count += 1
 
+        # When the cap is hit, we force a terminal failure state.
+        # This removes the possibility of endless loops.
         if self.context.turn_count >= self.context.max_turns:
             # Auto-transition to FAILED -- no more turns allowed
             self.state = NegotiationState.FAILED
@@ -233,6 +241,7 @@ class NegotiationFSM:
 
         Returns False if not currently active.
         """
+        # Guard clause: acceptance is only legal during NEGOTIATING.
         if not self.is_active:
             return False
         self.state = NegotiationState.AGREED
@@ -246,6 +255,7 @@ class NegotiationFSM:
 
         Returns False if not currently active.
         """
+        # Guard clause: rejection is only legal during NEGOTIATING.
         if not self.is_active:
             return False
         self.state = NegotiationState.FAILED
@@ -324,6 +334,12 @@ def demo_fsm() -> None:
     print("Property: 742 Evergreen Terrace, Austin, TX 78701")
     print("=" * 65)
 
+    # LEARNER NOTE:
+    # Read the scenarios as "paths through the same state machine":
+    #   scenario 1 -> AGREED terminal
+    #   scenario 2 -> FAILED terminal (explicit rejection)
+    #   scenario 3 -> FAILED terminal (max turns reached)
+
     # ── Scenario 1: Successful agreement ──────────────────────────────────────
     print("\n--- Scenario 1: Deal Reached ---")
     fsm = NegotiationFSM(max_turns=5)
@@ -332,7 +348,7 @@ def demo_fsm() -> None:
     fsm.start()
     print(f"After start(): {fsm}")
 
-    # Simulate 3 rounds of negotiation
+    # Simulate 3 rounds of negotiation (still active each time)
     for round_num in range(1, 4):
         still_going = fsm.process_turn()
         print(f"Round {round_num}: {fsm}  ->  continues={still_going}")
@@ -357,7 +373,7 @@ def demo_fsm() -> None:
     print(f"is_terminal(): {fsm2.is_terminal()}")
     print(f"failure_reason: {fsm2.context.failure_reason.name}")
 
-    # Verify terminal state blocks further transitions
+    # Verify terminal states are sticky (cannot transition out once reached)
     result = fsm2.accept(price=440_000)
     print(f"Trying to accept after rejection: {result}  <-- Returns False, state unchanged")
     print(f"State is still: {fsm2.state.name}  <-- Cannot escape terminal state")

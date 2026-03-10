@@ -97,7 +97,7 @@ CRITICAL RULES:
   - NEVER counter below ${MINIMUM_PRICE:,} — this is your mortgage payoff minimum
   - If buyer offers ${MINIMUM_PRICE:,} or more, set accept: true immediately
   - Emphasize the $75,000 in recent renovations in EVERY response
-  - Be firm but professional — don't be insulted by low offers"""
+  - Be firm but professional -- don't be insulted by low offers"""
 
 SELLER_MCP_PLANNER_PROMPT = """You are selecting MCP tools for a seller negotiation agent.
 
@@ -109,14 +109,26 @@ Return strict JSON in this format:
 }
 
 Available tools and required arguments:
+
+Pricing server tools:
 - get_market_price: {"address": "string", "property_type": "single_family|condo|townhouse"}
+- calculate_discount: {
+        "base_price": number,
+        "market_condition": "hot|balanced|cold",
+        "days_on_market": number,
+        "property_condition": "excellent|good|fair|poor"
+    }
+
+Inventory server tools:
 - get_inventory_level: {"zip_code": "string"}
 - get_minimum_acceptable_price: {"property_id": "string"}
 
 Rules:
-- Call 2-3 tools only.
-- Prefer including get_minimum_acceptable_price to confirm seller floor.
-- Never invent tools outside this list.
+- Call 2-4 tools as needed.
+- Always call get_minimum_acceptable_price to confirm your absolute floor.
+- Call get_inventory_level to understand market pressure.
+- Call get_market_price when you need comparable sale data.
+- Never invent tools outside the list.
 - Output JSON only.
 """
 
@@ -239,7 +251,17 @@ class SellerAgent:
         return json.loads(reply_content)
 
     async def _plan_mcp_tool_calls(self, planning_context: str) -> list[dict]:
-        """Ask the LLM which seller MCP tools to invoke this round."""
+        """
+        Ask GPT-4o which MCP tools to call this round.
+
+        AGENT TEACHING POINT:
+        This is the ReAct-style planning step. The agent reads the current
+        context (round, buyer offer, floor price need) and decides what information
+        it needs before formulating its response. This is what makes it an agent
+        rather than a hardcoded script.
+
+        Uses temp=0 and a minimal prompt so the decision is fast and cheap.
+        """
         response = await self.client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
@@ -255,9 +277,8 @@ class SellerAgent:
         tool_calls = parsed.get("tool_calls", [])
 
         allowed_tools = {
-            "get_market_price",
-            "get_inventory_level",
-            "get_minimum_acceptable_price",
+            "get_market_price", "calculate_discount",
+            "get_inventory_level", "get_minimum_acceptable_price",
         }
         valid_calls: list[dict] = []
 
@@ -267,63 +288,84 @@ class SellerAgent:
             if tool in allowed_tools and isinstance(arguments, dict):
                 valid_calls.append({"tool": tool, "arguments": arguments})
 
-        return valid_calls[:3]
+        return valid_calls[:4]
 
-    async def _gather_mcp_context_via_llm(self, buyer_price: float) -> tuple[dict, dict, dict]:
-        """Use strict LLM planning to decide seller MCP calls (no auto-fallback calls)."""
+    async def _gather_mcp_context(
+        self,
+        buyer_price: float,
+    ) -> tuple[dict, dict, dict]:
+        """
+        Let the agent decide which MCP tools to call, then execute them.
+
+        The two-step pattern here is intentional and teachable:
+          Step 1 (plan):    GPT-4o reads context, returns {"tool_calls": [...]}
+          Step 2 (execute): We call those tools and return the results
+
+        Compare to M4 (ADK): Gemini does the same thing automatically inside
+        MCPToolset's function-calling loop. Here we make the mechanism visible.
+
+        Returns (market_data, inventory_data, constraints) -- any may be empty
+        if the agent chose not to call that tool.
+        """
         planning_context = (
+            f"Round: {self.round}\n"
             f"Property: {PROPERTY_ADDRESS}\n"
             f"Property ID: {PROPERTY_ID}\n"
             f"Listing price: {LISTING_PRICE}\n"
-            f"Current buyer offer: {buyer_price}\n"
-            "Need market condition, inventory pressure, and seller floor constraints for response strategy."
+            f"Buyer's offer: {buyer_price}\n"
+            "Need: floor price confirmation, inventory pressure, and market comparables to formulate counter-offer."
         )
 
         market_data: dict = {}
         inventory_data: dict = {}
         constraints: dict = {}
 
-        tool_to_server = {
-            "get_market_price": PRICING_SERVER_PATH,
-            "get_inventory_level": INVENTORY_SERVER_PATH,
-            "get_minimum_acceptable_price": INVENTORY_SERVER_PATH,
-        }
-
         try:
             planned_calls = await self._plan_mcp_tool_calls(planning_context)
-            if planned_calls:
-                print(f"   [Seller] LLM planned MCP calls: {[c['tool'] for c in planned_calls]}")
+            print(f"   [Seller] Agent planned MCP calls: {[c['tool'] for c in planned_calls]}")
 
             for call in planned_calls:
                 tool = call["tool"]
-                raw_args = call["arguments"]
-                server_path = tool_to_server[tool]
+                arguments = call["arguments"]
 
                 if tool == "get_market_price":
                     args = {
-                        "address": raw_args.get("address", PROPERTY_ADDRESS),
-                        "property_type": raw_args.get("property_type", "single_family"),
+                        "address": arguments.get("address", PROPERTY_ADDRESS),
+                        "property_type": arguments.get("property_type", "single_family"),
                     }
-                elif tool == "get_inventory_level":
-                    args = {"zip_code": raw_args.get("zip_code", "78701")}
-                else:
-                    args = {"property_id": raw_args.get("property_id", PROPERTY_ID)}
+                    print("   [Seller] Calling MCP (pricing): get_market_price...")
+                    market_data = await call_mcp_server(PRICING_SERVER_PATH, "get_market_price", args)
 
-                print(f"   [Seller] Calling MCP (LLM-planned): {tool}...")
-                result = await call_mcp_server(server_path, tool, args)
+                elif tool == "calculate_discount":
+                    args = {
+                        "base_price": float(arguments.get("base_price", LISTING_PRICE)),
+                        "market_condition": arguments.get("market_condition", "balanced"),
+                        "days_on_market": int(arguments.get("days_on_market", 18)),
+                        "property_condition": arguments.get("property_condition", "good"),
+                    }
+                    print("   [Seller] Calling MCP (pricing): calculate_discount...")
+                    await call_mcp_server(PRICING_SERVER_PATH, "calculate_discount", args)
 
-                if tool == "get_market_price":
-                    market_data = result
                 elif tool == "get_inventory_level":
-                    inventory_data = result
+                    args = {
+                        "zip_code": arguments.get("zip_code", "78701"),
+                    }
+                    print("   [Seller] Calling MCP (inventory): get_inventory_level...")
+                    inventory_data = await call_mcp_server(INVENTORY_SERVER_PATH, "get_inventory_level", args)
+
                 elif tool == "get_minimum_acceptable_price":
-                    constraints = result
+                    args = {
+                        "property_id": arguments.get("property_id", PROPERTY_ID),
+                    }
+                    print("   [Seller] Calling MCP (inventory): get_minimum_acceptable_price...")
+                    print("   [Seller] NOTE: Buyer agent does NOT have access to this tool")
+                    constraints = await call_mcp_server(INVENTORY_SERVER_PATH, "get_minimum_acceptable_price", args)
 
             if not planned_calls:
-                print("   [Seller] LLM planned no MCP calls for this round")
+                print("   [Seller] Agent planned no MCP calls this round")
 
-        except Exception as planner_error:
-            print(f"   [Seller] MCP planner error (continuing without MCP calls): {planner_error}")
+        except Exception as e:
+            print(f"   [Seller] MCP planning error (continuing without MCP data): {e}")
 
         self._market_data = market_data
         self._inventory_data = inventory_data
@@ -370,10 +412,8 @@ class SellerAgent:
                 in_reply_to=self._last_buyer_message_id
             )
 
-        # Step 1: Let LLM decide which MCP tools to invoke this round
-        market_data, inventory_data, constraints = await self._gather_mcp_context_via_llm(
-            buyer_price=float(buyer_price)
-        )
+        # Step 1: Agent decides which MCP tools to call, then executes them
+        market_data, inventory_data, constraints = await self._gather_mcp_context(buyer_price=float(buyer_price))
 
         # Step 2: Build context for GPT-4o
         pricing_data = constraints.get("pricing_constraints", {})
@@ -398,7 +438,7 @@ MARKET INTELLIGENCE (from MCP servers):
   Active listings in 78701: {inventory_data.get('activity_30_days', {}).get('active_listings', 47)}
   Inventory (months): {inventory_data.get('activity_30_days', {}).get('absorption_rate_months', 3.1)}
 
-YOUR PRICING CONSTRAINTS (from MCP inventory server — SELLER CONFIDENTIAL):
+YOUR PRICING CONSTRAINTS (from MCP inventory server -- SELLER CONFIDENTIAL):
   Absolute minimum: ${pricing_data.get('minimum_acceptable_price', MINIMUM_PRICE):,}
   Target price: ${pricing_data.get('ideal_closing_price', IDEAL_PRICE):,}
   Negotiation room remaining: ${pricing_data.get('absolute_negotiation_room', 40_000):,}
@@ -407,12 +447,12 @@ NEGOTIATION STATUS:
   Current round: {self.round} of 5
   Rounds remaining: {rounds_remaining}
   Gap between buyer offer and your minimum: ${buyer_price - MINIMUM_PRICE:,.0f}
-  {'⚠️  ONLY ' + str(rounds_remaining) + ' ROUNDS REMAIN — consider being more flexible' if rounds_remaining <= 2 else ''}
+  {'[WARN] ONLY ' + str(rounds_remaining) + ' ROUNDS REMAIN -- consider being more flexible' if rounds_remaining <= 2 else ''}
 
 PROPERTY STRENGTHS TO EMPHASIZE:
   - Kitchen renovation 2023: $45,000 (quartz counters, premium appliances)
   - Roof replaced 2022: $18,000 (30-year warranty)
-  - HVAC 2021: $12,000 (Carrier 16 SEER — energy efficient)
+  - HVAC 2021: $12,000 (Carrier 16 SEER -- energy efficient)
   - Total upgrades: $75,000+
   - No HOA fees
 
@@ -438,8 +478,8 @@ What is your counter-offer? Remember your floor is ${MINIMUM_PRICE:,}.
         # Step 5: Validate counter doesn't go below floor
         counter_price = float(decision.get("counter_price", LISTING_PRICE))
         if counter_price < MINIMUM_PRICE:
-            # LLM went below floor — correct it
-            print(f"   [Seller] ⚠️  LLM went below floor! Correcting ${counter_price:,} → ${MINIMUM_PRICE:,}")
+            # LLM went below floor -- correct it
+            print(f"   [Seller] [WARN] LLM went below floor! Correcting ${counter_price:,} -> ${MINIMUM_PRICE:,}")
             counter_price = float(MINIMUM_PRICE)
             decision["message"] += f" Our absolute best price is ${MINIMUM_PRICE:,}."
 

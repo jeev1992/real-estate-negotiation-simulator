@@ -65,7 +65,7 @@ def check_environment() -> None:
         missing.append("GOOGLE_API_KEY")
 
     if missing:
-        print("❌ Missing required environment variables:")
+        print("ERROR: Missing required environment variables:")
         for var in missing:
             print(f"   export {var}=<your_value>")
         print()
@@ -160,7 +160,7 @@ async def run_adk_negotiation(
                 # ── Deadlock check ────────────────────────────────────────────
                 if round_num >= max_rounds and not session.is_concluded():
                     session.status = "deadlocked"
-                    print(f"\n[Coordinator] ⏱️  Max rounds ({max_rounds}) reached — deadlock")
+                    print(f"\n[Coordinator] Max rounds ({max_rounds}) reached -- deadlock")
                     break
 
             # ── Final result ──────────────────────────────────────────────────
@@ -234,12 +234,11 @@ async def main() -> None:
         return
 
     print()
-    print("╔══════════════════════════════════════════════════════════════════╗")
-    print("║        REAL ESTATE NEGOTIATION SIMULATOR                        ║")
-    print("║        Google ADK Version (Gemini 2.0 Flash — Free Tier)        ║")
-    print("╠══════════════════════════════════════════════════════════════════╣")
-    print("║  Concepts: ADK + MCPToolset + A2A + Gemini                      ║")
-    print("╚══════════════════════════════════════════════════════════════════╝")
+    print("=" * 68)
+    print("REAL ESTATE NEGOTIATION SIMULATOR")
+    print("Google ADK Version (Gemini 2.0 Flash -- Free Tier)")
+    print("Concepts: ADK + MCPToolset + A2A + Gemini")
+    print("=" * 68)
     print()
     print("CONFIGURATION:")
     print(f"  Property:       742 Evergreen Terrace, Austin, TX 78701")
@@ -251,9 +250,9 @@ async def main() -> None:
     print(f"  LLM:            Gemini 2.0 Flash (Google AI free tier)")
     print()
     print("WHAT TO WATCH FOR:")
-    print("  [Buyer ADK]  Calling tool: → ADK is calling an MCP tool")
-    print("  [Seller ADK] Connecting:   → ADK is connecting to MCP server")
-    print("  [Coordinator]              → Managing the A2A message exchange")
+    print("  [Buyer ADK]  Calling tool: -> ADK is calling an MCP tool")
+    print("  [Seller ADK] Connecting:   -> ADK is connecting to MCP server")
+    print("  [Coordinator]              -> Managing the A2A message exchange")
     print()
 
     try:
@@ -265,19 +264,19 @@ async def main() -> None:
         )
 
         print("\nNEXT STEPS:")
-        print("  • Try the simple version: python m3_langgraph_multiagents/main_langgraph_multiagent.py")
-        print("  • Compare results between versions")
-        print("  • Exercises: open exercises/exercises.md")
+        print("  - Try the simple version: python m3_langgraph_multiagents/main_langgraph_multiagent.py")
+        print("  - Compare results between versions")
+        print("  - Exercises: open exercises/exercises.md")
         print()
 
         return result
 
     except KeyboardInterrupt:
-        print("\n\n⚠️  Negotiation interrupted by user")
+        print("\n\nNegotiation interrupted by user")
         sys.exit(0)
 
     except Exception as e:
-        print(f"\n❌ Error during ADK negotiation: {e}")
+        print(f"\nERROR during ADK negotiation: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

@@ -83,7 +83,7 @@ def run_check_mode(max_iterations: int) -> None:
 
 async def run_live(prompt: str, max_iterations: int) -> None:
     if not os.environ.get("GOOGLE_API_KEY"):
-        print("❌ GOOGLE_API_KEY is required for --run")
+        print("ERROR: GOOGLE_API_KEY is required for --run")
         sys.exit(1)
 
     _, _, root_agent = build_buyer_seller_loop(max_iterations=max_iterations)
@@ -137,7 +137,7 @@ async def main() -> None:
     args = parser.parse_args()
 
     if args.max_iterations < 1:
-        print("❌ --max-iterations must be >= 1")
+        print("ERROR: --max-iterations must be >= 1")
         sys.exit(1)
 
     if args.check or not args.run:

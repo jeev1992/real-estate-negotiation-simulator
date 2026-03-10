@@ -126,6 +126,7 @@ class BuyerAgentADK:
         self._agent: Optional[LlmAgent] = None
         self._runner: Optional[Runner] = None
         self._session_service: Optional[InMemorySessionService] = None
+        self._pricing_toolset: Optional[MCPToolset] = None
         self._round = 0
 
     async def __aenter__(self) -> "BuyerAgentADK":
@@ -141,7 +142,8 @@ class BuyerAgentADK:
 
         # Create MCPToolset — this is the ADK's MCP integration
         # StdioServerParameters tells ADK how to spawn the MCP server
-        pricing_toolset = MCPToolset(
+        # Store as instance variable so __aexit__ can close the subprocess.
+        self._pricing_toolset = MCPToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -153,7 +155,7 @@ class BuyerAgentADK:
         # Initialize tools from the MCP server
         # ADK discovers available tools via MCP's list_tools protocol
         # These tools are then formatted as Gemini function-calling tools
-        tools = await pricing_toolset.get_tools()
+        tools = await self._pricing_toolset.get_tools()
 
         # Safe tool name extraction — handles empty list without IndexError
         tool_names = [t.name for t in tools if hasattr(t, 'name')]
@@ -189,7 +191,12 @@ class BuyerAgentADK:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Clean up MCP connections."""
+        """Close MCP server subprocess."""
+        if self._pricing_toolset is not None:
+            try:
+                await self._pricing_toolset.close()
+            except Exception:
+                pass
         print("   [Buyer ADK] MCP connections closed.")
 
     async def _run_agent(self, prompt: str) -> str:

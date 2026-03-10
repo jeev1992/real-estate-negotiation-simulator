@@ -20,12 +20,18 @@ ARCHITECTURE:
      across rounds so GPT-4o remembers previous offers and counters.
 
 FLOW PER ROUND:
-    1. Receive seller's counter-offer from shared LangGraph state
-  2. Call MCP pricing server to get fresh market data
-  3. Call MCP pricing server to calculate discount range
+  1. Receive seller's counter-offer from shared LangGraph state
+  2. GPT-4o decides which MCP tools to call this round (ReAct-style planning)
+  3. Agent executes those MCP calls (get_market_price, calculate_discount)
   4. Add market data + counter to GPT-4o context
   5. GPT-4o decides next offer (or walk-away)
-    6. Return a negotiation message dict with the decision
+  6. Return a negotiation message dict with the decision
+
+WHY LLM-DRIVEN TOOL SELECTION (not hardcoded):
+  The whole point of an agent is that it decides its own actions.
+  If we hardcode "always call these 2 tools," we've written a script.
+  The planner call is cheap (temp=0, tiny prompt) and teaches the right pattern:
+  the agent reads context, decides what information it needs, then acts.
 """
 
 import asyncio
@@ -114,9 +120,9 @@ Available tools and required arguments:
 - get_market_price: {"address": "string", "property_type": "single_family|condo|townhouse"}
 - calculate_discount: {
         "base_price": number,
-        "market_condition": "seller_market|balanced|buyer_market",
+        "market_condition": "hot|balanced|cold",
         "days_on_market": number,
-        "property_condition": "excellent|good|fair|needs_work"
+        "property_condition": "excellent|good|fair|poor"
     }
 
 Rules:
@@ -253,8 +259,19 @@ class BuyerAgent:
 
         return json.loads(reply_content)
 
+
     async def _plan_mcp_tool_calls(self, planning_context: str) -> list[dict]:
-        """Ask the LLM which buyer MCP tools to invoke this round."""
+        """
+        Ask GPT-4o which MCP tools to call this round.
+
+        AGENT TEACHING POINT:
+        This is the ReAct-style planning step. The agent reads the current
+        context (round, seller counter, budget gap) and decides what information
+        it needs before formulating its response. This is what makes it an agent
+        rather than a hardcoded script.
+
+        Uses temp=0 and a minimal prompt so the decision is fast and cheap.
+        """
         response = await self.client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
@@ -275,18 +292,26 @@ class BuyerAgent:
         for call in tool_calls:
             tool = call.get("tool")
             arguments = call.get("arguments", {})
-
             if tool in allowed_tools and isinstance(arguments, dict):
                 valid_calls.append({"tool": tool, "arguments": arguments})
 
         return valid_calls[:2]
 
-    async def _gather_mcp_context_via_llm(
+    async def _gather_mcp_context(
         self,
         stage: str,
         seller_price: Optional[float] = None,
     ) -> tuple[dict, dict]:
-        """Use strict LLM planning to decide which MCP tools to call (no auto-fallback calls)."""
+        """
+        Let the agent decide which MCP tools to call, then execute them.
+
+        The two-step pattern here is intentional and teachable:
+          Step 1 (plan):    GPT-4o reads context, returns {"tool_calls": [...]}
+          Step 2 (execute): We call those tools and return the results
+
+        Compare to M4 (ADK): Gemini does the same thing automatically inside
+        MCPToolset's function-calling loop. Here we make the mechanism visible.
+        """
         planning_context = (
             f"Stage: {stage}\n"
             f"Property: {PROPERTY_ADDRESS}\n"
@@ -301,8 +326,7 @@ class BuyerAgent:
 
         try:
             planned_calls = await self._plan_mcp_tool_calls(planning_context)
-            if planned_calls:
-                print(f"   [Buyer] LLM planned MCP calls: {[c['tool'] for c in planned_calls]}")
+            print(f"   [Buyer] Agent planned MCP calls: {[c['tool'] for c in planned_calls]}")
 
             for call in planned_calls:
                 tool = call["tool"]
@@ -313,8 +337,9 @@ class BuyerAgent:
                         "address": arguments.get("address", PROPERTY_ADDRESS),
                         "property_type": arguments.get("property_type", "single_family"),
                     }
-                    print("   [Buyer] Calling MCP (LLM-planned): get_market_price...")
+                    print("   [Buyer] Calling MCP: get_market_price...")
                     market_data = await call_pricing_mcp("get_market_price", args)
+                    print(f"   [Buyer] MCP returned: avg comp ${market_data.get('market_statistics', {}).get('avg_comparable_price', 'N/A'):,}")
 
                 elif tool == "calculate_discount":
                     args = {
@@ -323,14 +348,15 @@ class BuyerAgent:
                         "days_on_market": int(arguments.get("days_on_market", 18)),
                         "property_condition": arguments.get("property_condition", "good"),
                     }
-                    print("   [Buyer] Calling MCP (LLM-planned): calculate_discount...")
+                    print("   [Buyer] Calling MCP: calculate_discount...")
                     discount_data = await call_pricing_mcp("calculate_discount", args)
+                    print(f"   [Buyer] MCP returned: offer range ${discount_data.get('suggested_offer_prices', {}).get('moderate', 'N/A'):,}")
 
             if not planned_calls:
-                print("   [Buyer] LLM planned no MCP calls for this round")
+                print("   [Buyer] Agent planned no MCP calls this round")
 
-        except Exception as planner_error:
-            print(f"   [Buyer] MCP planner error (continuing without MCP calls): {planner_error}")
+        except Exception as e:
+            print(f"   [Buyer] MCP planning error (continuing without MCP data): {e}")
 
         self._market_data = market_data
         return market_data, discount_data
@@ -345,8 +371,8 @@ class BuyerAgent:
         self.round = 1
         print(f"\n[Buyer] Round {self.round}: Preparing initial offer...")
 
-        # Step 1: Let LLM decide which MCP tools to call, then gather data
-        market_data, discount_data = await self._gather_mcp_context_via_llm(stage="initial_offer")
+        # Step 1: Agent decides which MCP tools to call, then executes them
+        market_data, discount_data = await self._gather_mcp_context(stage="initial_offer")
 
         # Step 2: Build context for GPT-4o
         user_message = f"""
@@ -398,8 +424,8 @@ Based on the market data, what is your opening offer?
         # Sanity check: if seller already came below our budget, consider accepting
         seller_price = seller_message.get("price") or 0
 
-        # Step 1: Let LLM decide MCP calls for this response round
-        market_data, discount_data = await self._gather_mcp_context_via_llm(
+        # Step 1: Agent decides which MCP tools to call, then executes them
+        market_data, discount_data = await self._gather_mcp_context(
             stage="respond_to_counter",
             seller_price=float(seller_price),
         )

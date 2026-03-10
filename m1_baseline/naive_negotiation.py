@@ -247,6 +247,10 @@ def run_naive_negotiation(
     Returns:
         (success: bool, final_price: Optional[float], turns: int)
     """
+    # LEARNER NOTE:
+    # This function is the runtime engine for one negotiation session.
+    # Inputs: buyer + seller agent objects.
+    # Output: (did_we_get_a_deal, final_price_if_any, number_of_turns)
     if verbose:
         print("\n" + "=" * 65)
         print("NAIVE REAL ESTATE NEGOTIATION (Intentionally Broken)")
@@ -254,8 +258,10 @@ def run_naive_negotiation(
         print(f"Listing: ${LISTING_PRICE:,.0f}  |  Buyer max: ${buyer.max_price:,.0f}  |  Seller min: ${seller.min_price:,.0f}")
         print("=" * 65 + "\n")
 
+    # turn counts total messages exchanged AFTER buyer's opening message.
     turn = 0
     current_message = buyer.make_initial_offer()
+    # Control flag for turn-taking. This is a fragile stand-in for a real FSM state.
     is_buyer_turn = False  # Buyer just went, so seller goes next
 
     if verbose:
@@ -279,6 +285,8 @@ def run_naive_negotiation(
             return False, None, turn
 
         # ── Take a turn ────────────────────────────────────────────────────────
+        # The same string variable (current_message) keeps getting overwritten.
+        # There is no typed event history, so debugging later is difficult.
         if is_buyer_turn:
             current_message = buyer.respond_to_counter(current_message)
             speaker = buyer.name
@@ -291,6 +299,9 @@ def run_naive_negotiation(
 
         # ── Check termination via STRING MATCHING (Problem #6) ─────────────────
         # FRAGILE: "DEAL-breaker", "DEAL with the renovation costs", etc. all match
+        # LEARNER NOTE:
+        # This is "keyword protocol" — outcome control based on text tokens.
+        # In robust systems, this should be explicit state transitions.
         if "DEAL" in current_message.upper():
             price_match = re.search(r'\$?([\d,]+(?:\.\d{2})?)', current_message)
             final_price = float(price_match.group(1).replace(',', '')) if price_match else None
@@ -304,6 +315,7 @@ def run_naive_negotiation(
                 print(f"\nFAILED: Negotiation failed after {turn} turns -- seller rejected")
             return False, None, turn
 
+        # Flip turn for the next loop iteration.
         is_buyer_turn = not is_buyer_turn
 
 
@@ -378,6 +390,12 @@ def main() -> None:
     solves a specific failure mode shown here.
     """
 
+    # LEARNER NOTE:
+    # The three demos below are intentionally staged in teaching order:
+    #   Demo 1 -> optimistic case (appears to work)
+    #   Demo 2 -> impossible case (reveals control-flow weakness)
+    #   Demo 3 -> targeted failure examples (root-cause visibility)
+
     # ── Demo 1: Successful negotiation (when it "works" by luck) ──────────────
     print("\n" + "=" * 65)
     print("DEMO 1: When It Works (By Luck -- Fragile!)")
@@ -385,9 +403,12 @@ def main() -> None:
     print("Buyer max $460K vs Seller min $445K -- there IS a ZOPA here.")
     print("This 'works', but notice how fragile and arbitrary the process is.\n")
 
+    # Create agents with overlapping ranges (ZOPA exists):
+    # buyer max (460k) >= seller min (445k)
     buyer = NaiveBuyer("Alice (Buyer)", max_price=BUYER_MAX_PRICE)
     seller = NaiveSeller("Bob (Seller)", min_price=SELLER_MIN_PRICE, asking_price=SELLER_ASKING_PRICE)
 
+    # Run one full negotiation session.
     success, price, turns = run_naive_negotiation(buyer, seller)
 
     if success:
@@ -405,6 +426,8 @@ def main() -> None:
     print("Buyer max $420K vs Seller min $450K -- gap of $30K, NO deal possible.")
     print("Watch the loop run until the emergency exit at 100 turns.\n")
 
+    # Create agents with NON-overlapping ranges (no ZOPA):
+    # buyer max (420k) < seller min (450k)
     buyer2 = NaiveBuyer("Alice (Buyer)", max_price=420_000)
     seller2 = NaiveSeller("Bob (Seller)", min_price=450_000, asking_price=477_000)
 

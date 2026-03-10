@@ -55,7 +55,7 @@ def check_environment() -> None:
         missing.append("OPENAI_API_KEY")
 
     if missing:
-        print("❌ Missing required environment variables:")
+        print("ERROR: Missing required environment variables:")
         for var in missing:
             print(f"   export {var}=<your_value>")
         print()
@@ -108,12 +108,11 @@ async def main() -> None:
 
     # ── Banner ────────────────────────────────────────────────────────────────
     print()
-    print("╔══════════════════════════════════════════════════════════════════╗")
-    print("║        REAL ESTATE NEGOTIATION SIMULATOR                        ║")
-    print("║        Simple Python Version (OpenAI GPT-4o + LangGraph)        ║")
-    print("╠══════════════════════════════════════════════════════════════════╣")
-    print("║  Concepts: MCP + Typed Messages + LangGraph                     ║")
-    print("╚══════════════════════════════════════════════════════════════════╝")
+    print("=" * 68)
+    print("REAL ESTATE NEGOTIATION SIMULATOR")
+    print("Simple Python Version (OpenAI GPT-4o + LangGraph)")
+    print("Concepts: MCP + Typed Messages + LangGraph")
+    print("=" * 68)
     print()
     print("CONFIGURATION:")
     print(f"  Property:       742 Evergreen Terrace, Austin, TX 78701")
@@ -126,10 +125,10 @@ async def main() -> None:
     print()
 
     print("WHAT TO WATCH FOR:")
-    print("  [Buyer] Calling MCP:  → agent is fetching market data via MCP")
-    print("  [Seller] Calling MCP: → agent is fetching pricing/inventory via MCP")
-    print("  [LangGraph] →         → LangGraph is routing between nodes")
-    print("  A2A messages          → structured JSON between agents")
+    print("  [Buyer] Calling MCP:  -> agent is fetching market data via MCP")
+    print("  [Seller] Calling MCP: -> agent is fetching pricing/inventory via MCP")
+    print("  [LangGraph] ->        -> LangGraph is routing between nodes")
+    print("  A2A messages          -> structured JSON between agents")
     print()
 
     # ── Run the LangGraph orchestration ──────────────────────────────────────
@@ -147,19 +146,19 @@ async def main() -> None:
 
         # ── Post-negotiation summary ──────────────────────────────────────────
         print("\nNEXT STEPS:")
-        print("  • Try the ADK version:  python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102")
-        print("  • GitHub MCP demo:      python m2_mcp/github_demo_client.py")
-        print("  • Exercises:            open exercises/exercises.md")
+        print("  - Try the ADK version:  python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102")
+        print("  - GitHub MCP demo:      python m2_mcp/github_demo_client.py")
+        print("  - Exercises:            open exercises/exercises.md")
         print()
 
         return final_state
 
     except KeyboardInterrupt:
-        print("\n\n⚠️  Negotiation interrupted by user")
+        print("\n\nNegotiation interrupted by user")
         sys.exit(0)
 
     except Exception as e:
-        print(f"\n❌ Error during negotiation: {e}")
+        print(f"\nERROR during negotiation: {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()

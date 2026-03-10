@@ -168,7 +168,7 @@ def parse_seller_response(
 
     # ENFORCE FLOOR: never allow LLM to go below minimum
     if counter_price < minimum_price:
-        print(f"   [ADK Messaging] Enforcing floor: ${counter_price:,.0f} → ${minimum_price:,.0f}")
+        print(f"   [ADK Messaging] Enforcing floor: ${counter_price:,.0f} -> ${minimum_price:,.0f}")
         counter_price = minimum_price
 
     return create_counter_offer(
@@ -326,7 +326,7 @@ def print_round_summary(session: NegotiationSession, message: ADKNegotiationMess
     price_str = f"${message.payload.price:,.0f}" if message.payload.price else "N/A"
     agent_label = message.from_agent.upper()
 
-    print(f"\n  {'─' * 55}")
+    print(f"\n  {'-' * 55}")
     print(f"  [{agent_label}] {message.message_type} @ {price_str}")
     print(f"  {session.get_round_summary()}")
     print(f"  Message: {message.payload.message[:100]}...")
@@ -334,9 +334,9 @@ def print_round_summary(session: NegotiationSession, message: ADKNegotiationMess
 
 def print_final_result(session: NegotiationSession) -> None:
     """Print the final negotiation outcome."""
-    print("\n" + "═" * 60)
+    print("\n" + "=" * 60)
     print("NEGOTIATION COMPLETE (ADK Version)")
-    print("═" * 60)
+    print("=" * 60)
     print(f"Status: {session.status.upper()}")
 
     if session.agreed_price:
@@ -348,7 +348,7 @@ def print_final_result(session: NegotiationSession) -> None:
 
     print(f"Rounds Used: {session.current_round} of {session.max_rounds}")
     print(f"Messages Exchanged: {len(session.message_history)}")
-    print("═" * 60)
+    print("=" * 60)
 
 
 # ─── Private Helpers ──────────────────────────────────────────────────────────

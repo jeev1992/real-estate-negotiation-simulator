@@ -125,6 +125,8 @@ class SellerAgentADK:
         self._agent: Optional[LlmAgent] = None
         self._runner: Optional[Runner] = None
         self._session_service: Optional[InMemorySessionService] = None
+        self._pricing_toolset: Optional[MCPToolset] = None
+        self._inventory_toolset: Optional[MCPToolset] = None
         self._round = 0
 
     async def __aenter__(self) -> "SellerAgentADK":
@@ -138,7 +140,8 @@ class SellerAgentADK:
         print("   [Seller ADK] Connecting to pricing MCP server...")
 
         # Toolset 1: Pricing server (shared with buyer)
-        pricing_toolset = MCPToolset(
+        # Stored as instance variable so __aexit__ can close the subprocess.
+        self._pricing_toolset = MCPToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -146,14 +149,15 @@ class SellerAgentADK:
                 )
             )
         )
-        pricing_tools = await pricing_toolset.get_tools()
+        pricing_tools = await self._pricing_toolset.get_tools()
         pricing_names = [t.name for t in pricing_tools if hasattr(t, 'name')]
         print(f"   [Seller ADK] Pricing tools: {pricing_names if pricing_names else 'none'}")
 
         print("   [Seller ADK] Connecting to inventory MCP server...")
 
         # Toolset 2: Inventory server (seller ONLY)
-        inventory_toolset = MCPToolset(
+        # Stored as instance variable so __aexit__ can close the subprocess.
+        self._inventory_toolset = MCPToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -161,7 +165,7 @@ class SellerAgentADK:
                 )
             )
         )
-        inventory_tools = await inventory_toolset.get_tools()
+        inventory_tools = await self._inventory_toolset.get_tools()
         inventory_names = [t.name for t in inventory_tools if hasattr(t, 'name')]
         print(f"   [Seller ADK] Inventory tools: {inventory_names if inventory_names else 'none'}")
 
@@ -196,7 +200,13 @@ class SellerAgentADK:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Clean up both MCP connections."""
+        """Close both MCP server subprocesses."""
+        for toolset in (self._pricing_toolset, self._inventory_toolset):
+            if toolset is not None:
+                try:
+                    await toolset.close()
+                except Exception:
+                    pass
         print("   [Seller ADK] MCP connections closed.")
 
     async def _run_agent(self, prompt: str) -> str:

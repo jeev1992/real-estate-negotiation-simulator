@@ -67,9 +67,9 @@ async def demo_section_1_connection(session: ClientSession) -> None:
     print("SECTION 1: Connection & Initialization")
     print("=" * 60)
     print()
-    print("✅ Connected to GitHub MCP server via stdio transport")
+    print("Connected to GitHub MCP server via stdio transport")
     print()
-    print("📋 What just happened under the hood:")
+    print("What just happened under the hood:")
     print("   1. Our Python process spawned a child process:")
     print("      npx -y @modelcontextprotocol/server-github")
     print("   2. We communicate via stdin/stdout pipes")
@@ -99,7 +99,7 @@ async def demo_section_2_tool_discovery(session: ClientSession) -> list:
     tools_response = await session.list_tools()
     tools = tools_response.tools
 
-    print(f"🛠️  GitHub MCP server exposes {len(tools)} tools:")
+    print(f"GitHub MCP server exposes {len(tools)} tools:")
     print()
 
     for i, tool in enumerate(tools, 1):
@@ -107,13 +107,13 @@ async def demo_section_2_tool_discovery(session: ClientSession) -> list:
         print(f"       {tool.description[:70]}...")
         print()
 
-    print("📋 This is what an LLM agent sees when it connects to any MCP server.")
-    print("   The agent doesn't need to be told how to use GitHub's API —")
+    print("This is what an LLM agent sees when it connects to any MCP server.")
+    print("   The agent doesn't need to be told how to use GitHub's API --")
     print("   it learns from the schemas provided by the MCP server.")
     print()
 
     # Show the full schema for one tool
-    print("📄 Full schema for 'search_repositories' (what the LLM receives):")
+    print("Full schema for 'search_repositories' (what the LLM receives):")
     print()
     for tool in tools:
         if tool.name == "search_repositories":
@@ -141,7 +141,7 @@ async def demo_section_3_tool_calls(session: ClientSession) -> None:
     print()
 
     # ── Tool Call 1: Get current user ────────────────────────────────────────
-    print("🔧 Tool Call 1: get_me()")
+    print("Tool Call 1: get_me()")
     print("   Purpose: Get the authenticated user's info")
     print("   Arguments: none")
     print()
@@ -150,17 +150,17 @@ async def demo_section_3_tool_calls(session: ClientSession) -> None:
         me_result = await session.call_tool("get_me", {})
         me_data = _parse_tool_result(me_result)
 
-        print(f"   ✅ Result:")
+        print(f"   Result:")
         print(f"      Username: {me_data.get('login', 'N/A')}")
         print(f"      Name:     {me_data.get('name', 'N/A')}")
         print(f"      Public repos: {me_data.get('public_repos', 'N/A')}")
         print()
     except Exception as e:
-        print(f"   ⚠️  get_me failed: {e}")
+        print(f"   get_me failed: {e}")
         print()
 
     # ── Tool Call 2: Search repositories ─────────────────────────────────────
-    print("🔧 Tool Call 2: search_repositories(query='real estate python mcp')")
+    print("Tool Call 2: search_repositories(query='real estate python mcp')")
     print("   Purpose: Search GitHub for relevant repositories")
     print("   This simulates how an agent might research the domain")
     print()
@@ -178,19 +178,19 @@ async def demo_section_3_tool_calls(session: ClientSession) -> None:
         repos = search_data.get("items", [])
         total = search_data.get("total_count", 0)
 
-        print(f"   ✅ Found {total} repositories. Top {len(repos)}:")
+        print(f"   Found {total} repositories. Top {len(repos)}:")
         print()
         for repo in repos:
-            print(f"      ⭐ {repo.get('stargazers_count', 0):5} | {repo.get('full_name', 'N/A')}")
+            print(f"      stars={repo.get('stargazers_count', 0):5} | {repo.get('full_name', 'N/A')}")
             print(f"             {(repo.get('description') or 'No description')[:60]}")
             print()
 
     except Exception as e:
-        print(f"   ⚠️  search_repositories failed: {e}")
+        print(f"   search_repositories failed: {e}")
         print()
 
     # ── Tool Call 3: Get file contents ────────────────────────────────────────
-    print("🔧 Tool Call 3: search_code(query='def negotiate')")
+    print("Tool Call 3: search_code(query='def negotiate')")
     print("   Purpose: Search code across GitHub")
     print()
 
@@ -205,13 +205,13 @@ async def demo_section_3_tool_calls(session: ClientSession) -> None:
         code_data = _parse_tool_result(code_result)
         items = code_data.get("items", [])
 
-        print(f"   ✅ Found {code_data.get('total_count', 0)} code matches. Top {len(items)}:")
+        print(f"   Found {code_data.get('total_count', 0)} code matches. Top {len(items)}:")
         for item in items[:3]:
-            print(f"      📄 {item.get('repository', {}).get('full_name', 'N/A')} → {item.get('name', 'N/A')}")
+            print(f"      {item.get('repository', {}).get('full_name', 'N/A')} -> {item.get('name', 'N/A')}")
         print()
 
     except Exception as e:
-        print(f"   ⚠️  search_code failed: {e}")
+        print(f"   search_code failed: {e}")
         print()
 
 
@@ -222,12 +222,12 @@ async def demo_section_4_comparison(session: ClientSession) -> None:
     Shows the difference between calling GitHub via MCP vs direct REST API.
     """
     print("=" * 60)
-    print("SECTION 4: MCP vs Direct GitHub API — Side by Side")
+    print("SECTION 4: MCP vs Direct GitHub API -- Side by Side")
     print("=" * 60)
     print()
 
     print("WITHOUT MCP (direct API call):")
-    print("─" * 40)
+    print("-" * 40)
     print("""
   import requests
 
@@ -246,7 +246,7 @@ async def demo_section_4_comparison(session: ClientSession) -> None:
 """)
 
     print("WITH MCP (our demo above):")
-    print("─" * 40)
+    print("-" * 40)
     print("""
   result = await session.call_tool(
       "search_repositories",
@@ -259,7 +259,7 @@ async def demo_section_4_comparison(session: ClientSession) -> None:
   # Switching from GitHub to GitLab? Swap server, same client code.
 """)
 
-    print("📋 KEY INSIGHT:")
+    print("KEY INSIGHT:")
     print("   Our real estate pricing server works EXACTLY the same way.")
     print("   Instead of GitHub's API, it wraps pricing/inventory data.")
     print("   Our buyer and seller agents call it with the SAME pattern.")
@@ -277,21 +277,21 @@ async def demo_section_5_connection_to_our_project(session: ClientSession) -> No
     print("=" * 60)
     print()
 
-    print("GitHub MCP Server            →  Our Real Estate MCP Servers")
-    print("─" * 60)
+    print("GitHub MCP Server            ->  Our Real Estate MCP Servers")
+    print("-" * 60)
     print()
-    print("  npx @modelcontextprotocol/   →  python m2_mcp/pricing_server.py")
+    print("  npx @modelcontextprotocol/   ->  python m2_mcp/pricing_server.py")
     print("       server-github")
     print()
-    print("  search_repositories()        →  get_market_price()")
-    print("  get_file_contents()          →  calculate_discount()")
-    print("  create_issue()               →  get_inventory_level()")
-    print("  list_pull_requests()         →  get_minimum_acceptable_price()")
+    print("  search_repositories()        ->  get_market_price()")
+    print("  get_file_contents()          ->  calculate_discount()")
+    print("  create_issue()               ->  get_inventory_level()")
+    print("  list_pull_requests()         ->  get_minimum_acceptable_price()")
     print()
-    print("  GITHUB_TOKEN env var         →  (no auth needed for our server)")
+    print("  GITHUB_TOKEN env var         ->  (no auth needed for our server)")
     print()
-    print("  stdio transport              →  stdio transport (simple version)")
-    print("                               →  SSE transport (python --sse flag)")
+    print("  stdio transport              ->  stdio transport (simple version)")
+    print("                               ->  SSE transport (python --sse flag)")
     print()
     print("The buyer and seller agents connect to our MCP servers")
     print("using the EXACT same MCPClientSession pattern you just saw.")
@@ -331,10 +331,10 @@ async def main() -> None:
     6. Clean up when done (context managers handle this)
     """
     print()
-    print("╔══════════════════════════════════════════════════════════════╗")
-    print("║          GITHUB MCP SERVER — LIVE DEMO                      ║")
-    print("║  Understanding MCP through a tool you already know          ║")
-    print("╚══════════════════════════════════════════════════════════════╝")
+    print("=" * 65)
+    print("GITHUB MCP SERVER -- LIVE DEMO")
+    print("Understanding MCP through a tool you already know")
+    print("=" * 65)
     print()
 
     # Define how to connect to GitHub's MCP server
@@ -348,7 +348,7 @@ async def main() -> None:
         }
     )
 
-    print(f"🔌 Connecting to GitHub MCP server...")
+    print(f"Connecting to GitHub MCP server...")
     print(f"   Command: npx -y @modelcontextprotocol/server-github")
     print(f"   Transport: stdio (subprocess pipes)")
     print(f"   Token: {GITHUB_TOKEN[:8]}..." if len(GITHUB_TOKEN) > 8 else "   Token: (set)")
@@ -379,13 +379,13 @@ async def main() -> None:
             await demo_section_5_connection_to_our_project(session)
 
     print("=" * 60)
-    print("✅ Demo complete. GitHub MCP connection closed (subprocess terminated).")
+    print("Demo complete. GitHub MCP connection closed (subprocess terminated).")
     print()
     print("You now understand:")
-    print("  • How MCP stdio transport works (subprocess + pipes)")
-    print("  • How tool discovery works (list_tools)")
-    print("  • How tool calls work (call_tool with JSON args)")
-    print("  • How results are returned (content blocks)")
+    print("  - How MCP stdio transport works (subprocess + pipes)")
+    print("  - How tool discovery works (list_tools)")
+    print("  - How tool calls work (call_tool with JSON args)")
+    print("  - How results are returned (content blocks)")
     print()
     print("This EXACT pattern powers our real estate negotiation agents.")
     print("See m2_mcp/pricing_server.py for our custom MCP server.")

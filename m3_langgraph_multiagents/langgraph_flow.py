@@ -209,7 +209,7 @@ async def buyer_node(state: dict) -> dict:
     round_number = state["round_number"]
     last_seller_msg_dict = state.get("last_seller_message")
 
-    print(f"\n[LangGraph] → BUYER NODE (Round {round_number + 1})")
+    print(f"\n[LangGraph] -> BUYER NODE (Round {round_number + 1})")
 
     try:
         if last_seller_msg_dict is None:
@@ -220,7 +220,7 @@ async def buyer_node(state: dict) -> dict:
             buyer_message = await buyer_agent.respond_to_counter(last_seller_msg_dict)
 
     except Exception as e:
-        print(f"[LangGraph] ❌ Buyer agent error: {e}")
+        print(f"[LangGraph] ERROR in buyer agent: {e}")
         return {
             "status": "error",
             "history": [{"round": round_number + 1, "agent": "buyer", "error": str(e)}],
@@ -230,10 +230,10 @@ async def buyer_node(state: dict) -> dict:
     new_status = state["status"]
     if buyer_message["message_type"] == "WITHDRAW":
         new_status = "buyer_walked"
-        print(f"[LangGraph] 🚶 Buyer is walking away")
+        print(f"[LangGraph] Buyer is walking away")
     elif buyer_message["message_type"] == "ACCEPT":
         new_status = "agreed"
-        print(f"[LangGraph] ✅ Buyer accepts at ${buyer_message.get('price', 0):,.0f}")
+        print(f"[LangGraph] Buyer accepts at ${buyer_message.get('price', 0):,.0f}")
 
     # History entry for this round
     history_entry = {
@@ -270,18 +270,18 @@ async def seller_node(state: dict) -> dict:
     round_number = state["round_number"]
     last_buyer_msg_dict = state.get("last_buyer_message")
 
-    print(f"\n[LangGraph] → SELLER NODE (Round {round_number})")
+    print(f"\n[LangGraph] -> SELLER NODE (Round {round_number})")
 
     if last_buyer_msg_dict is None:
-        # This shouldn't happen — seller always responds to buyer
-        print("[LangGraph] ⚠️  No buyer message to respond to")
+        # Shouldn't happen -- seller always responds to buyer
+        print("[LangGraph] WARN: No buyer message to respond to")
         return {"status": "error"}
 
     try:
         seller_message = await seller_agent.respond_to_offer(last_buyer_msg_dict)
 
     except Exception as e:
-        print(f"[LangGraph] ❌ Seller agent error: {e}")
+        print(f"[LangGraph] ERROR in seller agent: {e}")
         return {
             "status": "error",
             "history": [{"round": round_number, "agent": "seller", "error": str(e)}],
@@ -294,15 +294,15 @@ async def seller_node(state: dict) -> dict:
     if seller_message["message_type"] == "ACCEPT":
         new_status = "agreed"
         agreed_price = last_buyer_msg_dict.get("price")  # Seller accepted buyer's price
-        print(f"[LangGraph] ✅ Seller accepts at ${agreed_price:,.0f}")
+        print(f"[LangGraph] Seller accepts at ${agreed_price:,.0f}")
     elif seller_message["message_type"] == "REJECT":
         new_status = "seller_rejected"
-        print(f"[LangGraph] ❌ Seller rejects")
+        print(f"[LangGraph] Seller rejects")
 
     # Check deadlock condition
     if round_number >= state["max_rounds"] and new_status == "negotiating":
         new_status = "deadlocked"
-        print(f"[LangGraph] ⏱️  Max rounds reached — deadlock")
+        print(f"[LangGraph] Max rounds reached -- deadlock")
 
     history_entry = {
         "round": seller_message["round"],
@@ -436,9 +436,9 @@ def create_negotiation_graph() -> StateGraph:
 def print_negotiation_results(final_state: dict) -> None:
     """Display the final negotiation results and history."""
 
-    print("\n" + "═" * 65)
-    print("NEGOTIATION COMPLETE — LangGraph Orchestrated")
-    print("═" * 65)
+    print("\n" + "=" * 65)
+    print("NEGOTIATION COMPLETE -- LangGraph Orchestrated")
+    print("=" * 65)
 
     status = final_state.get("status", "unknown")
     agreed_price = final_state.get("agreed_price")
@@ -446,11 +446,11 @@ def print_negotiation_results(final_state: dict) -> None:
 
     # Outcome
     outcome_icons = {
-        "agreed": "✅ DEAL REACHED",
-        "buyer_walked": "🚶 BUYER WALKED AWAY",
-        "deadlocked": "⏱️  DEADLOCK — MAX ROUNDS REACHED",
-        "seller_rejected": "❌ SELLER REJECTED",
-        "error": "💥 ERROR",
+        "agreed": "[OK] DEAL REACHED",
+        "buyer_walked": "BUYER WALKED AWAY",
+        "deadlocked": "DEADLOCK -- MAX ROUNDS REACHED",
+        "seller_rejected": "SELLER REJECTED",
+        "error": "ERROR",
     }
     print(f"\nOutcome: {outcome_icons.get(status, status.upper())}")
 
@@ -471,7 +471,7 @@ def print_negotiation_results(final_state: dict) -> None:
     if history:
         print("\nNEGOTIATION HISTORY:")
         print(f"  {'Rnd':>3} {'Agent':>8} {'Type':>16} {'Price':>12}")
-        print("  " + "─" * 45)
+        print("  " + "-" * 45)
         for entry in history:
             price_str = f"${entry.get('price', 0):,.0f}" if entry.get("price") else "—"
             print(
@@ -481,7 +481,7 @@ def print_negotiation_results(final_state: dict) -> None:
                 f"{price_str:>12}"
             )
 
-    print("\n" + "═" * 65)
+    print("\n" + "=" * 65)
 
 
 # ─── Standalone Runner ────────────────────────────────────────────────────────
@@ -508,9 +508,9 @@ async def run_negotiation(
     following all conditional edges until a terminal state is reached.
     The returned dict is the FINAL state after all nodes have run.
     """
-    print("\n╔══════════════════════════════════════════════════════════════╗")
-    print("║       REAL ESTATE NEGOTIATION — LangGraph Version           ║")
-    print("╚══════════════════════════════════════════════════════════════╝")
+    print("\n" + "=" * 65)
+    print("REAL ESTATE NEGOTIATION -- LangGraph Version")
+    print("=" * 65)
 
     # Build the graph
     graph = create_negotiation_graph()
