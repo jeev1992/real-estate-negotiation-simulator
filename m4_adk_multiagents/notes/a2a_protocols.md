@@ -791,9 +791,9 @@ What this demonstrates:
 
 Key files:
 - `m4_adk_multiagents/a2a_protocol_seller_server.py` (A2A protocol seller endpoint)
+- `m4_adk_multiagents/a2a_protocol_http_orchestrator.py` (A2A protocol multi-round HTTP orchestrator)
 - `m4_adk_multiagents/a2a_protocol_buyer_client_demo.py` (A2A protocol buyer client)
 - `m4_adk_multiagents/buyer_adk.py` and `m4_adk_multiagents/seller_adk.py` (ADK agents)
-- `m4_adk_multiagents/messaging_adk.py` (ADK-side message formatting/parsing layer)
 
 ---
 

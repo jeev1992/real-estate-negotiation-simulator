@@ -14,7 +14,7 @@ From `negotiation_workshop/`:
 - `python exercises/code_solutions/ex09_negotiation_memory.py`
 - `python exercises/code_solutions/ex10_negotiation_analytics.py`
 - `python exercises/code_solutions/ex11_support_triage_langgraph_runner.py` *(requires OPENAI_API_KEY)*
-- `python exercises/code_solutions/ex12_support_triage_adk_runner.py` *(requires GOOGLE_API_KEY)*
+- `python exercises/code_solutions/ex12_support_triage_adk_runner.py` *(requires OPENAI_API_KEY)*
 
 ## Prerequisite for Exercise 7 (SSE)
 

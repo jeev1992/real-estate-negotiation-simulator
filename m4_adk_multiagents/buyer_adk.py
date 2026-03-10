@@ -1,13 +1,13 @@
 """
-Buyer Agent — Google ADK Version
+Buyer Agent — ADK + OpenAI Version
 ====================================
-Real estate buyer agent built with Google ADK and Gemini 2.0 Flash.
+Real estate buyer agent built with Google ADK and OpenAI GPT-4o.
 
 ADK CONCEPTS DEMONSTRATED:
   1. LlmAgent — defining an agent with model, instruction, and tools
   2. MCPToolset — connecting to MCP servers via stdio transport
   3. Runner — executing the agent and getting responses
-  4. InMemorySessionService — managing conversation state across turns
+    4. InMemorySessionService — managing conversation state across turns
 
 COMPARISON WITH SIMPLE VERSION:
   Simple (buyer_simple.py):
@@ -19,23 +19,26 @@ COMPARISON WITH SIMPLE VERSION:
     - MCPToolset handles MCP connections automatically
     - ADK Runner manages conversation history via sessions
     - Agent instructions guide response format
-    - Gemini 2.0 Flash (free tier)
+    - OpenAI GPT-4o model family
 
 HOW ADK HANDLES MCP:
   MCPToolset connects to the MCP server and discovers all tools automatically.
-  The tools are presented to Gemini as function-calling tools.
-  When Gemini decides to call a tool, ADK executes it and feeds the
+    The tools are presented to the LLM as function-calling tools.
+    When the model decides to call a tool, ADK executes it and feeds the
   result back into the conversation — all automatically.
 """
 
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 # Google ADK imports
 from google.adk.agents import LlmAgent
+from google.adk.events import Event
+from google.adk.events.event_actions import EventActions
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools.mcp_tool.mcp_toolset import (
@@ -43,9 +46,7 @@ from google.adk.tools.mcp_tool.mcp_toolset import (
     StdioConnectionParams,
     StdioServerParameters,
 )
-
-from m4_adk_multiagents.adk_a2a_types import ADKNegotiationMessage
-from m4_adk_multiagents.messaging_adk import parse_buyer_response, format_seller_message_for_buyer
+from pydantic import BaseModel, Field, ValidationError
 
 # Absolute path to pricing server — safe regardless of working directory
 _PRICING_SERVER = str(Path(__file__).parent.parent / "m2_mcp" / "pricing_server.py")
@@ -56,12 +57,72 @@ _PRICING_SERVER = str(Path(__file__).parent.parent / "m2_mcp" / "pricing_server.
 PROPERTY_ADDRESS = "742 Evergreen Terrace, Austin, TX 78701"
 LISTING_PRICE = 485_000
 BUYER_BUDGET = 460_000
-MINIMUM_PRICE = 445_000
 
-# ADK uses Gemini 2.0 Flash — free tier, fast, capable
-GEMINI_MODEL = "gemini-2.0-flash"
+# ADK provider-style model id.
+# Important: plain "gpt-4o" is not resolved by ADK registry in this setup.
+OPENAI_MODEL = "openai/gpt-4o"
 
 APP_NAME = "real_estate_negotiation_buyer"
+
+
+class BuyerStructuredOutput(BaseModel):
+    offer_price: Optional[float] = None
+    price: Optional[float] = None
+    message: str
+    reasoning: Optional[str] = None
+    walk_away: bool = False
+    walk_away_reason: Optional[str] = None
+    conditions: list[str] = Field(default_factory=list)
+    closing_timeline_days: Optional[int] = None
+
+
+class BuyerEnvelope(BaseModel):
+    session_id: str
+    round: int
+    from_agent: Literal["buyer"] = "buyer"
+    to_agent: Literal["seller"] = "seller"
+    message_type: Literal["OFFER", "WITHDRAW"]
+    price: Optional[float] = None
+    message: str
+    conditions: list[str] = Field(default_factory=list)
+    closing_timeline_days: Optional[int] = None
+    in_reply_to: Optional[str] = None
+
+
+def _parse_strict_json_output(raw_text: str) -> BuyerStructuredOutput:
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Model output is not valid JSON: {error}") from error
+
+    try:
+        return BuyerStructuredOutput.model_validate(parsed)
+    except ValidationError as error:
+        raise ValueError(f"Model output failed BuyerStructuredOutput validation: {error}") from error
+
+
+def _format_seller_envelope_for_buyer(seller_message: dict, round_num: int) -> str:
+    price = seller_message.get("price")
+    price_str = f"${price:,.0f}" if isinstance(price, (int, float)) else "N/A"
+    conditions_list = seller_message.get("conditions")
+    conditions = ", ".join(conditions_list) if isinstance(conditions_list, list) and conditions_list else "Standard terms"
+    days = seller_message.get("closing_timeline_days") or 30
+    seller_type = seller_message.get("message_type", "COUNTER_OFFER")
+    seller_text = seller_message.get("message", "")
+    return f"""SELLER'S RESPONSE (Round {round_num}):
+
+Message type: {seller_type}
+Counter-offer price: {price_str}
+Conditions: {conditions}
+Closing timeline: {days} days
+Seller's message: "{seller_text}"
+
+This is round {round_num} of 5 maximum rounds.
+
+Please respond with your next offer or decision.
+Remember to call get_market_price and calculate_discount before making your offer.
+Respond with a JSON object containing: offer_price, message, reasoning, walk_away, walk_away_reason.
+Return ONLY JSON. No markdown fences. No prose outside JSON."""
 
 BUYER_INSTRUCTION = f"""You are an expert real estate buyer agent representing a client
 purchasing {PROPERTY_ADDRESS} (listed at ${LISTING_PRICE:,}).
@@ -98,7 +159,8 @@ RESPONSE FORMAT — always respond with valid JSON:
 }}
 
 CRITICAL: Always call MCP tools BEFORE deciding your offer price.
-CRITICAL: Never include commas in numeric values in JSON."""
+CRITICAL: Never include commas in numeric values in JSON.
+CRITICAL OUTPUT RULE: Return ONLY one JSON object with no extra text or markdown fences."""
 
 
 # ─── ADK Agent Factory ────────────────────────────────────────────────────────
@@ -129,6 +191,21 @@ class BuyerAgentADK:
         self._pricing_toolset: Optional[MCPToolset] = None
         self._round = 0
 
+    async def _append_state_delta(self, state_delta: dict) -> None:
+        if self._session_service is None:
+            return
+        session = await self._session_service.get_session(
+            app_name=APP_NAME,
+            user_id=self.user_id,
+            session_id=self.session_id,
+        )
+        if session is None:
+            return
+        await self._session_service.append_event(
+            session=session,
+            event=Event(author=self.user_id, actions=EventActions(stateDelta=state_delta)),
+        )
+
     async def __aenter__(self) -> "BuyerAgentADK":
         """
         Initialize the ADK agent with MCP tools.
@@ -136,7 +213,7 @@ class BuyerAgentADK:
         ADK TEACHING POINT:
         This is where MCPToolset connects to the MCP server, discovers
         all available tools, and makes them available to the LlmAgent.
-        The LlmAgent's Gemini model can then call these tools automatically.
+        The LlmAgent can then call these tools automatically.
         """
         print("   [Buyer ADK] Connecting to pricing MCP server...")
 
@@ -154,7 +231,7 @@ class BuyerAgentADK:
 
         # Initialize tools from the MCP server
         # ADK discovers available tools via MCP's list_tools protocol
-        # These tools are then formatted as Gemini function-calling tools
+        # These tools are then formatted for model function-calling
         tools = await self._pricing_toolset.get_tools()
 
         # Safe tool name extraction — handles empty list without IndexError
@@ -164,7 +241,7 @@ class BuyerAgentADK:
         # Create the LlmAgent with discovered MCP tools
         self._agent = LlmAgent(
             name="buyer_agent",
-            model=GEMINI_MODEL,
+            model=OPENAI_MODEL,
             description=f"Real estate buyer agent for {PROPERTY_ADDRESS}",
             instruction=BUYER_INSTRUCTION,
             tools=tools,
@@ -185,9 +262,10 @@ class BuyerAgentADK:
             app_name=APP_NAME,
             user_id=self.user_id,
             session_id=self.session_id,
+            state={"round": 0, "status": "negotiating", "last_message_type": "NONE"},
         )
 
-        print(f"   [Buyer ADK] Agent ready. Model: {GEMINI_MODEL}")
+        print(f"   [Buyer ADK] Agent ready. Model: {OPENAI_MODEL}")
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -215,6 +293,8 @@ class BuyerAgentADK:
 
         content = Content(parts=[Part(text=prompt)])
 
+        # ADK emits many events (tool call, tool result, partial text, final text).
+        # We keep collecting until the final response event is emitted.
         final_response = ""
         async for event in self._runner.run_async(
             user_id=self.user_id,
@@ -226,7 +306,7 @@ class BuyerAgentADK:
                 for tc in event.tool_calls:
                     print(f"   [Buyer ADK] Calling tool: {tc.function.name}({tc.function.arguments[:50]}...)")
 
-            # Capture final response
+            # Capture final response text parts only.
             if event.is_final_response() and event.content:
                 for part in event.content.parts:
                     if hasattr(part, 'text') and part.text:
@@ -234,11 +314,12 @@ class BuyerAgentADK:
 
         return final_response
 
-    async def make_initial_offer(self) -> ADKNegotiationMessage:
-        """Make the opening offer via ADK agent."""
+    async def make_initial_offer_envelope(self) -> dict:
+        """Make the opening offer and return A2A JSON envelope."""
         self._round = 1
         print(f"\n[Buyer ADK] Round {self._round}: Making initial offer...")
 
+        # Prompt intentionally instructs tool calls first so pricing is data-grounded.
         prompt = f"""You are making your INITIAL offer on {PROPERTY_ADDRESS} (listed at ${LISTING_PRICE:,}).
 
 INSTRUCTIONS:
@@ -247,42 +328,110 @@ INSTRUCTIONS:
 3. Based on this data, formulate your opening offer (start ~12% below asking)
 4. Return your response as JSON with: offer_price, message, reasoning, walk_away, conditions, closing_timeline_days
 
-This is Round 1 of 5. Make a strong opening offer backed by market data."""
+This is Round 1 of 5. Make a strong opening offer backed by market data.
+Return ONLY JSON. No markdown fences. No prose outside JSON."""
 
         raw_response = await self._run_agent(prompt)
         print(f"   [Buyer ADK] Raw response length: {len(raw_response)} chars")
 
-        # Parse the response into an ADKNegotiationMessage
-        message = parse_buyer_response(
-            raw_response=raw_response,
-            session_id=self.session_id,
-            round_num=self._round,
-        )
+        parsed = _parse_strict_json_output(raw_response)
 
-        print(f"   [Buyer ADK] Offer: ${message.payload.price:,.0f}")
-        return message
-
-    async def respond_to_counter(self, seller_message: ADKNegotiationMessage) -> ADKNegotiationMessage:
-        """Respond to a seller counter-offer."""
-        self._round = seller_message.round
-        print(f"\n[Buyer ADK] Round {self._round}: Responding to counter ${seller_message.payload.price:,.0f}...")
-
-        # Format the seller's A2A message as a prompt
-        prompt = format_seller_message_for_buyer(seller_message, self._round)
-
-        raw_response = await self._run_agent(prompt)
-        print(f"   [Buyer ADK] Raw response length: {len(raw_response)} chars")
-
-        message = parse_buyer_response(
-            raw_response=raw_response,
-            session_id=self.session_id,
-            round_num=self._round + 1,
-            in_reply_to=seller_message.message_id
-        )
-
-        if message.payload.price:
-            print(f"   [Buyer ADK] Next offer: ${message.payload.price:,.0f}")
+        if parsed.walk_away:
+            envelope = BuyerEnvelope(
+                session_id=self.session_id,
+                round=self._round,
+                message_type="WITHDRAW",
+                message=f"We are withdrawing from this negotiation. {parsed.walk_away_reason or 'Offer exceeds budget.'}",
+                conditions=parsed.conditions,
+                closing_timeline_days=parsed.closing_timeline_days,
+            )
         else:
-            print(f"   [Buyer ADK] Decision: {message.message_type}")
+            offer_price = parsed.offer_price or parsed.price
+            if offer_price is None:
+                raise ValueError("Structured output missing offer_price for non-withdrawal response.")
+            envelope = BuyerEnvelope(
+                session_id=self.session_id,
+                round=self._round,
+                message_type="OFFER",
+                price=float(offer_price),
+                message=parsed.message,
+                conditions=parsed.conditions or [
+                    "Contingent on home inspection",
+                    "Financing contingency (30 days)",
+                ],
+                closing_timeline_days=parsed.closing_timeline_days or 45,
+            )
 
-        return message
+        await self._append_state_delta(
+            {
+                "round": self._round,
+                "status": "buyer_walked" if envelope.message_type == "WITHDRAW" else "negotiating",
+                "last_message_type": envelope.message_type,
+                "last_offer_price": envelope.price,
+            }
+        )
+
+        if envelope.price is not None:
+            print(f"   [Buyer ADK] Offer: ${envelope.price:,.0f}")
+        else:
+            print(f"   [Buyer ADK] Decision: {envelope.message_type}")
+        return envelope.model_dump(mode="json")
+
+    async def respond_to_counter_envelope(self, seller_message: dict) -> dict:
+        """Respond to seller envelope and return buyer envelope JSON."""
+        self._round = int(seller_message.get("round", 1))
+        seller_price = seller_message.get("price") or 0
+        print(f"\n[Buyer ADK] Round {self._round}: Responding to counter ${float(seller_price):,.0f}...")
+
+        prompt = _format_seller_envelope_for_buyer(seller_message, self._round)
+
+        raw_response = await self._run_agent(prompt)
+        print(f"   [Buyer ADK] Raw response length: {len(raw_response)} chars")
+
+        parsed = _parse_strict_json_output(raw_response)
+        next_round = self._round + 1
+
+        if parsed.walk_away:
+            envelope = BuyerEnvelope(
+                session_id=self.session_id,
+                round=next_round,
+                message_type="WITHDRAW",
+                message=f"We are withdrawing from this negotiation. {parsed.walk_away_reason or 'Offer exceeds budget.'}",
+                conditions=parsed.conditions,
+                closing_timeline_days=parsed.closing_timeline_days,
+                in_reply_to=seller_message.get("message_id"),
+            )
+        else:
+            offer_price = parsed.offer_price or parsed.price
+            if offer_price is None:
+                raise ValueError("Structured output missing offer_price for non-withdrawal response.")
+            envelope = BuyerEnvelope(
+                session_id=self.session_id,
+                round=next_round,
+                message_type="OFFER",
+                price=float(offer_price),
+                message=parsed.message,
+                conditions=parsed.conditions or [
+                    "Contingent on home inspection",
+                    "Financing contingency (30 days)",
+                ],
+                closing_timeline_days=parsed.closing_timeline_days or 45,
+                in_reply_to=seller_message.get("message_id"),
+            )
+
+        await self._append_state_delta(
+            {
+                "round": next_round,
+                "status": "buyer_walked" if envelope.message_type == "WITHDRAW" else "negotiating",
+                "last_message_type": envelope.message_type,
+                "last_offer_price": envelope.price,
+            }
+        )
+
+        if envelope.price is not None:
+            print(f"   [Buyer ADK] Next offer: ${envelope.price:,.0f}")
+        else:
+            print(f"   [Buyer ADK] Decision: {envelope.message_type}")
+
+        return envelope.model_dump(mode="json")
+

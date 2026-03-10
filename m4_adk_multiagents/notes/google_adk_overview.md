@@ -375,7 +375,7 @@ negotiation_loop = LoopAgent(
 )
 ```
 
-In this repo's runnable orchestrator demo (`m4_adk_multiagents/bonus/adk_orchestrator_agents_demo.py`), we intentionally use this pattern with only two sub-agents (`buyer_agent`, `seller_agent`) so negotiation orchestration is explicit and easy to trace.
+In this repo, orchestration for Module 4 is handled by the HTTP A2A runner (`m4_adk_multiagents/a2a_protocol_http_orchestrator.py`), where buyer/seller turns are coordinated over networked A2A transport.
 
 Other orchestration patterns are still valid depending on use case:
 - `SequentialAgent`: pipeline steps like `research → validate → recommend`
@@ -874,7 +874,7 @@ buyer_agent = LlmAgent(
 | **Generator-Critic** | Agent A drafts, Agent B reviews via state | Quality-sensitive output requiring review cycles |
 | **Iterative Refinement** | `LoopAgent` with escalation signals until quality threshold met | Negotiation, code generation, writing tasks |
 
-**In our workshop, we use the Adversarial pattern** — two independent agents (buyer and seller) coordinated by the application (`m4_adk_multiagents/bonus/main_adk_multiagent.py`). This is not a standard ADK hierarchy — the agents don't delegate to each other. The coordinator logic in `m4_adk_multiagents/bonus/main_adk_multiagent.py` manages the turn loop manually.
+**In our workshop, we use the Adversarial pattern** — two independent agents (buyer and seller) coordinated by the HTTP orchestrator (`m4_adk_multiagents/a2a_protocol_http_orchestrator.py`). This is not a standard ADK hierarchy — the agents don't delegate to each other. The orchestrator loop manages turns and termination over A2A transport.
 
 ### Agent Hierarchy Design Principles
 
@@ -922,20 +922,15 @@ Speed                   Very fast           Fast
 Best for                ADK + MCP demos     Simple Python version
 ```
 
-### Getting Your Gemini API Key (Free)
+### API Key Setup for This Workshop
 
 ```bash
-# 1. Go to Google AI Studio: https://aistudio.google.com
-# 2. Sign in with Google account
-# 3. Click "Get API key"
-# 4. Create new API key (free, no credit card needed)
-
 # Set in environment
-export GOOGLE_API_KEY="AIza..."
+export OPENAI_API_KEY="sk-..."
 
 # In Python
 import os
-os.environ["GOOGLE_API_KEY"] = "AIza..."
+os.environ["OPENAI_API_KEY"] = "sk-..."
 ```
 
 ---

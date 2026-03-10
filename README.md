@@ -12,7 +12,7 @@ A **4-hour hands-on workshop** teaching modern AI agent frameworks through a con
 | **MCP** | Standard protocol for agents to access external tools | Agents query pricing/inventory servers via MCP |
 | **A2A** | Agent-to-Agent communication patterns | Module 4 uses true networked A2A protocol transport (`a2a-sdk`) |
 | **LangGraph** | Stateful multi-agent workflow orchestration | Module 3 is pure LangGraph state-driven multi-agent workflow |
-| **Google ADK** | Production-grade agent framework | Alternative implementation using Gemini |
+| **Google ADK** | Production-grade agent framework | Alternative implementation using OpenAI-backed agents |
 
 ---
 
@@ -23,8 +23,8 @@ A **4-hour hands-on workshop** teaching modern AI agent frameworks through a con
 
 | Party | Goal | Starting Position | Walk-Away |
 |---|---|---|---|
-| **Buyer Agent** (GPT-4o / Gemini) | Buy at lowest price | Offer $425,000 | Over $460,000 |
-| **Seller Agent** (GPT-4o / Gemini) | Sell at highest price | Counter $477,000 | Below $445,000 |
+| **Buyer Agent** (GPT-4o) | Buy at lowest price | Offer $425,000 | Over $460,000 |
+| **Seller Agent** (GPT-4o) | Sell at highest price | Counter $477,000 | Below $445,000 |
 
 The negotiation runs for a maximum of **5 rounds**. Agents use real market data (via MCP) to justify every offer.
 
@@ -63,15 +63,11 @@ negotiation_workshop/
 │
 ├── m4_adk_multiagents/                # MODULE 4 — Google ADK + true A2A protocol
 │   ├── README.md                      # Module guide for learners
-│   ├── messaging_adk.py               # ADK response parsing + session tracking
-│   ├── adk_a2a_types.py               # Module 4 ADK-native message model
-│   ├── buyer_adk.py                   # Buyer agent (Gemini 2.0 Flash via ADK)
-│   ├── seller_adk.py                  # Seller agent (Gemini 2.0 Flash via ADK)
+│   ├── buyer_adk.py                   # Buyer agent (OpenAI model via ADK)
+│   ├── seller_adk.py                  # Seller agent (OpenAI model via ADK)
 │   ├── a2a_protocol_seller_server.py  # True networked A2A protocol server (A2A SDK)
-│   ├── a2a_protocol_buyer_client_demo.py # True networked A2A protocol client demo
-│   ├── bonus/                         # Bonus demos (not core teaching)
-│   │   ├── main_adk_multiagent.py     # ADK agents in-process (no network, no A2A)
-│   │   └── adk_orchestrator_agents_demo.py # LoopAgent orchestration demo
+│   ├── a2a_protocol_http_orchestrator.py # Multi-round HTTP A2A orchestrator (ADK-native state)
+│   ├── a2a_protocol_buyer_client_demo.py # Single-turn A2A protocol client demo
 │   └── notes/
 │       ├── a2a_protocols.md           # Reference: A2A protocol deep dive
 │       ├── google_adk_overview.md     # Reference: Google ADK overview
@@ -93,7 +89,8 @@ negotiation_workshop/
 │
 ├── m3_langgraph_multiagents/main_langgraph_multiagent.py             # Entry point — Module 3 (OpenAI + LangGraph)
 ├── m4_adk_multiagents/a2a_protocol_seller_server.py                  # Entry point — Module 4 (A2A server)
-├── m4_adk_multiagents/a2a_protocol_buyer_client_demo.py              # Entry point — Module 4 (A2A client)
+├── m4_adk_multiagents/a2a_protocol_http_orchestrator.py              # Entry point — Module 4 (A2A orchestrator)
+├── m4_adk_multiagents/a2a_protocol_buyer_client_demo.py              # Entry point — Module 4 (single-turn demo)
 ├── INSTRUCTOR_GUIDE.md                # 4-hour workshop script for instructors
 ├── .env.example                       # Copy to .env and add your API keys
 └── requirements.txt
@@ -114,7 +111,7 @@ Each module has a `notes/` subfolder with reference documentation for that modul
 | | `google_adk_overview.md` — Google ADK overview |
 | | `langgraph_adk_a2a_comparison.md` — cross-module comparison (M3 vs M4) |
 
-Module 4 has three notes because it spans two distinct topics: the A2A protocol standard and the Google ADK runtime.
+Module 4 has three notes because it spans two distinct topics: the A2A protocol standard and the ADK runtime.
 
 ---
 
@@ -173,7 +170,7 @@ source .env
 **Or export directly:**
 ```bash
 export OPENAI_API_KEY=sk-...       # Module 3 (simple version)
-export GOOGLE_API_KEY=AIza...      # Module 4 (ADK version, FREE)
+export OPENAI_API_KEY=sk-...       # Module 4 (ADK version)
 export GITHUB_TOKEN=ghp_...        # Module 2 GitHub demo (optional)
 ```
 
@@ -192,13 +189,11 @@ python m2_mcp/pricing_server.py --sse --port 8001  # SSE transport mode
 # MODULE 3: Full simple version (needs OPENAI_API_KEY)
 python m3_langgraph_multiagents/main_langgraph_multiagent.py
 
-# MODULE 4: True A2A protocol demo (needs GOOGLE_API_KEY, free)
+# MODULE 4: True A2A protocol demo (needs OPENAI_API_KEY)
 python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102
+python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
+# Optional: single-turn request/response demo
 python m4_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
-# Bonus (in-process, no network):
-python m4_adk_multiagents/bonus/main_adk_multiagent.py
-python m4_adk_multiagents/bonus/adk_orchestrator_agents_demo.py --check
-python m4_adk_multiagents/bonus/adk_orchestrator_agents_demo.py --run --max-iterations 3
 ```
 
 ### 6. Exercise 7 SSE Prerequisite
@@ -248,20 +243,20 @@ python m3_langgraph_multiagents/main_langgraph_multiagent.py
 ### ADK Version Flow
 
 ```
-python m4_adk_multiagents/bonus/main_adk_multiagent.py
+python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
     │
-    └── run_adk_negotiation() [manual coordination loop]
+    └── A2A HTTP orchestration loop
           │
           ├── BuyerAgentADK (async context manager)
           │     ├── MCPToolset → m2_mcp/pricing_server.py (discovers tools)
-          │     ├── LlmAgent(model="gemini-2.0-flash", tools=[...])
+          │     ├── LlmAgent(model="gpt-4o", tools=[...])
           │     └── Runner → executes agent turns
-          │           Agent autonomously calls MCP tools → Gemini decides
+          │           Agent autonomously calls MCP tools → model decides
           │
           └── SellerAgentADK (async context manager)
                 ├── MCPToolset → m2_mcp/pricing_server.py
                 ├── MCPToolset → m2_mcp/inventory_server.py (seller ONLY)
-                ├── LlmAgent(model="gemini-2.0-flash", tools=[...merged...])
+                ├── LlmAgent(model="gpt-4o", tools=[...merged...])
                 └── Runner → executes agent turns
 ```
 
@@ -306,7 +301,7 @@ See `INSTRUCTOR_GUIDE.md` for the full 4-hour script, talking points, and debrie
 | 0:45–1:30 | M2 | MCP with GitHub | `m2_mcp/github_demo_client.py` |
 | 1:30–2:05 | M2 | Custom MCP servers (break at 1:30) | `m2_mcp/pricing_server.py` |
 | 2:05–2:50 | M3 | Pure LangGraph multi-agent flow + full simple run | `m3_langgraph_multiagents/`, `m3_langgraph_multiagents/main_langgraph_multiagent.py` |
-| 2:50–3:50 | M4 | True A2A protocol demos (Google ADK backing) | `m4_adk_multiagents/a2a_protocol_seller_server.py`, `m4_adk_multiagents/a2a_protocol_buyer_client_demo.py` |
+| 2:50–3:50 | M4 | True A2A protocol demos (ADK backing) | `m4_adk_multiagents/a2a_protocol_seller_server.py`, `m4_adk_multiagents/a2a_protocol_buyer_client_demo.py` |
 | 3:50–4:00 | Wrap | Exercises + Q&A | `exercises/code_solutions/README.md` |
 
 ---
@@ -415,7 +410,7 @@ See `exercises/solutions.md` for the complete mediator implementation.
 | `langgraph_flow.py` | `create_negotiation_graph`, `run_negotiation` | LangGraph workflow |
 | `buyer_adk.py` | `BuyerAgentADK` | ADK buyer with MCPToolset |
 | `seller_adk.py` | `SellerAgentADK` | ADK seller with dual MCPToolsets |
-| `messaging_adk.py` | `NegotiationSession`, `parse_*` | ADK message parsing/session utilities |
+| `a2a_protocol_http_orchestrator.py` | `ADKOrchestrationState`, round loop | HTTP A2A orchestration + ADK session state |
 
 ---
 
@@ -431,10 +426,9 @@ pip install mcp
 export OPENAI_API_KEY=sk-your-actual-key
 ```
 
-**`google.api_core.exceptions.PermissionDenied` from Gemini**
+**`AuthenticationError` / provider auth failure in ADK runs**
 ```bash
-export GOOGLE_API_KEY=AIza-your-actual-key
-# Get free key at: https://aistudio.google.com
+export OPENAI_API_KEY=sk-your-actual-key
 ```
 
 **`FileNotFoundError` running MCP servers**

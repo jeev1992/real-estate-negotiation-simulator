@@ -1075,7 +1075,7 @@ def route_after_triage(state: SupportState) -> str:
 """
 Customer Support Triage System — Google ADK version.
 Run: python exercises/code_solutions/ex12_support_triage_adk_runner.py
-Requires: GOOGLE_API_KEY
+Requires: OPENAI_API_KEY
 """
 import asyncio
 import os
@@ -1089,7 +1089,7 @@ from google.genai.types import Content, Part
 
 billing_agent = LlmAgent(
     name="billing_agent",
-    model="gemini-2.0-flash",
+    model="gpt-4o",
     instruction=(
         "You are a billing support specialist at a SaaS company. "
         "You handle questions about charges, refunds, invoices, subscriptions, "
@@ -1102,7 +1102,7 @@ billing_agent = LlmAgent(
 
 technical_agent = LlmAgent(
     name="technical_agent",
-    model="gemini-2.0-flash",
+    model="gpt-4o",
     instruction=(
         "You are a technical support specialist at a SaaS company. "
         "You handle bugs, errors, crashes, feature questions, and system issues. "
@@ -1114,7 +1114,7 @@ technical_agent = LlmAgent(
 
 general_agent = LlmAgent(
     name="general_agent",
-    model="gemini-2.0-flash",
+    model="gpt-4o",
     instruction=(
         "You are a friendly general support agent at a SaaS company. "
         "You handle account questions, how-to guides, and general inquiries. "
