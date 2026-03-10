@@ -781,6 +781,7 @@ If you want the **Google ADK true protocol A2A** version in this repo, run:
 
 ```bash
 python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102
+python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
 python m4_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
 ```
 

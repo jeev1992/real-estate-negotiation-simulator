@@ -85,6 +85,7 @@ class SellerEnvelope(BaseModel):
 
 
 def _parse_strict_json_output(raw_text: str) -> SellerStructuredOutput:
+    # Fail fast on malformed model output to keep envelope parsing deterministic.
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError as error:
@@ -195,6 +196,7 @@ class SellerAgentADK:
         self._round = 0
 
     async def _append_state_delta(self, state_delta: dict) -> None:
+        # Persist per-turn seller state so orchestration/debug views stay explainable.
         if self._session_service is None:
             return
         session = await self._session_service.get_session(
@@ -314,6 +316,8 @@ class SellerAgentADK:
                     if hasattr(part, 'text') and part.text:
                         final_response += part.text
 
+        print("   [Seller ADK] Raw response text:")
+        print(final_response)
         return final_response
 
     async def respond_to_offer_envelope(self, buyer_message: dict) -> dict:

@@ -36,12 +36,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# Load environment from repo root so this file works even when launched from subfolders.
 load_dotenv(REPO_ROOT / ".env")
 
 from m4_adk_multiagents.buyer_adk import BuyerAgentADK
 
 
 class SellerEnvelope(BaseModel):
+    # Envelope schema expected from seller A2A responses.
     session_id: str
     round: int
     from_agent: Literal["seller"]
@@ -55,6 +57,7 @@ class SellerEnvelope(BaseModel):
 
 
 def _extract_texts(obj: Any) -> list[str]:
+    # A2A SDK responses are nested; we flatten all text parts so we can parse envelopes.
     texts: list[str] = []
     if isinstance(obj, dict):
         for key, value in obj.items():
@@ -69,6 +72,7 @@ def _extract_texts(obj: Any) -> list[str]:
 
 
 def _extract_first_seller_envelope(payload: dict[str, Any]) -> dict[str, Any]:
+    # Iterate through all text parts and return the first valid seller envelope.
     for text in _extract_texts(payload):
         try:
             candidate = json.loads(text)
@@ -83,6 +87,7 @@ def _extract_first_seller_envelope(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class ADKOrchestrationState:
+    # Thin wrapper around ADK SessionService used as orchestration state store.
     def __init__(self, session_id: str):
         self.session_id = session_id
         self.app_name = "a2a_http_orchestrator"
@@ -134,6 +139,7 @@ async def main() -> None:
 
     session_id = args.session or f"a2a_http_{uuid.uuid4().hex[:8]}"
     state = ADKOrchestrationState(session_id=session_id)
+    # Initialize ADK state once for the full negotiation run.
     await state.initialize(max_rounds=args.rounds)
 
     print(f"\nSession: {session_id}")
@@ -142,6 +148,7 @@ async def main() -> None:
 
     async with BuyerAgentADK(session_id=f"{session_id}_buyer") as buyer:
         async with httpx.AsyncClient(timeout=45.0) as http_client:
+            # Discover seller via Agent Card before sending the first message.
             resolver = A2ACardResolver(httpx_client=http_client, base_url=args.seller_url)
             card = await resolver.get_agent_card()
             client = A2AClient(httpx_client=http_client, agent_card=card)
@@ -151,6 +158,7 @@ async def main() -> None:
             agreed_price: Optional[float] = None
 
             for round_num in range(1, args.rounds + 1):
+                # Buyer turn: initial offer on round 1, then responses to seller counters.
                 if round_num == 1:
                     buyer_message = await buyer.make_initial_offer_envelope()
                 else:
@@ -173,6 +181,7 @@ async def main() -> None:
                     status = "buyer_walked"
                     break
 
+                # Seller turn happens over the network through A2A JSON-RPC.
                 request = SendMessageRequest(
                     id=f"req_{uuid.uuid4().hex[:8]}",
                     params=MessageSendParams(
@@ -186,6 +195,7 @@ async def main() -> None:
 
                 response = await client.send_message(request)
                 dumped = response.model_dump(mode="json")
+                # Parse first valid seller envelope out of potentially verbose SDK payload.
                 seller_message = _extract_first_seller_envelope(dumped)
                 last_seller = seller_message
 
@@ -212,10 +222,12 @@ async def main() -> None:
                 if status != "negotiating":
                     break
 
+            # If loop ended without a terminal message, mark deadlock at max rounds.
             if status == "negotiating":
                 status = "deadlocked"
                 await state.update({"status": status})
 
+            # Print ADK session state so learners can see persisted orchestration memory.
             current = await state.read_state()
             print("\n=== A2A ORCHESTRATION RESULT ===")
             print(f"Status: {status}")

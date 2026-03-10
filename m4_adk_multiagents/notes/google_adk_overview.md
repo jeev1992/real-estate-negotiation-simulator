@@ -16,7 +16,7 @@ See also: [LangGraph vs Google ADK vs A2A](langgraph_adk_a2a_comparison.md) for 
 7. [Session and Memory Management](#7-session-and-memory-management)
 8. [The Agent Lifecycle](#8-the-agent-lifecycle)
 9. [Multi-Agent in ADK](#9-multi-agent-in-adk)
-10. [Gemini as the LLM Backend](#10-gemini-as-the-llm-backend)
+10. [Model Provider Choices in ADK](#10-model-provider-choices-in-adk)
 11. [Our ADK Implementation](#11-our-adk-implementation)
 12. [ADK vs LangGraph vs Simple Python](#12-adk-vs-langgraph-vs-simple-python)
 13. [Common Misconceptions](#13-common-misconceptions)
@@ -51,13 +51,13 @@ AI AGENT FRAMEWORKS (2025):
 │ agents          │  │ agent patterns  │  │ purpose         │
 │                 │  │                 │  │                 │
 │ Best with:      │  │ Best with:      │  │ Best with:      │
-│ Gemini + MCP    │  │ GPT models      │  │ Any model       │
+│ MCP + tool-use  │  │ GPT models      │  │ Any model       │
 └────────┬────────┘  └─────────────────┘  └─────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                     MODEL LAYER                             │
-│  Gemini 2.0 Flash (free tier) | Gemini 1.5 Pro | etc.      │
+│  OpenAI / Gemini / other provider-supported models         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -162,7 +162,7 @@ def get_market_price(address: str) -> dict:
 # 2. Create the agent (one clean definition)
 agent = LlmAgent(
     name="buyer_agent",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     description="A real estate buyer agent",
     instruction="You are a buyer agent. Your goal is to purchase the property at the best price.",
     tools=[FunctionTool(get_market_price)]
@@ -227,7 +227,7 @@ agent = LlmAgent(
     description="Real estate buyer",       # For sub-agent discovery
 
     # Intelligence
-    model="gemini-2.0-flash",             # The LLM powering this agent
+    model="openai/gpt-4o",                # Provider-style model id in this workshop
     instruction="""
         You are a buyer agent representing a client who wants to purchase
         742 Evergreen Terrace, Austin, TX 78701.
@@ -310,14 +310,14 @@ session = await session_service.get_session(
 
 ### LlmAgent (Most Common)
 
-The standard agent type. Uses a Gemini (or compatible) LLM for reasoning.
+The standard agent type. Uses a provider-supported LLM for reasoning.
 
 ```python
 from google.adk.agents import LlmAgent
 
 buyer = LlmAgent(
     name="buyer",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     instruction="...",
     tools=[...]
 )
@@ -433,7 +433,7 @@ from google.adk.tools.built_in import (
 
 agent = LlmAgent(
     name="research_agent",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     tools=[google_search, code_execution]  # Built-in tools, no configuration needed
 )
 ```
@@ -448,7 +448,7 @@ from google.adk.tools import AgentTool
 # Define a specialist agent
 property_research_agent = LlmAgent(
     name="property_research",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     instruction="Research properties and provide detailed analysis.",
     tools=[pricing_mcp_tool, google_search]
 )
@@ -456,7 +456,7 @@ property_research_agent = LlmAgent(
 # Use specialist as a tool in main agent
 buyer_agent = LlmAgent(
     name="buyer",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     instruction="You are a buyer agent. Use property_research when you need market data.",
     tools=[
         AgentTool(agent=property_research_agent),  # Delegate to specialist
@@ -506,7 +506,7 @@ async def create_buyer_with_mcp():
 
         agent = LlmAgent(
             name="buyer_agent",
-            model="gemini-2.0-flash",
+            model="openai/gpt-4o",
             instruction="You are a real estate buyer...",
             tools=[*pricing_tools, *github_tools]
             # Agent now has access to ALL tools from BOTH MCP servers!
@@ -537,7 +537,7 @@ pricing_toolset = MCPToolset(
 │                    BUYER AGENT (ADK LlmAgent)                  │
 │                                                                 │
 │  Instruction: "You are a buyer agent for 742 Evergreen..."      │
-│  Model: gemini-2.0-flash                                        │
+│  Model: openai/gpt-4o                                            │
 │                                                                 │
 │  Available Tools (from MCP):                                    │
 │    • get_market_price(address, property_type)                   │
@@ -546,7 +546,7 @@ pricing_toolset = MCPToolset(
 │                                                                 │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
-                            │ When Gemini decides to call a tool:
+                            │ When the model decides to call a tool:
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
@@ -678,14 +678,14 @@ Understanding the ADK agent lifecycle helps debug production issues.
 
 4. AGENT REASONING LOOP
    ──────────────────────
-   • ADK sends assembled context to Gemini
-   • Gemini returns either:
+    • ADK sends assembled context to the model
+    • The model returns either:
      a) Final text response → go to step 6
      b) Tool call request → go to step 5
 
 5. TOOL EXECUTION
    ─────────────────
-   • ADK receives tool call from Gemini
+    • ADK receives tool call from the model
    • ADK validates arguments against schema
    • ADK executes the tool function
    • ADK adds result to conversation context
@@ -716,14 +716,14 @@ ADK supports multi-agent systems through sub-agents and agent tools.
 # Specialist agents
 property_researcher = LlmAgent(
     name="property_researcher",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     description="Researches property market data and comparables",
     tools=[pricing_mcp_tools]
 )
 
 legal_advisor = LlmAgent(
     name="legal_advisor",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     description="Reviews contract terms and conditions",
     tools=[legal_database_tool]
 )
@@ -731,7 +731,7 @@ legal_advisor = LlmAgent(
 # Coordinator agent
 buyer_coordinator = LlmAgent(
     name="buyer_coordinator",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     instruction="""
         You coordinate the real estate purchase process.
         Delegate to specialist agents:
@@ -750,14 +750,14 @@ buyer_coordinator = LlmAgent(
 
 buyer_agent = LlmAgent(
     name="buyer",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     instruction="You are a buyer agent. Goal: buy low.",
     tools=[pricing_tools]
 )
 
 seller_agent = LlmAgent(
     name="seller",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     instruction="You are a seller agent. Goal: sell high.",
     tools=[pricing_tools, inventory_tools]
 )
@@ -790,7 +790,7 @@ The simplest pattern: agents read and write to `session.state`. No direct calls 
 # Agent 1 writes a result to session state (via output_key)
 buyer_agent = LlmAgent(
     name="buyer",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     instruction="Research the property and record your offer.",
     output_key="buyer_offer"   # LlmAgent auto-writes final response here
 )
@@ -798,7 +798,7 @@ buyer_agent = LlmAgent(
 # Agent 2 reads it via template substitution
 seller_agent = LlmAgent(
     name="seller",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     instruction="The buyer has offered {buyer_offer}. Respond with a counter-offer.",
     output_key="seller_counter"
 )
@@ -814,7 +814,7 @@ An `LlmAgent` can dynamically invoke another agent via a generated function call
 # The coordinator dynamically delegates based on what's needed
 coordinator = LlmAgent(
     name="coordinator",
-    model="gemini-2.0-flash",
+    model="openai/gpt-4o",
     instruction="""
         You coordinate property research.
         - Use property_researcher for MLS data and comparable sales
@@ -890,36 +890,28 @@ From the ADK docs:
 
 ---
 
-## 10. Gemini as the LLM Backend
+## 10. Model Provider Choices in ADK
 
-ADK is designed to work best with Google's Gemini models.
+ADK supports multiple model providers. In this workshop's Module 4 implementation,
+we configure ADK agents with provider-style OpenAI model IDs (for example `openai/gpt-4o`).
 
-### Available Gemini Models in ADK
+### Example Provider-Style IDs
 
 ```python
-# Free tier (no API cost for limited usage)
-model = "gemini-2.0-flash"         # Recommended for workshop
-model = "gemini-1.5-flash"         # Also free tier
-model = "gemini-1.5-flash-8b"      # Fastest, smallest, cheapest
+# OpenAI via ADK provider-style id
+model = "openai/gpt-4o"
 
-# Paid tier
-model = "gemini-1.5-pro"           # Most capable
-model = "gemini-2.0-pro"           # Newest Pro model
+# Other provider-style ids are also possible when configured in your ADK environment
+# (for example, Gemini provider ids).
 ```
 
-### Gemini vs GPT-4o for Agents
+### Practical takeaway for this repo
 
 ```
-Feature                 Gemini 2.0 Flash    GPT-4o
-──────────────────────  ──────────────────  ─────────────────────
-Cost (as of 2025)       Free tier available  Paid per token
-Context window          1M tokens           128K tokens
-Tool calling            ✅ Native           ✅ Native
-Function calling        ✅ Native           ✅ Native
-MCP support (via ADK)   ✅ Best integration  Possible via LangChain
-Multimodal              ✅ Yes              ✅ Yes
-Speed                   Very fast           Fast
-Best for                ADK + MCP demos     Simple Python version
+Framework layer:   Google ADK (agents, sessions, tools, runners)
+Model provider:    OpenAI (configured as openai/gpt-4o)
+Tool protocol:     MCP (pricing/inventory servers)
+Agent protocol:    A2A (HTTP JSON-RPC transport in Module 4)
 ```
 
 ### API Key Setup for This Workshop
@@ -985,7 +977,7 @@ async def create_buyer_agent() -> LlmAgent:
 
     agent = LlmAgent(
         name="buyer_agent",
-        model="gemini-2.0-flash",
+        model="openai/gpt-4o",
         description="Real estate buyer agent for 742 Evergreen Terrace",
         instruction=BUYER_INSTRUCTION,
         tools=tools
@@ -1099,7 +1091,7 @@ We implement both to compare:
 | **SequentialAgent** | Run sub-agents in order |
 | **ParallelAgent** | Run sub-agents concurrently |
 | **LoopAgent** | Run sub-agent in a loop |
-| **Free tier model** | gemini-2.0-flash |
+| **Workshop model id** | openai/gpt-4o |
 
 ---
 

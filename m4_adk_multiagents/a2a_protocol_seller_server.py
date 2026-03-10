@@ -43,6 +43,7 @@ from m4_adk_multiagents.seller_adk import SellerAgentADK
 
 
 class BuyerEnvelope(BaseModel):
+    # Contract the server expects from buyer side over HTTP A2A.
     session_id: str
     round: int
     from_agent: str
@@ -56,6 +57,7 @@ class BuyerEnvelope(BaseModel):
 
 
 class SellerSessionRegistry:
+    # Reuses one SellerAgentADK instance per session_id for multi-turn continuity.
     def __init__(self):
         self._agents: dict[str, SellerAgentADK] = {}
         self._lock = asyncio.Lock()
@@ -66,12 +68,14 @@ class SellerSessionRegistry:
             if existing is not None:
                 return existing
 
+            # Lazily create seller ADK agent the first time this session appears.
             agent = SellerAgentADK(session_id=f"seller_a2a_{session_id}")
             await agent.__aenter__()
             self._agents[session_id] = agent
             return agent
 
     async def close_all(self) -> None:
+        # Graceful server shutdown: close all managed ADK agent contexts.
         async with self._lock:
             agents = list(self._agents.values())
             self._agents.clear()
@@ -125,6 +129,7 @@ class SellerADKA2AExecutor(AgentExecutor):
         incoming_text = context.get_user_input().strip()
 
         try:
+            # Validate incoming JSON text as a buyer envelope contract.
             parsed_buyer = BuyerEnvelope.model_validate(json.loads(incoming_text))
 
             # One-turn processing over HTTP; continuity is preserved per session_id.
@@ -141,6 +146,7 @@ class SellerADKA2AExecutor(AgentExecutor):
             await updater.complete(agent_message)
 
         except (json.JSONDecodeError, ValidationError) as error:
+            # Contract violations are returned as task failures with explicit message.
             agent_message = updater.new_agent_message(
                 parts=[TextPart(text=f"ERROR: Invalid buyer envelope. {error}")],
                 metadata={"protocol": "a2a", "runtime": "adk-openai", "status": "error"},
@@ -174,6 +180,7 @@ async def main() -> None:
         raise SystemExit(1)
 
     base_url = f"http://{args.host}:{args.port}"
+    # Agent card is the discovery metadata clients fetch before messaging.
     card = _build_agent_card(base_url)
 
     handler = DefaultRequestHandler(

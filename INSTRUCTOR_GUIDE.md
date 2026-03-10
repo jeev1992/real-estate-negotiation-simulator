@@ -71,6 +71,98 @@ Notes live inside each module's `notes/` subfolder.
 
 ---
 
+## PRE-CODE CONCEPT PRIMER (M3 + M4)
+
+Use this as a 8–12 minute primer before opening Module 3/4 code.
+
+### Shared baseline (teach before both modules)
+
+- Agent = **model + tools + memory + control flow + termination logic**
+- MCP = agent ↔ external tools/data; A2A = agent ↔ agent communication
+- Orchestration is separate from both MCP and A2A (it controls turn-taking and stopping)
+- Negotiation state vocabulary: round, status, terminal outcomes (`agreed`, `deadlocked`, `buyer_walked`, `seller_rejected`)
+- Bounded loops and terminal checks are non-negotiable in production systems
+
+### LangGraph concepts to introduce before showing Module 3 code
+
+1. `StateGraph` mental model
+  - Nodes do work
+  - Edges route
+  - State is the shared contract
+
+2. State design discipline
+  - Immutable context vs mutable turn state
+  - Keep explicit fields for routing/termination (don't hide critical values in free-text)
+
+3. Reducers (`Annotated[..., operator.add]`)
+  - Append vs overwrite behavior for history
+  - Why this avoids losing previous messages
+
+4. Conditional routing
+  - Router functions are deterministic control logic
+  - This is where termination guarantees are encoded
+
+5. Cycles with guarantees
+  - Loops are safe only with explicit terminal checks + max rounds
+
+### Google ADK concepts to introduce before showing Module 4 code
+
+1. ADK runtime primitives
+  - `LlmAgent` (agent definition)
+  - `Runner` (executes turns)
+  - `SessionService` (state/memory across turns)
+
+2. Tool abstraction via `MCPToolset`
+  - Tool discovery and execution loop handled by ADK
+  - Model decides when to call tools
+
+3. Session memory and state deltas
+  - Per-session continuity
+  - Event/state updates for observability and debugging
+
+4. Provider model clarity (important for this workshop)
+  - Google ADK is a framework layer
+  - In this repo, ADK uses OpenAI model IDs (`openai/gpt-4o`)
+
+5. Protocol boundary discipline
+  - Strict JSON envelopes at A2A boundary
+  - Parse/validate early; fail fast on malformed payloads
+
+### While showing Module 3 code (teaching flow)
+
+1. Start with state schema (`TypedDict`)
+2. Then node functions (partial state updates)
+3. Then router functions (termination logic)
+4. Then graph assembly (`add_node`, `add_edge`, `add_conditional_edges`, `compile`)
+
+Ask repeatedly:
+> "Where is termination guaranteed in this flow?"
+
+### While showing Module 4 code (teaching flow)
+
+1. Start at the network boundary first
+  - Agent Card discovery
+  - HTTP JSON-RPC `message/send`
+  - Envelope contract
+
+2. Then show ADK internals
+  - buyer/seller ADK agent setup
+  - MCP tool usage
+  - session state continuity
+
+3. Emphasize decoupling
+  - No shared in-process graph state between buyer/seller
+  - Interop via protocol contract, not imports
+
+### Suggested mini-sequence (if learners need extra framing)
+
+- 3–4 min: MCP vs A2A vs orchestration recap
+- 4–5 min: LangGraph control-flow mental model
+- 4–5 min: ADK runtime + provider model clarification
+- Then open code and map each concept directly to concrete lines
+
+---
+
 ## MODULE-BY-MODULE SCRIPT
 
 ---
@@ -85,15 +177,22 @@ Notes live inside each module's `notes/` subfolder.
 > There's a $15K zone of agreement — the question is whether the agents find it,
 > and how cleanly the system terminates either way.
 >
-> We're building this three different ways so you can see the same problem solved
-> with increasing sophistication: a broken naive version, then OpenAI + LangGraph,
-> then OpenAI + Google ADK. Same negotiation, same MCP servers, different frameworks."
+> We're building this progressively across four modules so you can see three
+> implementation styles: a broken naive baseline, then OpenAI + LangGraph,
+> then OpenAI + Google ADK over A2A. Same negotiation, same MCP servers, different frameworks."
+
+**EXPLAIN CLEARLY WHAT EACH MODULE DOES (say this explicitly):**
+- **Module 1 (`m1_baseline/`)**: intentionally naive baseline that exposes failure modes (fragile parsing, weak stopping logic), then introduces FSM-based termination guarantees.
+- **Module 2 (`m2_mcp/`)**: adds MCP so agents can call external tools for real data (pricing/inventory) instead of relying on hardcoded prompt knowledge.
+- **Module 3 (`m3_langgraph_multiagents/`)**: adds LangGraph orchestration (shared state + node/edge routing + explicit end conditions) for reliable in-process multi-agent control flow.
+- **Module 4 (`m4_adk_multiagents/`)**: moves to networked A2A over HTTP, with ADK-backed buyer/seller agents behind protocol boundaries (Agent Card discovery + JSON-RPC messaging).
 
 **SHOW:** README.md — architecture diagram.
 
 **KEY TALKING POINTS:**
 - Every layer of the architecture solves a specific failure mode from the naive version
 - MCP = agent ↔ external data. A2A = agent ↔ agent. LangGraph = workflow orchestration.
+- Google ADK is the agent framework (not a Gemini-only wrapper). In this workshop's ADK code, we use OpenAI models (`openai/gpt-4o`).
 - Why real estate: concrete domain, clear adversarial agents, obvious information asymmetry
 
 ---
@@ -636,6 +735,10 @@ as independent HTTP services, communicating over the A2A protocol standard.
 > This module shows the exact same negotiation — but now the seller is an HTTP server
 > and the buyer calls it over the network."
 
+**IMPORTANT CLARIFICATION (say this explicitly):**
+> "Google ADK is the framework layer. It can run different LLM providers.
+> In our code here, ADK is configured to use OpenAI (`openai/gpt-4o`) — not Gemini."
+
 **DRAW the architecture shift:**
 ```
 MODULE 3 (same process):
@@ -1100,9 +1203,6 @@ Terminal 2: a2a_protocol_buyer_client_demo.py
        | 2. A2ACardResolver.get_agent_card()  -> GET /.well-known/agent-card.json
        | 3. A2AClient.send_message()          -> POST / (message/send JSON-RPC)
        | 4. receive counter-offer in response <-
-
-BONUS (in-process, no network):
-  bonus/main_adk_multiagent.py — same ADK agents, manual loop, no A2A protocol
 
 MODULE 1: BASELINE (shows what breaks WITHOUT modules 2-4)
 ```

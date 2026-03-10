@@ -78,7 +78,7 @@ This is the full A2A loop over HTTP (buyer turn -> seller turn -> repeat until t
 
 **What makes it ADK-native:**
 - Round/status tracking is stored in ADK `InMemorySessionService` state
-- Buyer/seller exchange strict JSON envelopes over A2A (no `ADKNegotiationMessage` conversion in HTTP path)
+- Buyer/seller exchange strict JSON envelopes over A2A
 - Boundary parsing uses strict `json.loads` fail-fast behavior (no manual JSON scraping)
 
 ---

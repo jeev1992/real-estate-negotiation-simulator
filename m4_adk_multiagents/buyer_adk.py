@@ -90,6 +90,7 @@ class BuyerEnvelope(BaseModel):
 
 
 def _parse_strict_json_output(raw_text: str) -> BuyerStructuredOutput:
+    # Fail fast on malformed model output to keep protocol boundaries strict.
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError as error:
@@ -192,6 +193,7 @@ class BuyerAgentADK:
         self._round = 0
 
     async def _append_state_delta(self, state_delta: dict) -> None:
+        # Persist lightweight turn metadata in ADK session state for observability.
         if self._session_service is None:
             return
         session = await self._session_service.get_session(
@@ -312,6 +314,8 @@ class BuyerAgentADK:
                     if hasattr(part, 'text') and part.text:
                         final_response += part.text
 
+        print("   [Buyer ADK] Raw response text:")
+        print(final_response)
         return final_response
 
     async def make_initial_offer_envelope(self) -> dict:

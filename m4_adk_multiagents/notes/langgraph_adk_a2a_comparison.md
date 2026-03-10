@@ -19,6 +19,8 @@
 
 Google ADK provides built-in orchestrator agent types for composing multi-agent workflows.
 
+In this workshop's Module 4, we use ADK primarily as the **agent runtime layer** (`LlmAgent` + `MCPToolset` + `Runner`) behind an A2A HTTP boundary, not as an in-process ADK orchestrator hierarchy.
+
 ### Built-in agent/orchestrator patterns
 
 - `SequentialAgent` — runs sub-agents one after another (pipeline)
@@ -62,7 +64,8 @@ Practical tradeoff:
 | State management | `StateGraph` shared state | Session + `InvocationContext` |
 | Complexity | More setup, more explicit | Simpler defaults, less explicit flow surface |
 
-Both are in-process, single-framework orchestration approaches when used inside one application/runtime.
+Both are in-process, single-framework orchestration approaches **when** you choose to orchestrate inside one runtime.
+In Module 4, orchestration is intentionally moved to an HTTP A2A loop so buyer and seller can run as independent networked services.
 
 ---
 
@@ -72,7 +75,7 @@ A2A (Agent-to-Agent) is Google’s open protocol for cross-framework, cross-syst
 
 ### Key protocol concepts
 
-- Each agent publishes an Agent Card (`/.well-known/agent.json`) describing capabilities
+- Each agent publishes an Agent Card (`/.well-known/agent-card.json`) describing capabilities
 - Agents exchange standardized task requests/responses (JSON-RPC style)
 - Any framework can participate (ADK, LangGraph, CrewAI, custom) if it implements the protocol
 
@@ -115,9 +118,9 @@ You can have:
 
 - `m4_adk_multiagents/buyer_adk.py`
 - `m4_adk_multiagents/seller_adk.py`
-  - `LlmAgent` + `MCPToolset` + `Runner`
+  - `LlmAgent` + `MCPToolset` + `Runner` (OpenAI model via ADK provider-style id)
 - `m4_adk_multiagents/a2a_protocol_http_orchestrator.py`
-  - Buyer/seller orchestration loop with ADK session-state tracking
+  - HTTP buyer/seller orchestration loop with ADK session-state tracking
 
 ### A2A side
 
@@ -130,6 +133,7 @@ You can have:
 ## 7. Key Takeaways
 
 - LangGraph = explicit graph-based orchestration, single framework
-- Google ADK = hierarchical agent composition, single framework
+- Google ADK = agent runtime framework (can be hierarchical orchestration, or standalone agents behind protocols)
 - A2A = interoperability protocol for cross-framework, cross-system communication
+- Module 4 approach in this repo = ADK-backed buyer/seller agents + HTTP A2A boundary + orchestrator loop
 - A2A is complementary to LangGraph/ADK orchestration, not a replacement

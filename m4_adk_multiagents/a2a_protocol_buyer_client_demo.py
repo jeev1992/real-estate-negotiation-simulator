@@ -63,6 +63,7 @@ async def main() -> None:
     async with BuyerAgentADK(session_id=f"buyer_a2a_{uuid.uuid4().hex[:8]}") as buyer:
         offer = await buyer.make_initial_offer_envelope()
 
+    # Send structured envelope text across A2A boundary.
     offer_text = json.dumps(offer)
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:
@@ -95,6 +96,7 @@ async def main() -> None:
     print(f"Buyer offer sent: {json.dumps(offer, indent=2)}")
     print("Response payload:")
     print(json.dumps(dumped, indent=2))
+    # Helpful view for workshop demos: show only human-readable text snippets.
     if texts:
         print("\nExtracted text parts:")
         for text in texts:
