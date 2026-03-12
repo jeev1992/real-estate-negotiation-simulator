@@ -1,26 +1,55 @@
-# Exercise 2: Add Max-Turns Warning (Code Change)
+# Exercise 2 — Compare Naive vs FSM Failure Modes `[Core]`
 
 ## Goal
-Log exactly when the FSM hits the round limit.
+Run both the naive and FSM negotiation implementations, observe the differences, and document which of the 10 intentional failure modes each system handles.
 
-## Edit
-In `m1_baseline/state_machine.py`, inside `process_turn()`, add a print statement in the block:
+## What to look for
+The naive implementation (`naive_negotiation.py`) has **10 documented failure modes** listed at the top of the file. The FSM (`state_machine.py`) was built to fix several of them. Your job is to determine which ones and why.
 
-```python
-if self.context.turn_count >= self.context.max_turns:
+## Steps
+
+### Step 1 — Run the naive negotiation and observe
+```bash
+python m1_baseline/naive_negotiation.py
 ```
 
-## What to add
-Before setting `self.state = NegotiationState.FAILED`, add:
+Watch the output carefully. Note:
+- How does the loop terminate? What conditions does it check?
+- What happens when parsing fails ("FAILURE MODE" demos at the end)?
+- What would happen if buyer max < seller min (no ZOPA)?
 
-```python
-print(f"[FSM] Max turns reached: {self.context.turn_count}/{self.context.max_turns}")
+### Step 2 — Run the FSM demo and observe
+```bash
+python m1_baseline/state_machine.py
 ```
+
+Note:
+- How many terminal states exist? What are they?
+- Can the FSM ever loop forever? Why not?
+- How does the FSM handle an invalid transition attempt?
+
+### Step 3 — Fill in the comparison table
+
+Copy this table and fill in the "Fixed by FSM?" column with Yes/No and a brief explanation:
+
+| # | Failure Mode | Fixed by FSM? | Explanation |
+|---|---|---|---|
+| 1 | Raw string communication | | |
+| 2 | No schema validation | | |
+| 3 | No state machine (while True) | | |
+| 4 | No turn limits | | |
+| 5 | Ambiguous parsing (regex) | | |
+| 6 | No termination guarantees | | |
+| 7 | Silent failures | | |
+| 8 | No grounded context (hardcoded prices) | | |
+| 9 | No observability | | |
+| 10 | No evaluation metrics | | |
+
+### Step 4 — Identify what's still missing
+After filling in the table, answer: **Which failure modes require solutions beyond the FSM?** Map each unsolved failure mode to the module that fixes it (M2 MCP, M3 LangGraph, or M4 A2A).
 
 ## Verify
-```bash
-pytest tests/test_fsm.py -v
-```
+There is no code change to verify for this exercise — your deliverable is the completed table and analysis.
 
-## Expected
-Tests still pass and the warning appears when limit logic is hit in demo runs.
+## Reflection question
+> The FSM solves problems #3, #4, and #6 directly. But does it help with problem #9 (observability) at all? Look at `check_invariants()` and the `__repr__` method — is that a form of observability?
