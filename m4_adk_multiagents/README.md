@@ -141,9 +141,19 @@ python m4_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://
 
 ---
 
-## Quick mental model
+## Exercises
 
-- If you want to understand A2A (core teaching), start with `a2a_protocol_seller_server.py` and `a2a_protocol_http_orchestrator.py`.
+| Exercise | Difficulty | Task |
+|---|---|---|
+| `ex01_fetch_agent_card.md` | `[Core]` | Write a script to fetch and inspect the seller's A2A Agent Card — learn agent discovery |
+| `ex02_one_round_orchestrator.md` | `[Core]` | Add a `/history` REST endpoint to the seller server for negotiation observability |
+| `ex03_stretch_docker_deployment.md` | `[Stretch]` | Containerize the seller in Docker and run a real networked negotiation |
+
+Solutions are in `m4_adk_multiagents/solution/`. Each exercise includes a reflection question.
+
+---
+
+## Quick mental model
 - If you want to understand how ADK agents work internally, read `buyer_adk.py` and `seller_adk.py`.
 
 ---

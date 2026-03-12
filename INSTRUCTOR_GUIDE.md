@@ -1057,38 +1057,40 @@ start m1_baseline/exercises                 # Windows
 open m1_baseline/exercises                  # Mac
 ```
 
-Then quickly point learners to all module exercise folders:
+Then quickly point learners to all module exercise folders.
 
-- `m1_baseline/exercises/` and `m1_baseline/solution/`
-- `m2_mcp/exercises/` and `m2_mcp/solution/`
-- `m3_langgraph_multiagents/exercises/` and `m3_langgraph_multiagents/solution/`
-- `m4_adk_multiagents/exercises/` and `m4_adk_multiagents/solution/`
+Exercises use difficulty labels: `[Starter]` (15 min), `[Core]` (30–45 min), `[Stretch]` (60+ min). Each exercise includes "What to look for" context and a reflection question.
 
-**RECOMMENDED EXERCISES by difficulty:**
+**RECOMMENDED PATH — assign by time available:**
 
-**Easy (15 min) — no API keys:**
-- Module 1 Exercise 1: `m1_baseline/exercises/ex01_identify_failure_modes.md`
-- Module 1 Exercise 2: `m1_baseline/exercises/ex02_fsm_termination_check.md`
+**If 15–20 min remaining (pick one):**
+- M2 Exercise 1 `[Starter]` — Add a new MCP tool to the pricing server
+- M1 Exercise 2 `[Core]` — Compare naive vs FSM failure modes (no API keys needed, analysis only)
 
-**Medium (30 min) — requires API keys:**
-- Module 2 Exercise 1: `m2_mcp/exercises/ex01_find_mcp_tool.md`
-- Module 3 Exercise 1: `m3_langgraph_multiagents/exercises/ex01_trace_graph_flow.md`
+**If 30–45 min remaining (pick two):**
+- M1 Exercise 1 `[Core]` — Add a TIMEOUT terminal state to the FSM (no API keys, teaches transition tables)
+- M2 Exercise 2 `[Core]` — Wire the new MCP tool into the buyer agent (builds on M2 ex01)
+- M3 Exercise 1 `[Core]` — Add a deadlock-breaker conditional edge (teaches LangGraph routing)
 
-**Hard (45+ min):**
-- Module 3 Exercise 2: `m3_langgraph_multiagents/exercises/ex02_run_two_rounds.md`
-- Module 4 Exercise 1: `m4_adk_multiagents/exercises/ex01_fetch_agent_card.md`
-- Module 4 Exercise 2: `m4_adk_multiagents/exercises/ex02_one_round_orchestrator.md`
+**If 45–60 min remaining (core + challenge):**
+- M3 Exercise 2 `[Core]` — Add automatic convergence accept (business logic in graph nodes)
+- M4 Exercise 1 `[Core]` — Fetch and inspect the A2A Agent Card (teaches A2A discovery)
+- M4 Exercise 2 `[Core]` — Add a negotiation history endpoint (FastAPI + A2A server extension)
+
+**For take-home / self-paced learners (Stretch exercises):**
+- M1 Exercise 3 `[Stretch]` — Reimplement the FSM in TypeScript
+- M2 Exercise 3 `[Stretch]` — Build an appraisal MCP server from scratch
+- M3 Exercise 3 `[Stretch]` — Add SQLite state persistence for pause/resume
+- M3 Exercise 4 `[Stretch]` — **Capstone**: Add an inspector agent (ties all 4 modules together)
+- M4 Exercise 3 `[Stretch]` — Deploy seller to Docker, run networked negotiation
 
 **Solution lookup:**
 - Match each exercise with its paired file in the module's `solution/` folder.
 
-**Module 2 server prerequisite (for MCP-focused exercises):**
+**Prerequisites for exercises requiring API keys:**
 ```bash
-# Terminal 1
-python m2_mcp/pricing_server.py --sse --port 8001
-
-# Terminal 2
-python m2_mcp/github_demo_client.py
+# Ensure OPENAI_API_KEY is set for M2 ex02, M3, and M4 exercises
+source .env
 ```
 
 **Q&A prompts if the group is quiet:**

@@ -153,9 +153,19 @@ python m2_mcp/inventory_server.py --sse --port 8002
 
 ---
 
-## Quick mental model
+## Exercises
 
-- If you want to see *how* MCP works at the protocol level, read `github_demo_client.py`.
+| Exercise | Difficulty | Task |
+|---|---|---|
+| `ex01_find_mcp_tool.md` | `[Starter]` | Add a `get_property_tax_estimate` tool to the pricing server using `@mcp.tool()` |
+| `ex02_compare_two_servers.md` | `[Core]` | Wire the new tool into the buyer agent's MCP planner prompt and test the full pipeline |
+| `ex03_stretch_build_appraisal_server.md` | `[Stretch]` | Build an appraisal MCP server with comparable sales data and connect it to the seller agent |
+
+Solutions are in `m2_mcp/solution/`. Each exercise includes a reflection question.
+
+---
+
+## Quick mental model
 - If you want to see *how to build* an MCP server, read `pricing_server.py` (simpler, 2 tools) then `inventory_server.py` (adds the seller-only tool).
 - The `@mcp.tool()` decorator is all you need to expose a Python function as an MCP tool.
 - In Modules 3 and 4, both agents use these servers — you don't need to start them manually.

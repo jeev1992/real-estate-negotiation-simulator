@@ -140,9 +140,20 @@ python m3_langgraph_multiagents/main_langgraph_multiagent.py --rounds 5     # de
 
 ---
 
-## Quick mental model
+## Exercises
 
-- If you're confused about what a message looks like, start with `negotiation_types.py`.
+| Exercise | Difficulty | Task |
+|---|---|---|
+| `ex01_trace_graph_flow.md` | `[Core]` | Add a deadlock-breaker conditional edge that detects stale prices and ends early |
+| `ex02_run_two_rounds.md` | `[Core]` | Add automatic convergence accept — if offers are within 2%, agree at midpoint |
+| `ex03_stretch_state_persistence.md` | `[Stretch]` | Add SQLite-based state persistence so negotiations can be paused and resumed |
+| `ex04_capstone_inspector_agent.md` | `[Stretch]` | **Capstone**: Add an inspector agent with a new MCP server and LangGraph node — ties all modules together |
+
+Solutions are in `m3_langgraph_multiagents/solution/`. Each exercise includes a reflection question.
+
+---
+
+## Quick mental model
 - If you want to see buyer/seller decision logic, open `buyer_simple.py` or `seller_simple.py`.
 - If you want to see how the turn loop works, open `langgraph_flow.py` and look at the graph edges.
 - The MCP servers (`m2_mcp/pricing_server.py` + `m2_mcp/inventory_server.py`) are started automatically — you don't need to run them separately.

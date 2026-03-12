@@ -192,12 +192,25 @@ python m4_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://
 
 ### 6. Module Exercises
 
-Each module now contains its own practice set:
+Each module contains hands-on exercises with difficulty labels (`[Starter]`, `[Core]`, `[Stretch]`) and worked solutions.
 
-- `m1_baseline/exercises/` and `m1_baseline/solution/`
-- `m2_mcp/exercises/` and `m2_mcp/solution/`
-- `m3_langgraph_multiagents/exercises/` and `m3_langgraph_multiagents/solution/`
-- `m4_adk_multiagents/exercises/` and `m4_adk_multiagents/solution/`
+| Module | Exercise | Difficulty | Task |
+|---|---|---|---|
+| M1 | `ex01_identify_failure_modes.md` | `[Core]` | Add a TIMEOUT terminal state to the FSM |
+| M1 | `ex02_fsm_termination_check.md` | `[Core]` | Compare naive vs FSM failure modes |
+| M1 | `ex03_stretch_fsm_different_language.md` | `[Stretch]` | Reimplement the FSM in TypeScript |
+| M2 | `ex01_find_mcp_tool.md` | `[Starter]` | Add a new MCP tool to the pricing server |
+| M2 | `ex02_compare_two_servers.md` | `[Core]` | Wire the new tool into the buyer agent |
+| M2 | `ex03_stretch_build_appraisal_server.md` | `[Stretch]` | Build an appraisal MCP server from scratch |
+| M3 | `ex01_trace_graph_flow.md` | `[Core]` | Add a deadlock-breaker conditional edge |
+| M3 | `ex02_run_two_rounds.md` | `[Core]` | Add automatic convergence accept |
+| M3 | `ex03_stretch_state_persistence.md` | `[Stretch]` | Add SQLite state persistence |
+| M3 | `ex04_capstone_inspector_agent.md` | `[Stretch]` | Capstone: add an inspector agent |
+| M4 | `ex01_fetch_agent_card.md` | `[Core]` | Fetch and inspect the A2A Agent Card |
+| M4 | `ex02_one_round_orchestrator.md` | `[Core]` | Add a negotiation history endpoint |
+| M4 | `ex03_stretch_docker_deployment.md` | `[Stretch]` | Deploy seller to Docker |
+
+Solutions are in each module's `solution/` folder.
 
 ---
 
