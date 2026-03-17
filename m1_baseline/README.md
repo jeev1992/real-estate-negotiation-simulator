@@ -94,7 +94,7 @@ Every module you learn fixes one or more rows in that failure table.
 No API keys needed for either file.
 
 ```bash
-# Run from the negotiation_workshop/ directory
+# Run from the real-estate-negotiation-simulator/ directory
 
 # Part 1: Watch the naive version (it may finish, may not — that's the point)
 python m1_baseline/naive_negotiation.py

@@ -35,7 +35,7 @@ The negotiation runs for a maximum of **5 rounds**. Agents use real market data 
 Folders are numbered in teaching order. Each module introduces one new concept.
 
 ```
-negotiation_workshop/
+real-estate-negotiation-simulator/
 │
 ├── m1_baseline/                       # MODULE 1 — Start here. Watch it break.
 │   ├── README.md                      # Module guide for learners
@@ -113,65 +113,92 @@ Module 4 has three notes because it spans two distinct topics: the A2A protocol 
 
 ### 1. Prerequisites
 
-```bash
-# Python 3.10+
-python --version  # should be 3.10+
+- Python 3.10+
+- Node.js 18+ (for GitHub MCP demo in Module 2 only)
 
-# Node.js 18+ (for GitHub MCP demo only)
+**Verify installation:**
+```bash
+python --version  # should be 3.10+
 node --version    # should be 18+
 ```
 
-### 2. Create and Activate a Virtual Environment
+### 2. Clone or open this repo
 
 ```bash
-cd negotiation_workshop
+# If you already have the repo, skip this step
+git clone <your-repo-url>
+cd real-estate-negotiation-simulator
+```
 
-# Create the virtual environment
+### 3. Create a virtual environment
+
+**Windows (PowerShell):**
+```powershell
 python -m venv .venv
+```
 
-# Activate — macOS / Linux
-source .venv/bin/activate
+**macOS/Linux:**
+```bash
+python3 -m venv .venv
+```
 
-# Activate — Windows (Command Prompt)
+### 4. Activate the virtual environment
+
+**Windows (PowerShell):**
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\.venv\Scripts\Activate.ps1
+```
+
+**Windows (CMD):**
+```bat
 .venv\Scripts\activate.bat
+```
 
-# Activate — Windows (PowerShell)
-.venv\Scripts\Activate.ps1
-
-# Confirm the venv is active (should show the .venv path)
-which python        # macOS/Linux
-where python        # Windows
+**macOS/Linux:**
+```bash
+source .venv/bin/activate
 ```
 
 > **Tip**: Your prompt will change to show `(.venv)` when the environment is active.
 > To deactivate at any time, run `deactivate`.
 
-### 3. Install Dependencies
+### 5. Install dependencies
 
 ```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Set API Keys
+### 6. Configure API keys
 
-Copy the template and fill in your keys:
+**Windows (PowerShell):**
+```powershell
+Copy-Item .env.example .env
+```
+
+**macOS/Linux:**
 ```bash
 cp .env.example .env
-# Edit .env with your keys, then:
-source .env
 ```
 
-**Or export directly:**
-```bash
-export OPENAI_API_KEY=sk-...       # Module 3 (simple version)
-export OPENAI_API_KEY=sk-...       # Module 4 (ADK version)
-export GITHUB_TOKEN=ghp_...        # Module 2 GitHub demo (optional)
+Then edit `.env` and set:
+```env
+OPENAI_API_KEY=sk-your-key-here
+GITHUB_TOKEN=ghp-your-token-here   # Optional — Module 2 GitHub demo only
 ```
 
-### 5. Run the Workshop Modules in Order
+### 8. Run a smoke test
 
 ```bash
-# MODULE 1: Watch the naive version fail (no API keys)
+python m1_baseline/naive_negotiation.py
+```
+
+If Module 1 runs, your environment is ready.
+
+### 9. Run the Workshop Modules in Order
+
+```bash
+# MODULE 1: Watch the naive version fail (no API keys needed)
 python m1_baseline/naive_negotiation.py   # 10 failure modes
 python m1_baseline/state_machine.py       # FSM termination guarantee
 
@@ -190,7 +217,7 @@ python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://
 python m4_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
 ```
 
-### 6. Module Exercises
+### 10. Module Exercises
 
 Each module contains hands-on exercises with difficulty labels (`[Starter]`, `[Core]`, `[Stretch]`) and worked solutions.
 
@@ -435,15 +462,20 @@ export OPENAI_API_KEY=sk-your-actual-key
 
 **`FileNotFoundError` running MCP servers**
 ```bash
-# Run from the negotiation_workshop/ directory
-cd negotiation_workshop
-python m3_langgraph_multiagents/main_langgraph_multiagent.py  # Not: python negotiation_workshop/m3_langgraph_multiagents/main_langgraph_multiagent.py
+# Run from the real-estate-negotiation-simulator/ directory
+cd real-estate-negotiation-simulator
+python m3_langgraph_multiagents/main_langgraph_multiagent.py  # Not: python real-estate-negotiation-simulator/m3_langgraph_multiagents/main_langgraph_multiagent.py
 ```
 
 **GitHub MCP demo fails with `command not found: npx`**
 ```bash
 # Install Node.js from: https://nodejs.org
 node --version && npx --version
+```
+
+**PowerShell `UnauthorizedAccess` error activating venv**
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\.venv\Scripts\Activate.ps1
 ```
 
 **Unicode / encoding errors on Windows (`UnicodeEncodeError`, garbled output)**
