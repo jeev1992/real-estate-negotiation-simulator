@@ -836,7 +836,7 @@ tools = await pricing_toolset.get_tools()   # discovers get_market_price, calcul
 self._agent = LlmAgent(
     name="buyer_agent",
   model="openai/gpt-4o",
-    instruction=BUYER_INSTRUCTION,
+    instruction=buyer_instruction,   # built dynamically from discovered tool names
     tools=tools,   # model can now call MCP tools autonomously
 )
 ```

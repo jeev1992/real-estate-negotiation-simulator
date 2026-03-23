@@ -59,20 +59,33 @@ async def main() -> None:
         print("OPENAI_API_KEY is not set. Set it before running this demo.")
         raise SystemExit(1)
 
-    # Step 1: create a buyer offer locally via ADK + MCP tool calls.
+    # Step 1: Create a buyer offer locally via ADK + MCP tool calls.
+    # The buyer agent connects to the pricing MCP server, calls get_market_price
+    # and calculate_discount, then GPT-4o decides the offer price.
+    # All of this happens in-process — no network calls yet.
     async with BuyerAgentADK(session_id=f"buyer_a2a_{uuid.uuid4().hex[:8]}") as buyer:
         offer = await buyer.make_initial_offer_envelope()
 
-    # Send structured envelope text across A2A boundary.
+    # The offer envelope is a dict with session_id, round, price, message, etc.
+    # We serialize it to JSON text for transport over the A2A protocol.
     offer_text = json.dumps(offer)
 
     async with httpx.AsyncClient(timeout=30.0) as http_client:
-        # Step 2: discover seller capabilities from the Agent Card URL.
+        # Step 2: Discover seller capabilities from the Agent Card URL.
+        # A2ACardResolver issues GET /.well-known/agent-card.json and returns
+        # the AgentCard object with endpoint URL, skills, and capabilities.
         resolver = A2ACardResolver(httpx_client=http_client, base_url=args.seller_url)
         card = await resolver.get_agent_card()
+        # A2AClient wraps the HTTP transport — it knows the seller's endpoint
+        # from the card, so we never hardcode URLs.
         client = A2AClient(httpx_client=http_client, agent_card=card)
 
-        # Step 3: send a typed A2A user message to the seller endpoint.
+        # Step 3: Send a typed A2A message to the seller endpoint.
+        # The protocol framing is: SendMessageRequest → MessageSendParams → Message → TextPart.
+        # - id: unique JSON-RPC request ID (for correlation)
+        # - messageId: unique message ID (for threading)
+        # - role: Role.user means "this is input from the requesting agent"
+        # - parts: the actual content — our offer JSON wrapped in a TextPart
         request = SendMessageRequest(
             id=f"req_{uuid.uuid4().hex[:8]}",
             params=MessageSendParams(

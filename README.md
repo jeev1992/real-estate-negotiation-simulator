@@ -75,6 +75,7 @@ real-estate-negotiation-simulator/
 │   ├── a2a_protocol_seller_server.py  # True networked A2A protocol server (A2A SDK)
 │   ├── a2a_protocol_http_orchestrator.py # Multi-round HTTP A2A orchestrator (ADK-native state)
 │   ├── a2a_protocol_buyer_client_demo.py # Single-turn A2A protocol client demo
+│   ├── streamlit_dashboard.py          # Visual negotiation dashboard (Streamlit UI)
 │   ├── exercises/                      # Hands-on coding exercises for Module 4
 │   ├── solution/                       # Worked solutions for Module 4 exercises
 │   └── notes/
@@ -86,6 +87,7 @@ real-estate-negotiation-simulator/
 ├── m4_adk_multiagents/a2a_protocol_seller_server.py                  # Entry point — Module 4 (A2A server)
 ├── m4_adk_multiagents/a2a_protocol_http_orchestrator.py              # Entry point — Module 4 (A2A orchestrator)
 ├── m4_adk_multiagents/a2a_protocol_buyer_client_demo.py              # Entry point — Module 4 (single-turn demo)
+├── m4_adk_multiagents/streamlit_dashboard.py                         # Entry point — Module 4 (visual dashboard)
 ├── INSTRUCTOR_GUIDE.md                # 4-hour workshop script for instructors
 ├── .env.example                       # Copy to .env and add your API keys
 └── requirements.txt

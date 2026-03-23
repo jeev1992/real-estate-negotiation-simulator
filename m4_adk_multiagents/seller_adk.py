@@ -58,34 +58,68 @@ OPENAI_MODEL = "openai/gpt-4o"
 APP_NAME = "real_estate_negotiation_seller"
 
 
+# ─── Pydantic models for strict LLM output parsing ───────────────────────────
+#
+# TWO MODELS, TWO ROLES:
+#
+#   SellerStructuredOutput  (INTERNAL — permissive)
+#     What GPT-4o returns as raw text. Has multiple fallback field names
+#     (counter_price, counter_offer, price) because the LLM's naming varies.
+#     Also has private fields like `reasoning` that never leave this process.
+#
+#   SellerEnvelope  (EXTERNAL — strict)
+#     What gets sent to the buyer over LangGraph state or A2A HTTP.
+#     Has exactly ONE price field. Has a strict Literal message_type.
+#     No reasoning field (private notes stay internal).
+#
+# The conversion happens in respond_to_offer_envelope():
+#   GPT-4o text → SellerStructuredOutput → business logic → SellerEnvelope → dict
+#
+# Why two models instead of one?
+# - The LLM can't be trusted to use consistent field names
+# - Business rules (floor price enforcement) must run BETWEEN parse and send
+# - Private fields (reasoning) must never cross the agent boundary
+#
+
 class SellerStructuredOutput(BaseModel):
-    counter_price: Optional[float] = None
-    counter_offer: Optional[float] = None
-    price: Optional[float] = None
-    agreed_price: Optional[float] = None
-    message: str
-    reasoning: Optional[str] = None
-    accept: bool = False
-    reject: bool = False
+    """Schema for the raw JSON that GPT-4o returns inside runner.run_async()."""
+    counter_price: Optional[float] = None     # the seller's counter-offer price
+    counter_offer: Optional[float] = None     # fallback name (LLM sometimes uses this)
+    price: Optional[float] = None             # another fallback name
+    agreed_price: Optional[float] = None      # set when seller accepts the buyer's price
+    message: str                              # human-readable response to buyer
+    reasoning: Optional[str] = None           # private strategy notes
+    accept: bool = False                      # True = seller accepts buyer's last offer
+    reject: bool = False                      # True = seller terminates negotiation
     conditions: list[str] = Field(default_factory=list)
     closing_timeline_days: Optional[int] = None
 
 
 class SellerEnvelope(BaseModel):
+    """The structured message sent to the buyer (over LangGraph state or A2A HTTP).
+
+    Same envelope contract as BuyerEnvelope but with seller-specific message types.
+    message_type is one of COUNTER_OFFER, ACCEPT, or REJECT — never a free string.
+    """
     session_id: str
     round: int
     from_agent: Literal["seller"] = "seller"
     to_agent: Literal["buyer"] = "buyer"
     message_type: Literal["COUNTER_OFFER", "ACCEPT", "REJECT"]
-    price: Optional[float] = None
+    price: Optional[float] = None              # counter price, or agreed price on ACCEPT
     message: str
     conditions: list[str] = Field(default_factory=list)
     closing_timeline_days: Optional[int] = None
-    in_reply_to: Optional[str] = None
+    in_reply_to: Optional[str] = None          # links back to buyer's message
 
 
 def _parse_strict_json_output(raw_text: str) -> SellerStructuredOutput:
-    # Fail fast on malformed model output to keep envelope parsing deterministic.
+    """Parse LLM output into a validated Pydantic model, or raise immediately.
+
+    Strict validation ensures the seller never sends a malformed counter-offer
+    to the buyer. In A2A, the buyer parses this output over HTTP — one bad field
+    would crash the entire orchestration loop.
+    """
     try:
         parsed = json.loads(raw_text)
     except json.JSONDecodeError as error:
@@ -98,6 +132,11 @@ def _parse_strict_json_output(raw_text: str) -> SellerStructuredOutput:
 
 
 def _format_buyer_envelope_for_seller(buyer_message: dict, round_num: int) -> str:
+    """Convert the buyer's JSON envelope into a readable prompt for GPT-4o.
+
+    The buyer sends structured JSON. We render it into natural language so
+    GPT-4o can reason about the offer, conditions, and timeline naturally.
+    """
     price = buyer_message.get("price")
     price_str = f"${price:,.0f}" if isinstance(price, (int, float)) else "N/A"
     conditions_list = buyer_message.get("conditions")
@@ -116,11 +155,11 @@ Buyer's justification: "{buyer_text}"
 This is round {round_num} of 5 maximum rounds.
 
 Please evaluate this offer and respond.
-Remember to call get_market_price, get_inventory_level, and get_minimum_acceptable_price.
+Remember to call your available MCP tools before responding.
 Respond with a JSON object: counter_price, message, reasoning, accept, reject.
 Return ONLY JSON. No markdown fences. No prose outside JSON."""
 
-SELLER_INSTRUCTION = f"""You are an expert real estate listing agent representing the sellers of
+SELLER_INSTRUCTION_TEMPLATE = f"""You are an expert real estate listing agent representing the sellers of
 {PROPERTY_ADDRESS} (listed at ${LISTING_PRICE:,}).
 
 PROPERTY HIGHLIGHTS (emphasize these in every response):
@@ -132,28 +171,21 @@ PROPERTY HIGHLIGHTS (emphasize these in every response):
   • Zero HOA fees (saves ~$300/month vs comparable properties)
 
 YOUR STRATEGY:
-BEFORE responding to any offer:
-1. Call get_market_price("{PROPERTY_ADDRESS}", "single_family") to understand the market
-2. Call get_inventory_level("78701") to understand market pressure
-3. Call get_minimum_acceptable_price("{PROPERTY_ID}") to confirm your floor price
+BEFORE responding to any offer, call your available MCP tools to understand
+the market, inventory pressure, and your floor price.
 
 PRICING STRATEGY:
 - Start counter at $477,000 (Round 1)
 - Drop by $5,000–$8,000 per round only
-- NEVER go below the minimum from get_minimum_acceptable_price()
+- NEVER go below your minimum (from MCP tools)
 - If buyer offers at or above minimum, ACCEPT immediately
 - Emphasize $75,000 in upgrades to justify premium pricing
 
-AVAILABLE MCP TOOLS (from pricing + inventory servers):
-Pricing server:
-  - get_market_price(address, property_type)
-  - calculate_discount(base_price, market_condition, days_on_market)
-Inventory server:
-  - get_inventory_level(zip_code)
-  - get_minimum_acceptable_price(property_id)
+AVAILABLE MCP TOOLS (auto-discovered from pricing + inventory servers):
+{{tools_section}}
 
 RESPONSE FORMAT — always respond with valid JSON:
-{{
+{{{{
     "counter_price": <integer — your counter-offer in dollars>,
     "message": "<professional message to buyer referencing property value>",
     "reasoning": "<internal notes — your strategy>",
@@ -161,10 +193,10 @@ RESPONSE FORMAT — always respond with valid JSON:
     "reject": <true if terminating, false otherwise>,
     "conditions": ["<list of conditions>"],
     "closing_timeline_days": <integer>
-}}
+}}}}
 
 CRITICAL RULES:
-- Call get_minimum_acceptable_price FIRST to know your absolute floor
+- Call your MCP tools FIRST to know your absolute floor
 - NEVER counter below that minimum (it's your mortgage payoff requirement)
 - If buyer is at or above minimum → set accept: true
 - Always reference the $75,000 in upgrades to justify your price
@@ -194,6 +226,7 @@ class SellerAgentADK:
         self._pricing_toolset: Optional[MCPToolset] = None
         self._inventory_toolset: Optional[MCPToolset] = None
         self._round = 0
+        self._tool_names: list[str] = []  # populated in __aenter__ after discovery
 
     async def _append_state_delta(self, state_delta: dict) -> None:
         # Persist per-turn seller state so orchestration/debug views stay explainable.
@@ -254,15 +287,24 @@ class SellerAgentADK:
         # Merge tools from both MCP servers so the model can choose among them
         # in a single ADK tool-calling loop.
         all_tools = list(pricing_tools) + list(inventory_tools)
+        all_tool_names = pricing_names + inventory_names
+        self._tool_names = all_tool_names
         print(f"   [Seller ADK] Total tools available: {len(all_tools)}")
         print(f"   [Seller ADK] KEY: Seller has get_minimum_acceptable_price; Buyer does NOT")
+
+        # Build the instruction dynamically with discovered tool names.
+        # The tool list in the prompt is informational coaching — ADK already
+        # gives the LLM function-calling access to all tools. But naming them
+        # in the instruction helps the LLM use them strategically.
+        tools_section = "\n".join(f"- {name}" for name in all_tool_names) if all_tool_names else "(none discovered)"
+        seller_instruction = SELLER_INSTRUCTION_TEMPLATE.format(tools_section=tools_section)
 
         # Create agent with all tools
         self._agent = LlmAgent(
             name="seller_agent",
             model=OPENAI_MODEL,
             description=f"Real estate seller agent for {PROPERTY_ADDRESS}",
-            instruction=SELLER_INSTRUCTION,
+            instruction=seller_instruction,
             tools=all_tools,
         )
 
@@ -331,13 +373,13 @@ class SellerAgentADK:
 
         # Add explicit instruction to use all tools to preserve information asymmetry
         # behavior and ensure floor-price checks happen every round.
+        # Tool call order matters: market_price first (context), then inventory (pressure),
+        # then minimum_acceptable_price (hard floor constraint for counter-offer decision).
+        tool_list = ", ".join(self._tool_names) if self._tool_names else "your available MCP tools"
         prompt += f"""
 
-IMPORTANT: Before responding, call these tools in order:
-1. get_market_price("{PROPERTY_ADDRESS}", "single_family")
-2. get_inventory_level("78701")
-3. get_minimum_acceptable_price("{PROPERTY_ID}")
-
+IMPORTANT: Before responding, call your available MCP tools ({tool_list}).
+Use them to understand the market, inventory pressure, and your floor price.
 Then formulate your counter-offer or acceptance.
 Remember: if buyer's ${buyer_price:,.0f} meets your minimum, ACCEPT.
 Return ONLY JSON. No markdown fences. No prose outside JSON."""
@@ -347,6 +389,7 @@ Return ONLY JSON. No markdown fences. No prose outside JSON."""
 
         parsed = _parse_strict_json_output(raw_response)
         if parsed.accept:
+            # Seller accepts: use the buyer's price (or the agreed_price field if LLM set it).
             agreed_price = parsed.agreed_price or buyer_price
             envelope = SellerEnvelope(
                 session_id=buyer_message.get("session_id", self.session_id),
@@ -360,6 +403,8 @@ Return ONLY JSON. No markdown fences. No prose outside JSON."""
             )
             status = "agreed"
         else:
+            # Counter-offer: pick from multiple price field names (LLM output varies),
+            # then enforce the floor price — the LLM can never go below MINIMUM_PRICE.
             counter_price = parsed.counter_price or parsed.counter_offer or parsed.price or 477_000.0
             counter_price = max(float(counter_price), float(MINIMUM_PRICE))
             envelope = SellerEnvelope(

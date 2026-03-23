@@ -939,7 +939,7 @@ Here's how our negotiation simulator uses ADK (detailed in `m4_adk_multiagents/`
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioConnectionParams, StdioServerParameters
 
-BUYER_INSTRUCTION = """
+BUYER_INSTRUCTION_TEMPLATE = f"""
 You are a real estate buyer agent for a client purchasing:
 Property: 742 Evergreen Terrace, Austin, TX 78701
 Type: Single Family, 4BR/3BA, 2,400 sqft
@@ -950,18 +950,18 @@ Your client's profile:
 - Acceptable outcome: Any price at or below $455,000
 - Walk-away point: Seller won't go below $460,000
 
-Before making any offer:
-1. Call get_market_price() to get comparable sales data
-2. Call calculate_discount() to determine appropriate offer range
-3. Use market data to JUSTIFY your offer in your message
+Before making any offer, call your available MCP tools to get market data.
+
+AVAILABLE MCP TOOLS (auto-discovered):
+{{tools_section}}
 
 Output your response as JSON:
-{
+{{
     "offer_price": <number>,
     "message": "<your message to the seller>",
     "reasoning": "<internal strategy notes>",
     "walk_away": <true/false>
-}
+}}
 """
 
 async def create_buyer_agent() -> LlmAgent:
@@ -979,7 +979,9 @@ async def create_buyer_agent() -> LlmAgent:
         name="buyer_agent",
         model="openai/gpt-4o",
         description="Real estate buyer agent for 742 Evergreen Terrace",
-        instruction=BUYER_INSTRUCTION,
+        instruction=BUYER_INSTRUCTION_TEMPLATE.format(
+            tools_section="\n".join(f"- {t.name}" for t in tools)
+        ),
         tools=tools
     )
 
@@ -991,7 +993,7 @@ async def create_buyer_agent() -> LlmAgent:
 ```python
 # m4_adk_multiagents/seller_adk.py — conceptual overview
 
-SELLER_INSTRUCTION = """
+SELLER_INSTRUCTION_TEMPLATE = f"""
 You are a real estate seller agent representing the owners of:
 Property: 742 Evergreen Terrace, Austin, TX 78701
 Listed at: $485,000

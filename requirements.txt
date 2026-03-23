@@ -72,6 +72,15 @@ python-dotenv>=1.0.0
 typing-extensions>=4.0.0
 
 
+# ── Dashboard ────────────────────────────────────────────────────────────────
+
+# Streamlit — negotiation dashboard UI (Module 4)
+streamlit>=1.35.0
+
+# pandas — data manipulation for the dashboard chart
+pandas>=2.0.0
+
+
 # ── Development Tools (optional) ─────────────────────────────────────────────
 
 # pytest + pytest-asyncio — for running tests

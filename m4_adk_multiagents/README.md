@@ -134,6 +134,24 @@ python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://
 python m4_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
 ```
 
+### Visual Dashboard (Streamlit)
+
+For a visual negotiation experience, use the Streamlit dashboard:
+
+```bash
+# Terminal 1 — start the seller A2A server (same as above)
+python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102
+
+# Terminal 2 — launch the dashboard
+streamlit run m4_adk_multiagents/streamlit_dashboard.py
+```
+
+The dashboard shows:
+- **Price convergence chart** — buyer offers vs seller counters per round
+- **Live status banner** — negotiating, agreed, deadlocked, or walked away
+- **Round-by-round history** — expandable details with messages, conditions, prices
+- **Zone of agreement reference** — buyer ceiling ($460K) and seller floor ($445K)
+
 **What to expect:**
 - Terminal 1: Server starts, waits. When the buyer connects, you'll see the OpenAI + MCP activity
 - Terminal 2 (orchestrator): Runs a real round loop over HTTP until agreement/withdrawal/deadlock

@@ -43,7 +43,12 @@ from m4_adk_multiagents.seller_adk import SellerAgentADK
 
 
 class BuyerEnvelope(BaseModel):
-    # Contract the server expects from buyer side over HTTP A2A.
+    """Contract the server expects from buyer side over HTTP A2A.
+
+    Every incoming A2A message is validated against this schema.
+    If the buyer sends malformed JSON or missing fields, Pydantic raises
+    immediately and the request returns a task-failed response.
+    """
     session_id: str
     round: int
     from_agent: str
@@ -57,25 +62,42 @@ class BuyerEnvelope(BaseModel):
 
 
 class SellerSessionRegistry:
-    # Reuses one SellerAgentADK instance per session_id for multi-turn continuity.
+    """Manages one SellerAgentADK instance per session_id.
+
+    Why this exists: Each HTTP request is stateless, but the seller needs
+    multi-turn memory (Round 2 must remember Round 1). The registry maps
+    session_id → a persistent SellerAgentADK object with its ADK session
+    history and MCP connections intact.
+
+    Without this, every HTTP request would create a fresh seller agent
+    with no memory of previous rounds.
+    """
+
     def __init__(self):
         self._agents: dict[str, SellerAgentADK] = {}
-        self._lock = asyncio.Lock()
+        self._lock = asyncio.Lock()  # prevents race conditions on concurrent requests
 
     async def get_or_create(self, session_id: str) -> SellerAgentADK:
+        """Return existing agent for this session, or create one on first request."""
         async with self._lock:
             existing = self._agents.get(session_id)
             if existing is not None:
                 return existing
 
             # Lazily create seller ADK agent the first time this session appears.
+            # __aenter__ spawns MCP subprocesses and discovers tools.
             agent = SellerAgentADK(session_id=f"seller_a2a_{session_id}")
             await agent.__aenter__()
             self._agents[session_id] = agent
             return agent
 
     async def close_all(self) -> None:
-        # Graceful server shutdown: close all managed ADK agent contexts.
+        """Graceful server shutdown: close all managed ADK agent contexts.
+
+        Called in the server's 'finally' block when Ctrl+C is pressed.
+        Each agent's __aexit__ kills its MCP subprocesses — without this,
+        orphaned Python processes accumulate on the host.
+        """
         async with self._lock:
             agents = list(self._agents.values())
             self._agents.clear()
@@ -90,7 +112,17 @@ SESSION_REGISTRY = SellerSessionRegistry()
 
 
 def _build_agent_card(base_url: str) -> AgentCard:
-    # Agent Card is the discovery contract returned at /.well-known/agent-card.json.
+    """Build the A2A Agent Card — the discovery contract.
+
+    This JSON is served at GET /.well-known/agent-card.json.
+    When a buyer (or any A2A client) wants to talk to this seller,
+    it fetches the Agent Card first to learn:
+      - url: where to send messages
+      - skills: what the agent can do
+      - capabilities: streaming? push notifications?
+      - protocolVersion: which A2A spec version
+      - preferredTransport: JSONRPC (vs. streaming, etc.)
+    """
     return AgentCard(
         name="adk_seller_a2a_server",
         description="ADK-backed seller agent exposed via A2A protocol",
@@ -120,8 +152,19 @@ def _build_agent_card(base_url: str) -> AgentCard:
 
 
 class SellerADKA2AExecutor(AgentExecutor):
+    """Handles incoming A2A requests by running the seller ADK agent.
+
+    A2A lifecycle for each request:
+      1. start_work()  →  task status becomes 'working'
+      2. Parse buyer envelope from the request text
+      3. Run seller agent (which calls MCP tools + GPT-4o internally)
+      4. complete()    →  task status becomes 'completed' with response
+         OR failed()   →  task status becomes 'failed' with error message
+    """
+
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        # TaskUpdater emits submitted/working/completed task events for A2A clients.
+        # TaskUpdater manages the A2A task lifecycle (working → completed/failed).
+        # The buyer client sees these status transitions in the HTTP response.
         updater = TaskUpdater(event_queue, task_id=context.task_id, context_id=context.context_id)
 
         await updater.start_work()
@@ -129,10 +172,13 @@ class SellerADKA2AExecutor(AgentExecutor):
         incoming_text = context.get_user_input().strip()
 
         try:
-            # Validate incoming JSON text as a buyer envelope contract.
+            # Validate incoming JSON text against the buyer envelope contract.
+            # If the buyer sends malformed JSON or missing fields, this raises
+            # and we return a task-failed response — no silent corruption.
             parsed_buyer = BuyerEnvelope.model_validate(json.loads(incoming_text))
 
-            # One-turn processing over HTTP; continuity is preserved per session_id.
+            # One-turn processing over HTTP; multi-turn continuity is preserved
+            # by the session registry (same SellerAgentADK instance across rounds).
             seller = await SESSION_REGISTRY.get_or_create(parsed_buyer.session_id)
             response_payload: dict[str, Any] = await seller.respond_to_offer_envelope(
                 parsed_buyer.model_dump(mode="json")
@@ -183,13 +229,16 @@ async def main() -> None:
     # Agent card is the discovery metadata clients fetch before messaging.
     card = _build_agent_card(base_url)
 
+    # Wire up the A2A server: agent card (discovery) + request handler (execution).
     handler = DefaultRequestHandler(
-        agent_executor=SellerADKA2AExecutor(),
-        task_store=InMemoryTaskStore(),
-        queue_manager=InMemoryQueueManager(),
+        agent_executor=SellerADKA2AExecutor(),  # our subclass handles each request
+        task_store=InMemoryTaskStore(),          # tracks task lifecycle in memory
+        queue_manager=InMemoryQueueManager(),    # manages event queues per task
     )
 
-    # Use JSON-RPC compatible app wiring for the legacy A2AClient in this module.
+    # A2AFastAPIApplication creates two routes:
+    #   GET  /.well-known/agent-card.json  →  returns the Agent Card
+    #   POST /                             →  handles A2A JSON-RPC message/send
     app_builder = A2AFastAPIApplication(agent_card=card, http_handler=handler)
     app = app_builder.build(agent_card_url="/.well-known/agent-card.json", rpc_url="/")
 

@@ -43,7 +43,12 @@ from m4_adk_multiagents.buyer_adk import BuyerAgentADK
 
 
 class SellerEnvelope(BaseModel):
-    # Envelope schema expected from seller A2A responses.
+    """Envelope schema expected from seller A2A responses.
+
+    The orchestrator validates every seller response against this schema.
+    Literal types enforce that from_agent is always "seller" and message_type
+    is one of exactly three values — no free-form strings, no ambiguity.
+    """
     session_id: str
     round: int
     from_agent: Literal["seller"]
@@ -57,7 +62,12 @@ class SellerEnvelope(BaseModel):
 
 
 def _extract_texts(obj: Any) -> list[str]:
-    # A2A SDK responses are nested; we flatten all text parts so we can parse envelopes.
+    """Recursively walk nested A2A SDK response JSON and collect all text fields.
+
+    A2A SDK responses are deeply nested (result → artifacts → parts → text).
+    This helper flattens everything so we can find the seller’s envelope JSON
+    regardless of how deeply the SDK wraps it.
+    """
     texts: list[str] = []
     if isinstance(obj, dict):
         for key, value in obj.items():
@@ -72,7 +82,12 @@ def _extract_texts(obj: Any) -> list[str]:
 
 
 def _extract_first_seller_envelope(payload: dict[str, Any]) -> dict[str, Any]:
-    # Iterate through all text parts and return the first valid seller envelope.
+    """Find and validate the first seller envelope in the A2A response.
+
+    The A2A response may contain multiple text parts (tool logs, metadata).
+    We iterate through all of them and return the first one that validates
+    as a SellerEnvelope. This is robust to extra text in the response.
+    """
     for text in _extract_texts(payload):
         try:
             candidate = json.loads(text)
@@ -87,7 +102,14 @@ def _extract_first_seller_envelope(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 class ADKOrchestrationState:
-    # Thin wrapper around ADK SessionService used as orchestration state store.
+    """Thin wrapper around ADK InMemorySessionService for orchestration state.
+
+    Why use ADK sessions for orchestration (not just a plain dict)?
+    1. State deltas are append-only events — you get a full audit trail
+    2. Same pattern the buyer/seller agents use internally
+    3. In production, swap InMemorySessionService for a database-backed one
+       and the orchestrator state becomes persistent/resumable
+    """
     def __init__(self, session_id: str):
         self.session_id = session_id
         self.app_name = "a2a_http_orchestrator"
@@ -103,6 +125,12 @@ class ADKOrchestrationState:
         )
 
     async def update(self, state_delta: dict[str, Any]) -> None:
+        """Append a state change event to the ADK session.
+
+        Uses Event + EventActions(stateDelta=...) so the session accumulates
+        an immutable history of all state changes. This is the same pattern
+        used by buyer_adk.py and seller_adk.py for per-turn state tracking.
+        """
         session = await self._service.get_session(
             app_name=self.app_name,
             user_id=self.user_id,
@@ -148,9 +176,12 @@ async def main() -> None:
 
     async with BuyerAgentADK(session_id=f"{session_id}_buyer") as buyer:
         async with httpx.AsyncClient(timeout=45.0) as http_client:
-            # Discover seller via Agent Card before sending the first message.
+            # Step 1: Discover seller via Agent Card before sending the first message.
+            # A2ACardResolver fetches GET /.well-known/agent-card.json from the seller URL.
+            # The card tells us the seller's capabilities, endpoint, and protocol version.
             resolver = A2ACardResolver(httpx_client=http_client, base_url=args.seller_url)
             card = await resolver.get_agent_card()
+            # A2AClient uses the card to know WHERE and HOW to send messages.
             client = A2AClient(httpx_client=http_client, agent_card=card)
 
             last_seller: Optional[dict[str, Any]] = None
@@ -181,14 +212,17 @@ async def main() -> None:
                     status = "buyer_walked"
                     break
 
-                # Seller turn happens over the network through A2A JSON-RPC.
+                # Step 2: Send buyer's offer to seller over A2A JSON-RPC.
+                # The offer JSON is wrapped in a TextPart inside a Message inside
+                # a SendMessageRequest — this is the A2A protocol framing.
+                # Role.user means "this is input from the requesting agent."
                 request = SendMessageRequest(
-                    id=f"req_{uuid.uuid4().hex[:8]}",
+                    id=f"req_{uuid.uuid4().hex[:8]}",       # unique request ID (JSON-RPC)
                     params=MessageSendParams(
                         message=Message(
-                            messageId=f"msg_{uuid.uuid4().hex[:8]}",
-                            role=Role.user,
-                            parts=[TextPart(text=json.dumps(buyer_message))],
+                            messageId=f"msg_{uuid.uuid4().hex[:8]}",  # unique message ID
+                            role=Role.user,                            # buyer is the requester
+                            parts=[TextPart(text=json.dumps(buyer_message))],  # envelope as JSON string
                         )
                     ),
                 )

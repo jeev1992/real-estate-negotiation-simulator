@@ -1031,7 +1031,7 @@ self._agent = LlmAgent(
     name='buyer_agent',
     model='openai/gpt-4o',
     tools=tools,          # <<< MCP tools injected here
-    instruction=BUYER_INSTRUCTION,
+    instruction=buyer_instruction,  # built dynamically from discovered tool names
 )
 ```
 
@@ -1074,7 +1074,7 @@ self._agent = LlmAgent(
     name='seller_agent',
     model='openai/gpt-4o',
     tools=all_tools,       # <<< 4 tools: 2 pricing + 2 inventory
-    instruction=SELLER_INSTRUCTION,
+    instruction=seller_instruction,  # built dynamically from discovered tool names
 )
 ```
 
