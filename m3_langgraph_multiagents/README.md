@@ -54,10 +54,11 @@ create_withdrawal(...)
 The buyer's job: start below asking price and negotiate up only as far as necessary, staying under budget ($460,000).
 
 **How it works each round:**
-1. GPT-4o acts as a planner — decides which MCP tools to call this turn
-2. Calls `get_market_price` and/or `calculate_discount` from `pricing_server.py`
-3. GPT-4o uses that data to decide on a price and write a justification
-4. Returns a `NegotiationMessage` dict for LangGraph state
+1. On first call, discovers available tools via `list_tools()` on the pricing MCP server
+2. GPT-4o acts as a planner — decides which discovered tools to call this turn
+3. Calls `get_market_price` and/or `calculate_discount` from `pricing_server.py`
+4. GPT-4o uses that data to decide on a price and write a justification
+5. Returns a `NegotiationMessage` dict for LangGraph state
 
 The buyer never connects to `inventory_server.py` — it doesn't know the seller's floor price.
 

@@ -85,12 +85,14 @@ if __name__ == "__main__":
 
 ### Step 2 — Connect to the seller agent
 
-In `m3_langgraph_multiagents/seller_simple.py`, add the appraisal server to the seller's MCP planner prompt so it can query comps when deciding counter-offer prices.
+In `m3_langgraph_multiagents/seller_simple.py`, connect the appraisal server so the seller can query comps when deciding counter-offer prices.
 
 You'll need to:
-1. Add a `call_appraisal_mcp()` helper (similar to `call_pricing_mcp()` and `call_inventory_mcp()`)
-2. Add the new tools to `SELLER_MCP_PLANNER_PROMPT`
-3. Handle the new tool calls in `_gather_mcp_context()`
+1. Add the appraisal server path constant (like `PRICING_SERVER_PATH` and `INVENTORY_SERVER_PATH`)
+2. Include it in `_ensure_tools_discovered()` so its tools are auto-discovered via `list_tools()`
+3. Handle the new tool calls in `_gather_mcp_context()` — add `elif` branches for the new tools and route them to the appraisal server via `call_mcp_server()`
+
+The planner prompt is built dynamically from `list_tools()`, so you do **not** need to manually edit `SELLER_MCP_PLANNER_PROMPT_TEMPLATE`.
 
 ### Step 3 — Test the full pipeline
 

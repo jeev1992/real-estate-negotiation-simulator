@@ -107,23 +107,17 @@ CRITICAL RULES:
 - Keep message professional and factual
 - Your reasoning field is private (not shown to seller)"""
 
-BUYER_MCP_PLANNER_PROMPT = """You are selecting MCP tools for a buyer negotiation agent.
+BUYER_MCP_PLANNER_PROMPT_TEMPLATE = """You are selecting MCP tools for a buyer negotiation agent.
 
 Return strict JSON in this format:
-{
+{{
     "tool_calls": [
-        {"tool": "<tool_name>", "arguments": { ... }}
+        {{"tool": "<tool_name>", "arguments": {{ ... }}}}
     ]
-}
+}}
 
 Available tools and required arguments:
-- get_market_price: {"address": "string", "property_type": "single_family|condo|townhouse"}
-- calculate_discount: {
-        "base_price": number,
-        "market_condition": "hot|balanced|cold",
-        "days_on_market": number,
-        "property_condition": "excellent|good|fair|poor"
-    }
+{tools_section}
 
 Rules:
 - Call 1-2 tools only.
@@ -134,7 +128,49 @@ Rules:
 """
 
 
-# ─── MCP Helper ───────────────────────────────────────────────────────────────
+# ─── MCP Helpers ──────────────────────────────────────────────────────────────
+
+async def discover_mcp_tools(server_path: str) -> list:
+    """
+    Connect to an MCP server and return its tool schemas via list_tools().
+
+    This replaces the hardcoded tool list in the planner prompt with
+    whatever the server actually exposes at runtime — true MCP auto-discovery.
+    """
+    server_params = StdioServerParameters(
+        command=sys.executable,
+        args=[server_path],
+    )
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            response = await session.list_tools()
+            return list(response.tools)
+
+
+def format_tools_for_prompt(tools: list) -> str:
+    """
+    Format MCP tool schemas into a human-readable string for the planner prompt.
+
+    Each tool's name and argument types are rendered so the LLM knows exactly
+    what arguments to provide.
+    """
+    lines: list[str] = []
+    for tool in tools:
+        input_schema = (
+            tool.inputSchema.model_dump()
+            if hasattr(tool.inputSchema, "model_dump")
+            else tool.inputSchema
+        )
+        props = input_schema.get("properties", {}) if isinstance(input_schema, dict) else {}
+        args_summary = {k: v.get("type", "any") for k, v in props.items()}
+        desc = (tool.description or "").split("\n")[0]  # first line only
+        lines.append(f"- {tool.name}: {json.dumps(args_summary)}")
+        if desc:
+            lines.append(f"    {desc}")
+    return "\n".join(lines)
+
 
 async def call_pricing_mcp(tool_name: str, arguments: dict) -> dict:
     """
@@ -209,6 +245,11 @@ class BuyerAgent:
         self._market_data: Optional[dict] = None
         self._last_seller_message_id: Optional[str] = None
 
+        # Dynamic tool discovery (populated on first planning call)
+        self._discovered_tools: Optional[list] = None
+        self._allowed_tool_names: Optional[set[str]] = None
+        self._planner_prompt: Optional[str] = None
+
     async def _get_market_data(self) -> dict:
         """Fetch and cache market pricing data from MCP server."""
         if self._market_data is None:
@@ -260,6 +301,28 @@ class BuyerAgent:
         return json.loads(reply_content)
 
 
+    async def _ensure_tools_discovered(self) -> None:
+        """
+        Discover tools from the pricing MCP server on the first call, then cache.
+
+        This replaces the hardcoded tool list with whatever the server
+        actually exposes at runtime — true MCP auto-discovery.
+        """
+        if self._discovered_tools is not None:
+            return
+
+        print("   [Buyer] Discovering MCP tools (first call)...")
+        self._discovered_tools = await discover_mcp_tools(PRICING_SERVER_PATH)
+        self._allowed_tool_names = {t.name for t in self._discovered_tools}
+
+        tools_section = format_tools_for_prompt(self._discovered_tools)
+        self._planner_prompt = BUYER_MCP_PLANNER_PROMPT_TEMPLATE.format(
+            tools_section=tools_section
+        )
+
+        discovered_names = [t.name for t in self._discovered_tools]
+        print(f"   [Buyer] Discovered {len(discovered_names)} tools: {discovered_names}")
+
     async def _plan_mcp_tool_calls(self, planning_context: str) -> list[dict]:
         """
         Ask GPT-4o which MCP tools to call this round.
@@ -271,11 +334,15 @@ class BuyerAgent:
         rather than a hardcoded script.
 
         Uses temp=0 and a minimal prompt so the decision is fast and cheap.
+        The available tools are discovered dynamically from the MCP server
+        via list_tools() — not hardcoded in the prompt.
         """
+        await self._ensure_tools_discovered()
+
         response = await self.client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": BUYER_MCP_PLANNER_PROMPT},
+                {"role": "system", "content": self._planner_prompt},
                 {"role": "user", "content": planning_context},
             ],
             response_format={"type": "json_object"},
@@ -287,14 +354,13 @@ class BuyerAgent:
         parsed = json.loads(content)
         tool_calls = parsed.get("tool_calls", [])
 
-        # Safety gate: only permit known tools even if planner hallucinates.
-        allowed_tools = {"get_market_price", "calculate_discount"}
+        # Safety gate: only permit tools actually discovered from the server.
         valid_calls: list[dict] = []
 
         for call in tool_calls:
             tool = call.get("tool")
             arguments = call.get("arguments", {})
-            if tool in allowed_tools and isinstance(arguments, dict):
+            if tool in self._allowed_tool_names and isinstance(arguments, dict):
                 valid_calls.append({"tool": tool, "arguments": arguments})
 
         # Keep runtime bounded: max 2 MCP calls per buyer turn.

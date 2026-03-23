@@ -227,7 +227,7 @@ Finer-grained nodes (one type per node) provide:
 
 In our workshop, `buyer_node` combines LLM + data + action into one node for simplicity. In production, you'd split these apart.
 
-Implementation note (current repo): Module 3 runs in strict planner mode for MCP — the buyer/seller agents first use GPT-4o to select MCP tool calls for the turn, and only those selected calls are executed (no automatic fallback tool calls).
+Implementation note (current repo): Module 3 runs in strict planner mode for MCP — the buyer/seller agents first call `list_tools()` to discover available tools from their MCP servers, then use GPT-4o to select which of those discovered tools to call for the turn. Only selected calls are executed (no automatic fallback tool calls). The tool list in the planner prompt is built dynamically from the server's live schemas, not hardcoded.
 
 ### Edges — The Connections
 

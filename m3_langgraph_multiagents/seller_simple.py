@@ -99,29 +99,18 @@ CRITICAL RULES:
   - Emphasize the $75,000 in recent renovations in EVERY response
   - Be firm but professional -- don't be insulted by low offers"""
 
-SELLER_MCP_PLANNER_PROMPT = """You are selecting MCP tools for a seller negotiation agent.
+SELLER_MCP_PLANNER_PROMPT_TEMPLATE = """You are selecting MCP tools for a seller negotiation agent.
 
 Return strict JSON in this format:
-{
+{{
     "tool_calls": [
-        {"tool": "<tool_name>", "arguments": { ... }}
+        {{"tool": "<tool_name>", "arguments": {{ ... }}}}
     ]
-}
+}}
 
 Available tools and required arguments:
 
-Pricing server tools:
-- get_market_price: {"address": "string", "property_type": "single_family|condo|townhouse"}
-- calculate_discount: {
-        "base_price": number,
-        "market_condition": "hot|balanced|cold",
-        "days_on_market": number,
-        "property_condition": "excellent|good|fair|poor"
-    }
-
-Inventory server tools:
-- get_inventory_level: {"zip_code": "string"}
-- get_minimum_acceptable_price: {"property_id": "string"}
+{tools_section}
 
 Rules:
 - Call 2-4 tools as needed.
@@ -134,6 +123,49 @@ Rules:
 
 
 # ─── MCP Helpers ──────────────────────────────────────────────────────────────
+
+async def discover_mcp_tools(server_path: str) -> list:
+    """
+    Connect to an MCP server and return its tool schemas via list_tools().
+
+    This replaces the hardcoded tool list in the planner prompt with
+    whatever the server actually exposes at runtime — the same dynamic
+    discovery pattern that github_agent_client.py and Module 4's ADK use.
+    """
+    server_params = StdioServerParameters(
+        command=sys.executable,
+        args=[server_path],
+    )
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            response = await session.list_tools()
+            return list(response.tools)
+
+
+def format_tools_for_prompt(tools: list) -> str:
+    """
+    Format MCP tool schemas into a human-readable string for the planner prompt.
+
+    Each tool's name, description, and JSON Schema parameters are rendered so
+    the LLM knows exactly what arguments to provide.
+    """
+    lines: list[str] = []
+    for tool in tools:
+        input_schema = (
+            tool.inputSchema.model_dump()
+            if hasattr(tool.inputSchema, "model_dump")
+            else tool.inputSchema
+        )
+        props = input_schema.get("properties", {}) if isinstance(input_schema, dict) else {}
+        args_summary = {k: v.get("type", "any") for k, v in props.items()}
+        desc = (tool.description or "").split("\n")[0]  # first line only
+        lines.append(f"- {tool.name}: {json.dumps(args_summary)}")
+        if desc:
+            lines.append(f"    {desc}")
+    return "\n".join(lines)
+
 
 async def call_mcp_server(server_path: str, tool_name: str, arguments: dict) -> dict:
     """
@@ -193,6 +225,11 @@ class SellerAgent:
         self._seller_constraints: Optional[dict] = None
         self._last_buyer_message_id: Optional[str] = None
 
+        # Dynamic tool discovery (populated on first planning call)
+        self._discovered_tools: Optional[list] = None
+        self._allowed_tool_names: Optional[set[str]] = None
+        self._planner_prompt: Optional[str] = None
+
     async def _get_market_data(self) -> dict:
         """Fetch market data via pricing MCP server."""
         if self._market_data is None:
@@ -250,6 +287,31 @@ class SellerAgent:
 
         return json.loads(reply_content)
 
+    async def _ensure_tools_discovered(self) -> None:
+        """
+        Discover tools from both MCP servers on the first call, then cache.
+
+        This replaces the hardcoded tool list with whatever the servers
+        actually expose at runtime — true MCP auto-discovery.
+        """
+        if self._discovered_tools is not None:
+            return
+
+        print("   [Seller] Discovering MCP tools (first call)...")
+        pricing_tools = await discover_mcp_tools(PRICING_SERVER_PATH)
+        inventory_tools = await discover_mcp_tools(INVENTORY_SERVER_PATH)
+
+        self._discovered_tools = pricing_tools + inventory_tools
+        self._allowed_tool_names = {t.name for t in self._discovered_tools}
+
+        tools_section = format_tools_for_prompt(self._discovered_tools)
+        self._planner_prompt = SELLER_MCP_PLANNER_PROMPT_TEMPLATE.format(
+            tools_section=tools_section
+        )
+
+        discovered_names = [t.name for t in self._discovered_tools]
+        print(f"   [Seller] Discovered {len(discovered_names)} tools: {discovered_names}")
+
     async def _plan_mcp_tool_calls(self, planning_context: str) -> list[dict]:
         """
         Ask GPT-4o which MCP tools to call this round.
@@ -261,11 +323,15 @@ class SellerAgent:
         rather than a hardcoded script.
 
         Uses temp=0 and a minimal prompt so the decision is fast and cheap.
+        The available tools are discovered dynamically from the MCP servers
+        via list_tools() — not hardcoded in the prompt.
         """
+        await self._ensure_tools_discovered()
+
         response = await self.client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[
-                {"role": "system", "content": SELLER_MCP_PLANNER_PROMPT},
+                {"role": "system", "content": self._planner_prompt},
                 {"role": "user", "content": planning_context},
             ],
             response_format={"type": "json_object"},
@@ -277,17 +343,13 @@ class SellerAgent:
         parsed = json.loads(content)
         tool_calls = parsed.get("tool_calls", [])
 
-        # Safety gate: enforce tool allowlist to prevent accidental tool injection.
-        allowed_tools = {
-            "get_market_price", "calculate_discount",
-            "get_inventory_level", "get_minimum_acceptable_price",
-        }
+        # Safety gate: only permit tools actually discovered from the servers.
         valid_calls: list[dict] = []
 
         for call in tool_calls:
             tool = call.get("tool")
             arguments = call.get("arguments", {})
-            if tool in allowed_tools and isinstance(arguments, dict):
+            if tool in self._allowed_tool_names and isinstance(arguments, dict):
                 valid_calls.append({"tool": tool, "arguments": arguments})
 
         # Keep seller turn bounded (max 4 calls) while still allowing richer context.

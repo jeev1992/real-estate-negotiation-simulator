@@ -2,41 +2,31 @@
 
 ## Code changes
 
-### 1. Update `BUYER_MCP_PLANNER_PROMPT` in `m3_langgraph_multiagents/buyer_simple.py`
+### 1. No planner prompt changes needed
 
-Add the new tool to the available tools list in the planner prompt:
+The buyer agent discovers tools **dynamically** via `list_tools()` at startup. Since you added `get_property_tax_estimate` to the pricing server (Exercise 1), the agent will automatically see it — the planner prompt is built from the server's live tool schemas.
 
-```python
-BUYER_MCP_PLANNER_PROMPT = """You are selecting MCP tools for a buyer negotiation agent.
-
-Return strict JSON in this format:
-{
-    "tool_calls": [
-        {"tool": "<tool_name>", "arguments": { ... }}
-    ]
-}
-
-Available tools and required arguments:
-- get_market_price: {"address": "string", "property_type": "single_family|condo|townhouse"}
-- calculate_discount: {
-        "base_price": number,
-        "market_condition": "hot|balanced|cold",
-        "days_on_market": number,
-        "property_condition": "excellent|good|fair|poor"
-    }
-- get_property_tax_estimate: {"price": number, "tax_rate": number}
-
-Rules:
-- Call 1-3 tools only.
-- Prefer get_market_price first when market context is stale or unknown.
-- Call calculate_discount when offer-range guidance is needed.
-- Call get_property_tax_estimate to factor in annual holding costs.
-- Never invent tools outside the list.
-- Output JSON only.
-"""
+You can verify by watching the startup log:
+```
+[Buyer] Discovering MCP tools (first call)...
+[Buyer] Discovered 3 tools: ['get_market_price', 'calculate_discount', 'get_property_tax_estimate']
 ```
 
-### 2. Update `BUYER_SYSTEM_PROMPT` strategy section
+### 2. Add execution handling in `_gather_mcp_context()`
+
+In `buyer_simple.py`, add a new `elif` branch to handle the tool call:
+
+```python
+elif tool == "get_property_tax_estimate":
+    args = {
+        "price": float(arguments.get("price", LISTING_PRICE)),
+        "tax_rate": float(arguments.get("tax_rate", 0.02)),
+    }
+    print("   [Buyer] Calling MCP: get_property_tax_estimate...")
+    tax_data = await call_pricing_mcp("get_property_tax_estimate", args)
+```
+
+### 3. Update `BUYER_SYSTEM_PROMPT` strategy section
 
 Add this line to the strategy bullet list:
 
@@ -48,14 +38,19 @@ Add this line to the strategy bullet list:
 
 The `call_pricing_mcp()` function is **generic** — it takes any `tool_name` and `arguments` dict and calls them on the pricing server. Since `get_property_tax_estimate` is registered on the same server, it works automatically through the existing MCP client code.
 
-This is the power of the MCP protocol: adding a new tool on the server side requires zero changes to the client transport layer. Only the LLM's prompt needs updating so it knows the tool exists.
+This is the power of MCP's dynamic discovery: adding a new `@mcp.tool()` on the server side is automatically picked up by the agent's `list_tools()` call at startup. No prompt editing needed — the planner prompt is built from live schemas.
 
 ## Reflection answer
 
-Letting the LLM decide whether to call the tax tool is better because:
-- **Cost**: Calling all tools every round wastes tokens and API budget on data the agent may not need.
-- **Relevance**: In early rounds, market price matters most; tax estimates become relevant when fine-tuning a near-final offer.
-- **Scalability**: As the tool list grows (5, 10, 20 tools), hardcoding all calls becomes unmanageable. ReAct planning scales naturally.
+Dynamic discovery via `list_tools()` has clear advantages:
+- **Deployment**: Add a tool to the server, restart it, agents pick it up — no agent code changes.
+- **Consistency**: The prompt always matches what the server actually offers — no stale hardcoded lists.
+- **Scalability**: Works the same whether the server has 2 tools or 20.
+
+The risks to consider:
+- **Security**: If a server exposes a dangerous tool, the agent might call it. The allowlist in `_plan_mcp_tool_calls` (built from `list_tools()` results) mitigates this — but only if you trust the servers you connect to.
+- **Prompt size**: 20+ tool schemas could consume significant context. In production, you might filter or summarize.
+- **Determinism**: Adding a tool changes agent behavior without touching agent code — good for agility, risky for auditability.
 
 ## Verify
 ```bash

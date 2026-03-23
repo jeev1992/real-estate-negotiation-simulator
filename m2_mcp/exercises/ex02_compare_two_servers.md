@@ -5,10 +5,10 @@ After adding `get_property_tax_estimate` in Exercise 1, connect it to the buyer 
 
 ## What to look for
 In `m3_langgraph_multiagents/buyer_simple.py`, the buyer agent uses a two-phase pattern:
-1. **Planning phase** (`BUYER_MCP_PLANNER_PROMPT`): GPT-4o decides which MCP tools to call
+1. **Planning phase** (`_plan_mcp_tool_calls`): GPT-4o decides which MCP tools to call
 2. **Execution phase** (`call_pricing_mcp()`): The agent executes those tool calls
 
-You need to update both phases so the LLM knows the new tool exists and can choose to call it.
+The planner prompt is built **dynamically** — the agent calls `list_tools()` on the MCP server at startup and injects the discovered tool schemas into the prompt. So adding a tool to the pricing server is enough for the LLM to see it. You just need to handle execution of the new tool.
 
 ## Steps
 
@@ -18,14 +18,16 @@ Make sure Exercise 1 is complete and the pricing server starts with your new too
 python m2_mcp/pricing_server.py
 ```
 
-### Step 2 — Update the planner prompt
-In `m3_langgraph_multiagents/buyer_simple.py`, find `BUYER_MCP_PLANNER_PROMPT` and add the new tool to the available tools list:
+### Step 2 — Verify the tool is auto-discovered
+The buyer agent discovers tools dynamically via `list_tools()` at startup. Since you added `get_property_tax_estimate` to the pricing server, the agent will automatically see it in its planner prompt — **no manual prompt editing needed**.
 
-```python
-- get_property_tax_estimate: {"price": number, "tax_rate": number (optional, default 0.02)}
+Run the agent and watch for the discovery log:
+```
+[Buyer] Discovering MCP tools (first call)...
+[Buyer] Discovered 3 tools: ['get_market_price', 'calculate_discount', 'get_property_tax_estimate']
 ```
 
-Add it after the existing `calculate_discount` entry.
+However, you do need to handle execution of the new tool. In `buyer_simple.py`, find `_gather_mcp_context()` and add an `elif` branch for `get_property_tax_estimate` (similar to the existing `calculate_discount` branch).
 
 ### Step 3 — Update the system prompt
 In `BUYER_SYSTEM_PROMPT`, add a note encouraging the buyer to consider annual tax costs when justifying offers. For example, add to the strategy section:
@@ -43,8 +45,8 @@ Watch the buyer agent output. It may or may not call `get_property_tax_estimate`
 
 ## Verify
 - The pricing server starts without errors after Exercise 1
-- The buyer agent runs without errors with the updated planner prompt
+- The buyer agent discovers 3 tools (including `get_property_tax_estimate`) on startup
 - If the agent calls `get_property_tax_estimate`, the MCP call succeeds and returns tax data
 
 ## Reflection question
-> Why is it better to let the LLM decide whether to call the tax tool (ReAct-style planning) rather than hardcoding it to always call all three tools? Think about: token cost, relevance, and what happens as the tool list grows.
+> The planner prompt is now built dynamically from `list_tools()`. What are the advantages and risks of auto-discovering tools vs. a hardcoded allowlist? Think about: security (what if a server exposes a dangerous tool), prompt size (20+ tools), and deployment (adding tools without redeploying agents).
