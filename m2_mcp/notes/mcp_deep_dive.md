@@ -318,7 +318,7 @@ npx --version
 
 ### Method 1: Direct stdio Connection (Python)
 
-See `m2_mcp/github_demo_client.py` for the full runnable demo.
+See `m2_mcp/github_agent_client.py` for the full runnable demo.
 
 ```python
 import asyncio

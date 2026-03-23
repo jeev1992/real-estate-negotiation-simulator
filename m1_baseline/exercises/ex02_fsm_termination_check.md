@@ -9,14 +9,17 @@ The naive implementation (`naive_negotiation.py`) has **10 documented failure mo
 ## Steps
 
 ### Step 1 — Run the naive negotiation and observe
+
+> **Note**: `naive_negotiation.py` makes real GPT-4o calls. You will need `OPENAI_API_KEY` set in your `.env` file.
+
 ```bash
 python m1_baseline/naive_negotiation.py
 ```
 
 Watch the output carefully. Note:
-- How does the loop terminate? What conditions does it check?
-- What happens when parsing fails ("FAILURE MODE" demos at the end)?
-- What would happen if buyer max < seller min (no ZOPA)?
+- **Demo 1** (Buyer max $460K, Seller min $445K): How many turns does it take to close? Does the price land inside the $445K–$460K zone of agreement?
+- **Demo 2** (Buyer max $420K, Seller min $450K): How does the loop terminate? What triggers the exit? How many LLM calls were wasted?
+- **Demo 3** (static): What happens when parsing fails? What does the regex extract when there are two prices in one message?
 
 ### Step 2 — Run the FSM demo and observe
 ```bash

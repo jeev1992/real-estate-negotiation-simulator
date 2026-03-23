@@ -175,7 +175,7 @@ async def main() -> None:
         # ── Post-negotiation summary ──────────────────────────────────────────
         print("\nNEXT STEPS:")
         print("  - Try the ADK version:  python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102")
-        print("  - GitHub MCP demo:      python m2_mcp/github_demo_client.py")
+        print("  - GitHub MCP agent:     python m2_mcp/github_agent_client.py")
         print("  - Exercises:            open exercises/exercises.md")
         print()
 

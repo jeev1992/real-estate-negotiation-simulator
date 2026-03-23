@@ -18,8 +18,8 @@ cp .env.example .env
 
 ### Verify everything works before participants arrive
 ```bash
-python m1_baseline/state_machine.py        # Should print FSM demo, no API key
-python m1_baseline/naive_negotiation.py    # Should fail loudly (that's the point)
+python m1_baseline/state_machine.py        # Should print FSM demo, no API key needed
+python m1_baseline/naive_negotiation.py    # Requires OPENAI_API_KEY — Demo 1 should close ~$453K in 3 turns; Demo 2 should run 8 turns (demo cap; production default is 100) then emergency exit
 pytest tests/ -v                           # All tests should pass, no API keys needed
 python m3_langgraph_multiagents/main_langgraph_multiagent.py --rounds 2           # Quick smoke test with OpenAI
 python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102
@@ -50,7 +50,7 @@ At the start of the workshop, explicitly orient learners to the repo layout:
 | 0:00–0:15   | Intro  | What we're building + architecture overview  | Show README diagram                             |
 | 0:15–0:30   | M1     | Why naive AI agents break (demo)             | `python m1_baseline/naive_negotiation.py`       |
 | 0:30–0:45   | M1     | FSM: the termination fix                     | `python m1_baseline/state_machine.py`           |
-| 0:45–1:30   | M2     | MCP deep dive: protocol + GitHub live demo   | `python m2_mcp/github_demo_client.py`           |
+| 0:45–1:30   | M2     | MCP deep dive: protocol + GitHub live demo   | `python m2_mcp/github_agent_client.py`           |
 | 1:30–1:45   | Break  | —                                            | —                                               |
 | 1:45–2:05   | M2     | Custom MCP servers + information asymmetry   | Walk `m2_mcp/pricing_server.py`                 |
 | 2:05–2:50   | M3     | LangGraph deep dive + full run               | `m3_langgraph_multiagents/langgraph_flow.py`, `m3_langgraph_multiagents/main_langgraph_multiagent.py` |
@@ -205,23 +205,25 @@ python m1_baseline/naive_negotiation.py
 ```
 
 **SAY before running:**
-> "This is what most people build first. It works in the demo.
-> Watch what happens when we stress-test it."
+> "This is what most people build first. It uses a real LLM — GPT-4o —
+> but with no schema, no state machine, just raw strings and a regex parser.
+> Watch what happens."
 
 **WATCH FOR:**
-- Demo 1: Works by luck — string parsing happens to work
-- Demo 2: RUNS 100 TURNS on an impossible agreement — no real termination
-- Demo 3: The 10 failure modes printed explicitly
+- Demo 1: Closes in ~3 turns at ~$453K — looks fine. But it only worked because the LLM happened to write the price in a format the regex could grab
+- Demo 2: RUNS 8 TURNS (demo cap) on an impossible agreement — buyer max $420K, seller min $450K, they can NEVER agree. Every call is wasted. In production the cap is 100 turns.
+- Demo 3: The 10 failure modes with concrete examples — no LLM needed, purely deterministic bugs
 
 **SAY after Demo 2:**
-> "100 turns. That's the emergency exit. In production: infinite loop, burning tokens.
-> And the 'DEAL' detection is string matching — fragile."
+> "8 turns in this demo. In production the emergency exit is at 100 turns —
+> potentially $1+ in API costs for a negotiation that was doomed from round 1.
+> And there is no mathematical guarantee it stops. The 'while True' is the problem."
 
 **WALK THROUGH the code:**
 ```python
-while True:                              # no guarantee
-    if "DEAL" in seller_response:        # string matching — can be spoofed
-    if turn_count > 100: break           # emergency exit, not a proof
+while True:                                      # no guarantee of termination
+    if "DEAL" in current_message.upper():        # string matching — "deal-breaker" triggers this!
+    if turn > max_turns: break                   # emergency exit, not a proof
 ```
 
 **SAY:**
@@ -366,7 +368,7 @@ echo $GITHUB_TOKEN  # Should start with ghp_
 
 **Run:**
 ```bash
-python m2_mcp/github_demo_client.py
+python m2_mcp/github_agent_client.py
 ```
 
 **WALK THROUGH the output section by section — pause after each:**
@@ -1065,7 +1067,7 @@ Exercises use difficulty labels: `[Starter]` (15 min), `[Core]` (30–45 min), `
 
 **If 15–20 min remaining (pick one):**
 - M2 Exercise 1 `[Starter]` — Add a new MCP tool to the pricing server
-- M1 Exercise 2 `[Core]` — Compare naive vs FSM failure modes (no API keys needed, analysis only)
+- M1 Exercise 2 `[Core]` — Compare naive vs FSM failure modes (requires OPENAI_API_KEY to run naive demo; analysis/table-fill exercise)
 
 **If 30–45 min remaining (pick two):**
 - M1 Exercise 1 `[Core]` — Add a TIMEOUT terminal state to the FSM (no API keys, teaches transition tables)

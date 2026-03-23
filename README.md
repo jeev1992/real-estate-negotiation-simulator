@@ -48,8 +48,8 @@ real-estate-negotiation-simulator/
 │
 ├── m2_mcp/                            # MODULE 2 — External data via MCP
 │   ├── README.md                      # Module guide for learners
-│   ├── github_demo_client.py          # Connect to GitHub's real MCP server
-│   ├── sse_demo_client.py             # SSE client demo (connects over HTTP)
+│   ├── github_agent_client.py         # LLM agent that calls GitHub tools via MCP
+│   ├── sse_agent_client.py             # SSE agent client (LLM picks tools over HTTP)
 │   ├── pricing_server.py              # Custom MCP: market pricing tools
 │   ├── inventory_server.py            # Custom MCP: inventory + seller constraints
 │   ├── exercises/                      # Hands-on coding exercises for Module 2
@@ -191,20 +191,25 @@ GITHUB_TOKEN=ghp-your-token-here   # Optional — Module 2 GitHub demo only
 ### 8. Run a smoke test
 
 ```bash
+# Smoke test (no API key needed — FSM only)
+python m1_baseline/state_machine.py
+
+# Full Module 1 demo (requires OPENAI_API_KEY)
 python m1_baseline/naive_negotiation.py
 ```
 
-If Module 1 runs, your environment is ready.
+If `state_machine.py` runs cleanly, your Python environment is ready.
+If `naive_negotiation.py` runs (needs `OPENAI_API_KEY`), your API key is configured correctly.
 
 ### 9. Run the Workshop Modules in Order
 
 ```bash
-# MODULE 1: Watch the naive version fail (no API keys needed)
-python m1_baseline/naive_negotiation.py   # 10 failure modes
-python m1_baseline/state_machine.py       # FSM termination guarantee
+# MODULE 1: Naive LLM negotiation (10 failure modes) + FSM fix
+python m1_baseline/naive_negotiation.py   # requires OPENAI_API_KEY — real LLM calls, 10 failure modes
+python m1_baseline/state_machine.py       # no API key needed — FSM termination guarantee
 
 # MODULE 2: MCP protocol
-python m2_mcp/github_demo_client.py       # GitHub MCP demo (needs GITHUB_TOKEN)
+python m2_mcp/github_agent_client.py      # GitHub MCP agent (needs GITHUB_TOKEN + OPENAI_API_KEY)
 python m2_mcp/pricing_server.py           # Run MCP server standalone (stdio)
 python m2_mcp/pricing_server.py --sse --port 8001  # SSE transport mode
 
@@ -328,7 +333,7 @@ See `INSTRUCTOR_GUIDE.md` for the full 4-hour script, talking points, and debrie
 |---|---|---|---|
 | 0:00–0:15 | Intro | What we're building | `README.md` |
 | 0:15–0:45 | M1 | Why naive agents break + FSM fix | `m1_baseline/` |
-| 0:45–1:30 | M2 | MCP with GitHub | `m2_mcp/github_demo_client.py` |
+| 0:45–1:30 | M2 | MCP with GitHub | `m2_mcp/github_agent_client.py` |
 | 1:30–2:05 | M2 | Custom MCP servers (break at 1:30) | `m2_mcp/pricing_server.py` |
 | 2:05–2:50 | M3 | Pure LangGraph multi-agent flow + full simple run | `m3_langgraph_multiagents/`, `m3_langgraph_multiagents/main_langgraph_multiagent.py` |
 | 2:50–3:50 | M4 | True A2A protocol demos (ADK backing) | `m4_adk_multiagents/a2a_protocol_seller_server.py`, `m4_adk_multiagents/a2a_protocol_buyer_client_demo.py` |

@@ -21,40 +21,48 @@ The agent doesn't need to know if the data comes from a database, an API, or a s
 
 ## File breakdown
 
-### `github_demo_client.py` — Learn MCP with a tool you already know
+### `github_agent_client.py` — An LLM agent that uses GitHub via MCP
 
-Before building custom servers, this file connects to **GitHub's official MCP server** and calls its tools.
+This file connects to **GitHub's official MCP server** and lets GPT-4o decide which tools to call based on your natural language query.
 
-Why GitHub first? Because you already know what GitHub does. Seeing MCP work on a familiar tool makes the protocol click before you write your own.
+Why GitHub? Because you already know what GitHub does. Seeing an LLM agent use MCP with a familiar tool makes the protocol click before you write your own servers.
 
 **What it demonstrates:**
 - Connecting to an MCP server over `stdio` transport
-- Calling `list_tools` to discover what the server offers
-- Calling a tool (`search_repositories`, etc.) with structured arguments
-- Seeing how tools look to an LLM: as JSON schemas, not Python functions
+- Auto-discovering tools via `list_tools` and converting schemas to OpenAI function-calling format
+- The LLM **choosing** which tools to call (agentic, not scripted)
+- The ReAct-style tool loop: LLM calls tools, gets results, calls more tools or answers
+- This is the **same pattern** used by our buyer/seller agents in Module 3
 
 **Prerequisites:**
 - Node.js 18+ installed (`node --version`)
 - A GitHub Personal Access Token (`repo` or `public_repo` scope)
+- An OpenAI API key
 
 ```bash
 export GITHUB_TOKEN=ghp_your_token_here
-python m2_mcp/github_demo_client.py
+export OPENAI_API_KEY=sk-your_key_here
+python m2_mcp/github_agent_client.py
+
+# Or with a custom query:
+python m2_mcp/github_agent_client.py "Find popular MCP server implementations"
 ```
 
 ---
 
-### `sse_demo_client.py` — SSE client demo (connects over HTTP)
+### `sse_agent_client.py` — SSE agent client (connects over HTTP)
 
-This script connects to the pricing and/or inventory servers running in **SSE mode** (HTTP) and calls their tools — the same protocol as `github_demo_client.py`, just a different transport.
+An LLM-powered agent that connects to the pricing and/or inventory servers running in **SSE mode** (HTTP) and lets GPT-4o decide which tools to call — the same agentic pattern as `github_agent_client.py`, just a different transport.
 
 **What it demonstrates:**
 - Connecting to MCP servers via SSE (Server-Sent Events) transport
-- Tool discovery and calling over HTTP
-- Connecting to multiple servers from a single client
+- The LLM **choosing** which tools to call (agentic, not scripted)
+- Connecting to multiple MCP servers from a single agent
+- Proving the transport is irrelevant — same protocol, same agent loop
 
 **Prerequisites:**
 - Start the servers in SSE mode first (in separate terminals)
+- An OpenAI API key
 
 ```bash
 # Terminal 1:
@@ -63,9 +71,10 @@ python m2_mcp/pricing_server.py --sse --port 8001
 # Terminal 2:
 python m2_mcp/inventory_server.py --sse --port 8002
 
-# Terminal 3 — run the client:
-python m2_mcp/sse_demo_client.py                    # pricing server only
-python m2_mcp/sse_demo_client.py --both              # both servers
+# Terminal 3 — run the agent:
+python m2_mcp/sse_agent_client.py                                          # all sample queries
+python m2_mcp/sse_agent_client.py "Is this property overpriced?"            # custom query
+python m2_mcp/sse_agent_client.py --both "Use inventory and pricing data"   # both servers
 ```
 
 ---
@@ -150,9 +159,10 @@ The agent never imports your Python functions directly. It talks to the server o
 ## How to run
 
 ```bash
-# GitHub MCP demo (needs GITHUB_TOKEN + Node.js)
+# GitHub MCP agent (needs GITHUB_TOKEN + OPENAI_API_KEY + Node.js)
 export GITHUB_TOKEN=ghp_your_token_here
-python m2_mcp/github_demo_client.py
+export OPENAI_API_KEY=sk-your_key_here
+python m2_mcp/github_agent_client.py
 
 # Inspect pricing server tools (no API key needed)
 python m2_mcp/pricing_server.py
@@ -165,16 +175,17 @@ python m2_mcp/inventory_server.py
 python m2_mcp/pricing_server.py --sse --port 8001
 python m2_mcp/inventory_server.py --sse --port 8002
 
-# Then connect with the SSE demo client (in another terminal)
-python m2_mcp/sse_demo_client.py                    # pricing server only
-python m2_mcp/sse_demo_client.py --both              # both servers
+# Then connect with the SSE agent client (in another terminal)
+python m2_mcp/sse_agent_client.py                    # all sample queries (pricing only)
+python m2_mcp/sse_agent_client.py --both              # includes inventory queries too
 ```
 
-**What to expect from the GitHub demo:**
+**What to expect from the GitHub agent:**
 - It connects to GitHub's server via `npx`
 - Lists all available tools (there are ~20+)
-- Calls a couple of them and prints the results
-- Shows you exactly how an LLM "sees" tools as JSON schemas
+- GPT-4o decides which tools to call based on your query
+- Executes the tool calls via MCP and feeds results back
+- Produces a natural language summary
 
 **What to expect from the pricing/inventory servers:**
 - They start and wait for a client to connect

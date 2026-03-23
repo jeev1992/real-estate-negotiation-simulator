@@ -27,6 +27,18 @@
 | #9 No observability (full fix) | M3 — LangGraph `history` list with append-only reducer |
 | #10 No evaluation | M3 — `print_negotiation_results()` in `langgraph_flow.py` |
 
+## What to observe when running the naive version
+
+**Demo 1** (ZOPA exists — Buyer max $460K, Seller min $445K):
+- Typically closes in 3–4 turns at ~$453K
+- Looks correct — but only because the LLM happened to write the price in a format the regex could grab
+- The regex `\$?(\d[\d,]*)` grabs the *first* number it finds. If the seller had mentioned any other number first (comps, square footage, renovation cost), the buyer would have accepted that instead.
+
+**Demo 2** (No ZOPA — Buyer max $420K, Seller min $450K):
+- Runs for 8 turns (demo cap), then triggers the emergency exit
+- The buyer stays at $420K; the seller stays at $450K; neither side can move into a range that satisfies both
+- The `while True` loop has no way to detect that no agreement is possible — it just keeps running until the band-aid exit at `max_turns`
+
 ## Reflection answer
 
 Yes, the FSM provides a **basic form** of observability via `check_invariants()` (detects impossible states) and `__repr__` (shows current state + turn count). However, it doesn't record history, which is critical for understanding _how_ a negotiation reached its outcome. LangGraph's `Annotated[list, operator.add]` reducer provides full round-by-round audit trails, which is true observability.

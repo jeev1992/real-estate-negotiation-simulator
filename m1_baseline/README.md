@@ -1,6 +1,9 @@
 # Module 1 — Baseline (`m1_baseline`)
 
-This is where the workshop starts. **No API keys needed.**
+This is where the workshop starts.
+
+- `naive_negotiation.py` — **requires `OPENAI_API_KEY`** (makes real GPT-4o calls)
+- `state_machine.py` — **no API key needed** (pure Python FSM demo)
 
 The goal of this module is to show *why* naive agent systems break — and to introduce the first fix: a Finite State Machine (FSM) that guarantees the negotiation always ends.
 
@@ -60,10 +63,10 @@ The key insight is in the transition table. Terminal states (`AGREED`, `FAILED`)
 
 ```python
 TRANSITIONS = {
-    IDLE:         {START_NEGOTIATION: NEGOTIATING},
-    NEGOTIATING:  {ACCEPT: AGREED, REJECT: FAILED, COUNTER: NEGOTIATING},
-    AGREED:       set(),   # <-- terminal: no transitions possible
-    FAILED:       set(),   # <-- terminal: no transitions possible
+    IDLE:        {NEGOTIATING, FAILED},
+    NEGOTIATING: {NEGOTIATING, AGREED, FAILED},
+    AGREED:      set(),   # <-- terminal: no transitions possible
+    FAILED:      set(),   # <-- terminal: no transitions possible
 }
 ```
 
@@ -91,22 +94,33 @@ Every module you learn fixes one or more rows in that failure table.
 
 ## How to run
 
-No API keys needed for either file.
-
 ```bash
 # Run from the real-estate-negotiation-simulator/ directory
 
-# Part 1: Watch the naive version (it may finish, may not — that's the point)
+# Part 1: Watch the naive version (requires OPENAI_API_KEY — makes real GPT-4o calls)
 python m1_baseline/naive_negotiation.py
 
-# Part 2: Run the FSM demo (always terminates, prints state transitions)
+# Part 2: Run the FSM demo (no API key needed — always terminates)
 python m1_baseline/state_machine.py
 ```
 
 **What to expect from `naive_negotiation.py`:**
-- It runs a few rounds of text-based negotiation
-- Watch for garbled prices and unpredictable endings
-- Notice there is no guarantee it ends cleanly
+
+*Demo 1 — "Works by luck" (Buyer max $460K, Seller min $445K — ZOPA exists):*
+- Real GPT-4o calls are made for every turn
+- Typically closes in 3–4 turns at a price like $453K — within the zone of agreement
+- The price is correct by accident: if the seller had mentioned any other number first, the regex would have grabbed that instead
+- Run it twice — you may get a different path to the same outcome
+
+*Demo 2 — "Impossible agreement" (Buyer max $420K, Seller min $450K — no ZOPA):*
+- There is mathematically no price both sides will accept
+- The loop runs for 8 turns (demo cap), then triggers the emergency exit
+- Every single LLM call is wasted — the agents can never converge
+- In production with a 100-turn cap this costs ~$1+ per doomed negotiation
+
+*Demo 3 — Static failure mode examples:*
+- No LLM needed — shows the regex and string-matching bugs directly
+- Demonstrates all 10 failure modes with concrete input/output pairs
 
 **What to expect from `state_machine.py`:**
 - It runs a short demo showing state transitions

@@ -2,7 +2,7 @@
 
 ## Summary of changes
 
-Four areas of `m1_baseline/state_machine.py` need to be updated.
+Six areas of `m1_baseline/state_machine.py` need to be updated.
 
 ### 1. Add import and new enum members
 
@@ -20,8 +20,6 @@ class FailureReason(Enum):
     MAX_TURNS_EXCEEDED  = auto()
     REJECTED_BY_BUYER   = auto()
     REJECTED_BY_SELLER  = auto()
-    POLICY_VIOLATION    = auto()
-    INVALID_TRANSITION  = auto()
     WALL_CLOCK_TIMEOUT  = auto()   # NEW
 ```
 
@@ -32,7 +30,6 @@ class FailureReason(Enum):
 class FSMContext:
     turn_count:        int                      = 0
     max_turns:         int                      = 5
-    last_offer:        Optional[float]          = None
     agreed_price:      Optional[float]          = None
     failure_reason:    Optional[FailureReason]  = None
     deadline_seconds:  float                    = 60.0    # NEW
