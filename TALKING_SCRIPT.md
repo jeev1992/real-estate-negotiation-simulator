@@ -1658,7 +1658,25 @@ Google ADK — the Agent Development Kit — is a framework layer that provides 
 
 The bottom note on the slide is critical: **"ADK orchestrates the inner loop: LlmAgent decides a tool call → Runner executes it via MCPToolset → result injected back into context → repeat until final response. You never write this loop manually."**
 
-In Module 3, we wrote the tool-calling logic ourselves in the buyer and seller agent files. In Module 4, ADK handles that entire loop. Our code just defines the agent and calls `runner.run_async()`.
+Let me be very specific about what "wrote the tool-calling logic ourselves" means, because this is the key difference between Module 3 and Module 4.
+
+In Module 3, every buyer or seller turn costs **two separate LLM calls**:
+
+**LLM Call 1 — the planner.** We call GPT-4o with a small prompt that says "here are the available tools, here's the context — which tools should I call?" The LLM returns a JSON object like `{"tool_calls": [{"tool": "get_market_price", "arguments": {...}}]}`. That's the plan.
+
+**Then we execute those tool calls ourselves** — our Python code iterates over the planned calls, spawns MCP subprocesses, calls `session.call_tool()`, collects the results. All hand-written orchestration in `_gather_mcp_context()`.
+
+**LLM Call 2 — the decision.** We take the tool results, string-interpolate them into a second prompt, and call GPT-4o again: "here's the market data, here's the buyer's offer — what's your counter?" The LLM returns the actual negotiation response.
+
+Two LLM calls. Manual orchestration in between. We wrote `_plan_mcp_tool_calls()`, `_gather_mcp_context()`, and the dispatch logic that routes each tool call to the right MCP server. That's real code we had to write and maintain.
+
+In Module 4, ADK collapses all of that into **one interaction**:
+
+GPT-4o gets the MCP tools as native function-calling definitions — the same way it sees OpenAI's built-in functions. When GPT-4o says "I want to call `get_market_price()`", the Runner **automatically** executes that call via MCPToolset, injects the result back into the conversation, and calls GPT-4o again. If GPT-4o wants to call another tool, the Runner does it again. When GPT-4o finally produces a text response with no tool calls, the loop ends.
+
+You never write the planning step. You never write the dispatch logic. You never manually connect tool results back to the LLM. ADK's `Runner.run_async()` handles the entire thing.
+
+The Module 3 pattern is intentionally visible — it's a teaching tool. You can see exactly how planning, execution, and decision are wired together. The Module 4 pattern is what you'd use in production — same result, but ADK handles the plumbing.
 
 ---
 
