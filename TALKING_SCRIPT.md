@@ -1664,11 +1664,11 @@ In Module 3, every buyer or seller turn costs **two separate LLM calls**:
 
 **LLM Call 1 — the planner.** We call GPT-4o with a small prompt that says "here are the available tools, here's the context — which tools should I call?" The LLM returns a JSON object like `{"tool_calls": [{"tool": "get_market_price", "arguments": {...}}]}`. That's the plan.
 
-**Then we execute those tool calls ourselves** — our Python code iterates over the planned calls, spawns MCP subprocesses, calls `session.call_tool()`, collects the results. All hand-written orchestration in `_gather_mcp_context()`.
+**Then we execute those tool calls ourselves** — our Python code groups the planned calls by server, opens one MCP session per server via `call_mcp_server_batch()`, and collects the results. The routing is dynamic — a `_tool_server_map` built during discovery maps each tool to its server. All orchestrated in `_gather_mcp_context()`.
 
 **LLM Call 2 — the decision.** We take the tool results, string-interpolate them into a second prompt, and call GPT-4o again: "here's the market data, here's the buyer's offer — what's your counter?" The LLM returns the actual negotiation response.
 
-Two LLM calls. Manual orchestration in between. We wrote `_plan_mcp_tool_calls()`, `_gather_mcp_context()`, and the dispatch logic that routes each tool call to the right MCP server. That's real code we had to write and maintain.
+Two LLM calls. Manual orchestration in between. We wrote `_plan_mcp_tool_calls()`, `_gather_mcp_context()`, and the tool-to-server mapping logic. That's real code we had to write and maintain.
 
 In Module 4, ADK collapses all of that into **one interaction**:
 

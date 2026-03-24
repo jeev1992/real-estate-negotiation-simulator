@@ -6,9 +6,9 @@ After adding `get_property_tax_estimate` in Exercise 1, connect it to the buyer 
 ## What to look for
 In `m3_langgraph_multiagents/buyer_simple.py`, the buyer agent uses a two-phase pattern:
 1. **Planning phase** (`_plan_mcp_tool_calls`): GPT-4o decides which MCP tools to call
-2. **Execution phase** (`call_pricing_mcp()`): The agent executes those tool calls
+2. **Execution phase** (`call_mcp_server_batch()`): The agent executes those tool calls in a single MCP session
 
-The planner prompt is built **dynamically** — the agent calls `list_tools()` on the MCP server at startup and injects the discovered tool schemas into the prompt. So adding a tool to the pricing server is enough for the LLM to see it. You just need to handle execution of the new tool.
+The planner prompt is built **dynamically** — the agent calls `list_tools()` on the MCP server at startup and injects the discovered tool schemas into the prompt. A `_tool_server_map` built during discovery maps each tool name to its originating server, so execution is fully dynamic. Adding a tool to the pricing server is enough — the agent discovers it, the planner can select it, and the dispatch routes it automatically.
 
 ## Steps
 
@@ -27,7 +27,7 @@ Run the agent and watch for the discovery log:
 [Buyer] Discovered 3 tools: ['get_market_price', 'calculate_discount', 'get_property_tax_estimate']
 ```
 
-However, you do need to handle execution of the new tool. In `buyer_simple.py`, find `_gather_mcp_context()` and add an `elif` branch for `get_property_tax_estimate` (similar to the existing `calculate_discount` branch).
+Since `_gather_mcp_context()` dispatches tool calls dynamically via the `_tool_server_map` (built during discovery), **no code changes are needed** for execution — the new tool is automatically routed to the pricing server.
 
 ### Step 3 — Update the system prompt
 In `BUYER_SYSTEM_PROMPT`, add a note encouraging the buyer to consider annual tax costs when justifying offers. For example, add to the strategy section:

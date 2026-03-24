@@ -215,7 +215,7 @@ Not all nodes are LLM calls. The docs identify four node types:
 | Type | Purpose | Example in our workshop |
 |---|---|---|
 | **LLM step** | Understanding, reasoning, decisions | `buyer_node` — GPT-4o decides the offer price |
-| **Data step** | Fetch external information | MCP tool call inside `call_pricing_mcp()` |
+| **Data step** | Fetch external information | MCP tool call inside `call_mcp_server_batch()` |
 | **Action step** | External operations with side effects | Sending an A2A message |
 | **User input step** | Human review / approval point | `interrupt()` for human-in-the-loop |
 

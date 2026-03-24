@@ -121,9 +121,9 @@ Available tools and required arguments:
 
 Rules:
 - Call 1-2 tools only.
-- Prefer get_market_price first when market context is stale or unknown.
-- Call calculate_discount when offer-range guidance is needed.
-- Never invent tools outside the list.
+- Prioritise tools that provide market comparables when context is stale or unknown.
+- Include discount or pricing-range tools when tactical offer guidance is needed.
+- Never invent tools outside the list above.
 - Output JSON only.
 """
 
@@ -153,8 +153,8 @@ def format_tools_for_prompt(tools: list) -> str:
     """
     Format MCP tool schemas into a human-readable string for the planner prompt.
 
-    Each tool's name and argument types are rendered so the LLM knows exactly
-    what arguments to provide.
+    Each tool's name, argument types, enum constraints, and description are
+    rendered so the LLM knows exactly what arguments (and valid values) to provide.
     """
     lines: list[str] = []
     for tool in tools:
@@ -164,48 +164,84 @@ def format_tools_for_prompt(tools: list) -> str:
             else tool.inputSchema
         )
         props = input_schema.get("properties", {}) if isinstance(input_schema, dict) else {}
-        args_summary = {k: v.get("type", "any") for k, v in props.items()}
+        args_detail: dict[str, str] = {}
+        for k, v in props.items():
+            typ = v.get("type", "any")
+            if "enum" in v:
+                typ = f"{typ} (one of: {v['enum']})"
+            if "default" in v:
+                typ += f" [default={v['default']}]"
+            args_detail[k] = typ
         desc = (tool.description or "").split("\n")[0]  # first line only
-        lines.append(f"- {tool.name}: {json.dumps(args_summary)}")
+        lines.append(f"- {tool.name}: {json.dumps(args_detail)}")
         if desc:
             lines.append(f"    {desc}")
     return "\n".join(lines)
 
 
-async def call_pricing_mcp(tool_name: str, arguments: dict) -> dict:
+async def call_mcp_server_batch(
+    server_path: str,
+    calls: list[tuple[str, dict]],
+) -> dict[str, dict]:
     """
-    Call a tool on the pricing MCP server.
+    Open ONE MCP session and execute multiple tool calls through it.
 
     MCP CONCEPT:
-    This function demonstrates the full MCP client lifecycle:
-    1. Define how to connect (StdioServerParameters)
-    2. Open transport (stdio_client context manager)
-    3. Create MCP session (ClientSession context manager)
-    4. Initialize session (MCP handshake)
-    5. Call tool by name with arguments
-    6. Parse and return the result
+    Spawning a subprocess per call is wasteful and can cause race
+    conditions on Windows. Batching all calls for the same server
+    into a single session is the recommended pattern.
 
-    In production, you'd keep the session open between calls
-    (not reconnect every time). Here we reconnect each call
-    for simplicity and to make the pattern clear.
+    Args:
+        server_path: Path to the MCP server script.
+        calls: List of (tool_name, arguments) pairs to execute.
+
+    Returns:
+        Dict keyed by tool_name with each tool's parsed result.
     """
+    if not calls:
+        return {}
+
     server_params = StdioServerParameters(
-        command=sys.executable,  # "python" — current interpreter
-        args=[PRICING_SERVER_PATH],
+        command=sys.executable,
+        args=[server_path],
     )
 
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
+    results: dict[str, dict] = {}
 
-            result = await session.call_tool(tool_name, arguments)
+    try:
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
 
-            # MCP results come back as content blocks
-            if result.content and len(result.content) > 0:
-                text = result.content[0].text
-                return json.loads(text)
+                for tool_name, arguments in calls:
+                    try:
+                        result = await session.call_tool(tool_name, arguments)
+                        if result.isError:
+                            text = result.content[0].text if result.content else "unknown error"
+                            print(f"   [MCP] Tool '{tool_name}' returned error: {text}")
+                            continue
+                        if result.content and len(result.content) > 0:
+                            text = result.content[0].text
+                            if text:
+                                results[tool_name] = json.loads(text)
+                            else:
+                                results[tool_name] = {}
+                        else:
+                            results[tool_name] = {}
+                    except Exception as tool_err:
+                        print(f"   [MCP] Tool '{tool_name}' failed: {tool_err}")
+    except BaseException as exc:
+        # On Windows, stdio_client teardown can raise ExceptionGroup.
+        # Extract and surface the real sub-exceptions for diagnostics,
+        # then return whatever results were collected before the failure.
+        sub = getattr(exc, "exceptions", None)
+        if sub:
+            for i, e in enumerate(sub):
+                print(f"   [MCP] Sub-exception {i}: {type(e).__name__}: {e}")
+        else:
+            print(f"   [MCP] Session error: {type(exc).__name__}: {exc}")
 
-    return {}
+    return results
 
 
 # ─── Buyer Agent Class ────────────────────────────────────────────────────────
@@ -248,36 +284,8 @@ class BuyerAgent:
         # Dynamic tool discovery (populated on first planning call)
         self._discovered_tools: Optional[list] = None
         self._allowed_tool_names: Optional[set[str]] = None
+        self._tool_server_map: dict[str, str] = {}
         self._planner_prompt: Optional[str] = None
-
-    async def _get_market_data(self) -> dict:
-        """Fetch and cache market pricing data from MCP server."""
-        if self._market_data is None:
-            print("   [Buyer] Calling MCP: get_market_price...")
-            self._market_data = await call_pricing_mcp(
-                "get_market_price",
-                {
-                    "address": PROPERTY_ADDRESS,
-                    "property_type": "single_family"
-                }
-            )
-            print(f"   [Buyer] MCP returned: avg comp ${self._market_data.get('market_statistics', {}).get('avg_comparable_price', 'N/A'):,}")
-        return self._market_data
-
-    async def _get_discount_analysis(self, market_condition: str, days_on_market: int) -> dict:
-        """Fetch discount analysis from MCP server."""
-        print("   [Buyer] Calling MCP: calculate_discount...")
-        result = await call_pricing_mcp(
-            "calculate_discount",
-            {
-                "base_price": float(LISTING_PRICE),
-                "market_condition": market_condition,
-                "days_on_market": days_on_market,
-                "property_condition": "good"
-            }
-        )
-        print(f"   [Buyer] MCP returned: offer range ${result.get('suggested_offer_prices', {}).get('moderate', 'N/A'):,}")
-        return result
 
     async def _call_llm(self, user_message: str) -> dict:
         """
@@ -314,6 +322,9 @@ class BuyerAgent:
         print("   [Buyer] Discovering MCP tools (first call)...")
         self._discovered_tools = await discover_mcp_tools(PRICING_SERVER_PATH)
         self._allowed_tool_names = {t.name for t in self._discovered_tools}
+        # Map each tool name to its originating server so execution is fully dynamic.
+        for t in self._discovered_tools:
+            self._tool_server_map[t.name] = PRICING_SERVER_PATH
 
         tools_section = format_tools_for_prompt(self._discovered_tools)
         self._planner_prompt = BUYER_MCP_PLANNER_PROMPT_TEMPLATE.format(
@@ -370,16 +381,21 @@ class BuyerAgent:
         self,
         stage: str,
         seller_price: Optional[float] = None,
-    ) -> tuple[dict, dict]:
+    ) -> dict[str, dict]:
         """
-        Let the agent decide which MCP tools to call, then execute them.
+        Let the agent decide which MCP tools to call, then execute them dynamically.
 
         The two-step pattern here is intentional and teachable:
           Step 1 (plan):    GPT-4o reads context, returns {"tool_calls": [...]}
-          Step 2 (execute): We call those tools and return the results
+          Step 2 (execute): We dispatch those calls using the tool→server map
+                            built during discovery — no hardcoded if/elif needed.
 
         Compare to M4 (ADK): Gemini does the same thing automatically inside
         MCPToolset's function-calling loop. Here we make the mechanism visible.
+
+        Returns a dict keyed by tool name, e.g.
+          {"get_market_price": {...}, "calculate_discount": {...}}
+        Missing tools simply won't have a key.
         """
         planning_context = (
             f"Stage: {stage}\n"
@@ -390,48 +406,38 @@ class BuyerAgent:
             "Need market comparables and tactical pricing guidance for next buyer response."
         )
 
-        # Initialize empty payloads so downstream code can always safely read dict keys.
-        market_data: dict = {}
-        discount_data: dict = {}
+        results: dict[str, dict] = {}
 
         try:
             planned_calls = await self._plan_mcp_tool_calls(planning_context)
             print(f"   [Buyer] Agent planned MCP calls: {[c['tool'] for c in planned_calls]}")
 
-            # Execute calls sequentially so logs/readability match teaching flow.
-            for call in planned_calls:
-                tool = call["tool"]
-                arguments = call["arguments"]
-
-                if tool == "get_market_price":
-                    args = {
-                        "address": arguments.get("address", PROPERTY_ADDRESS),
-                        "property_type": arguments.get("property_type", "single_family"),
-                    }
-                    print("   [Buyer] Calling MCP: get_market_price...")
-                    market_data = await call_pricing_mcp("get_market_price", args)
-                    print(f"   [Buyer] MCP returned: avg comp ${market_data.get('market_statistics', {}).get('avg_comparable_price', 'N/A'):,}")
-
-                elif tool == "calculate_discount":
-                    args = {
-                        "base_price": float(arguments.get("base_price", LISTING_PRICE)),
-                        "market_condition": arguments.get("market_condition", "balanced"),
-                        "days_on_market": int(arguments.get("days_on_market", 18)),
-                        "property_condition": arguments.get("property_condition", "good"),
-                    }
-                    print("   [Buyer] Calling MCP: calculate_discount...")
-                    discount_data = await call_pricing_mcp("calculate_discount", args)
-                    print(f"   [Buyer] MCP returned: offer range ${discount_data.get('suggested_offer_prices', {}).get('moderate', 'N/A'):,}")
-
             if not planned_calls:
                 print("   [Buyer] Agent planned no MCP calls this round")
+                return results
+
+            # Group calls by server so we open ONE subprocess per server.
+            # This avoids the Windows race condition caused by rapid
+            # sequential subprocess spawn/teardown for the same server.
+            server_batches: dict[str, list[tuple[str, dict]]] = {}
+            for call in planned_calls:
+                tool_name = call["tool"]
+                arguments = call["arguments"]
+                server_path = self._tool_server_map.get(tool_name)
+                if server_path is None:
+                    print(f"   [Buyer] WARN: No server mapping for tool '{tool_name}', skipping")
+                    continue
+                print(f"   [Buyer] Calling MCP: {tool_name}...")
+                server_batches.setdefault(server_path, []).append((tool_name, arguments))
+
+            for server_path, batch in server_batches.items():
+                batch_results = await call_mcp_server_batch(server_path, batch)
+                results.update(batch_results)
 
         except Exception as e:
             print(f"   [Buyer] MCP planning error (continuing without MCP data): {e}")
 
-        # Cache most recent market snapshot for later rounds/debug visibility.
-        self._market_data = market_data
-        return market_data, discount_data
+        return results
 
     async def make_initial_offer(self) -> NegotiationMessage:
         """
@@ -444,7 +450,9 @@ class BuyerAgent:
         print(f"\n[Buyer] Round {self.round}: Preparing initial offer...")
 
         # Step 1: Agent decides which MCP tools to call, then executes them
-        market_data, discount_data = await self._gather_mcp_context(stage="initial_offer")
+        mcp_results = await self._gather_mcp_context(stage="initial_offer")
+        market_data = mcp_results.get("get_market_price", {})
+        discount_data = mcp_results.get("calculate_discount", {})
 
         # Step 2: Build context for GPT-4o
         user_message = f"""
@@ -498,10 +506,12 @@ Based on the market data, what is your opening offer?
         seller_price = seller_message.get("price") or 0
 
         # Step 1: Agent decides which MCP tools to call, then executes them
-        market_data, discount_data = await self._gather_mcp_context(
+        mcp_results = await self._gather_mcp_context(
             stage="respond_to_counter",
             seller_price=float(seller_price),
         )
+        market_data = mcp_results.get("get_market_price", {})
+        discount_data = mcp_results.get("calculate_discount", {})
 
         # Step 2: Build context for GPT-4o
         user_message = f"""

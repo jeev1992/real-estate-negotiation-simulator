@@ -89,8 +89,8 @@ In `m3_langgraph_multiagents/seller_simple.py`, connect the appraisal server so 
 
 You'll need to:
 1. Add the appraisal server path constant (like `PRICING_SERVER_PATH` and `INVENTORY_SERVER_PATH`)
-2. Include it in `_ensure_tools_discovered()` so its tools are auto-discovered via `list_tools()`
-3. Handle the new tool calls in `_gather_mcp_context()` — add `elif` branches for the new tools and route them to the appraisal server via `call_mcp_server()`
+2. Include it in `_ensure_tools_discovered()` so its tools are auto-discovered via `list_tools()` and added to `_tool_server_map`
+3. That's it — `_gather_mcp_context()` dispatches dynamically via `_tool_server_map`, so the new tools are automatically routed to the appraisal server with no extra code
 
 The planner prompt is built dynamically from `list_tools()`, so you do **not** need to manually edit `SELLER_MCP_PLANNER_PROMPT_TEMPLATE`.
 

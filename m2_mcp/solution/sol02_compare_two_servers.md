@@ -12,19 +12,14 @@ You can verify by watching the startup log:
 [Buyer] Discovered 3 tools: ['get_market_price', 'calculate_discount', 'get_property_tax_estimate']
 ```
 
-### 2. Add execution handling in `_gather_mcp_context()`
+### 2. No execution handling changes needed
 
-In `buyer_simple.py`, add a new `elif` branch to handle the tool call:
+`_gather_mcp_context()` dispatches tool calls dynamically using the `_tool_server_map` built during discovery. Since `get_property_tax_estimate` is on the pricing server (already mapped), it is automatically routed — no `elif` branch needed.
 
-```python
-elif tool == "get_property_tax_estimate":
-    args = {
-        "price": float(arguments.get("price", LISTING_PRICE)),
-        "tax_rate": float(arguments.get("tax_rate", 0.02)),
-    }
-    print("   [Buyer] Calling MCP: get_property_tax_estimate...")
-    tax_data = await call_pricing_mcp("get_property_tax_estimate", args)
-```
+The flow is:
+1. `_ensure_tools_discovered()` calls `list_tools()` on the pricing server
+2. It finds `get_property_tax_estimate` and maps it: `_tool_server_map["get_property_tax_estimate"] = PRICING_SERVER_PATH`
+3. When the planner selects it, `_gather_mcp_context()` looks up the server path and calls it via `call_mcp_server_batch()`
 
 ### 3. Update `BUYER_SYSTEM_PROMPT` strategy section
 
@@ -36,9 +31,9 @@ Add this line to the strategy bullet list:
 
 ### No other changes needed
 
-The `call_pricing_mcp()` function is **generic** — it takes any `tool_name` and `arguments` dict and calls them on the pricing server. Since `get_property_tax_estimate` is registered on the same server, it works automatically through the existing MCP client code.
+The `call_mcp_server_batch()` function is **generic** — it opens one MCP session per server and executes all planned calls through it. Since `get_property_tax_estimate` is registered on the pricing server (already in `_tool_server_map`), it works automatically with zero code changes.
 
-This is the power of MCP's dynamic discovery: adding a new `@mcp.tool()` on the server side is automatically picked up by the agent's `list_tools()` call at startup. No prompt editing needed — the planner prompt is built from live schemas.
+This is the power of MCP's dynamic discovery combined with dynamic dispatch: adding a new `@mcp.tool()` on the server side is automatically picked up by the agent's `list_tools()` call at startup, mapped to the right server, and routed during execution. No prompt editing, no dispatch code — fully automatic.
 
 ## Reflection answer
 
