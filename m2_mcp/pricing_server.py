@@ -412,6 +412,30 @@ def calculate_discount(
     }
 
 
+# ── Exercise 1: Uncomment the function below ─────────────────────────────────
+# @mcp.tool()
+# def get_property_tax_estimate(price: float, tax_rate: float = 0.02) -> dict:
+#     """
+#     Estimate annual property tax for a given price.
+#
+#     Useful for buyers who want to factor carrying costs into their
+#     negotiation strategy (e.g., "At $460K the annual tax alone is $9,200").
+#
+#     Args:
+#         price: Purchase price to estimate tax on
+#         tax_rate: Annual tax rate as decimal (default: 0.02 = 2%)
+#
+#     Returns:
+#         Tax estimate with price, rate, and annual amount.
+#     """
+#     annual_tax = int(price * tax_rate)
+#     return {
+#         "price": price,
+#         "tax_rate": tax_rate,
+#         "estimated_annual_tax": annual_tax,
+#     }
+
+
 # ─── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

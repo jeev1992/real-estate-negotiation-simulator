@@ -1,7 +1,10 @@
 # Solution 1: Add a New MCP Tool
 
-## Code change
-In `m2_mcp/pricing_server.py`, add this function near the other `@mcp.tool()` functions:
+## How to apply
+
+The tool is already in `m2_mcp/pricing_server.py` as a **commented-out block** marked with `── Exercise 1 ──`. Search for `Exercise 1` and uncomment the entire `get_property_tax_estimate` function (including the `@mcp.tool()` decorator).
+
+## The uncommented code
 
 ```python
 @mcp.tool()

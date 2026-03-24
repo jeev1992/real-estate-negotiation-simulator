@@ -2,9 +2,13 @@
 
 ## Code changes
 
-### 1. No planner prompt changes needed
+### 1. Uncomment the tool (Exercise 1)
 
-The buyer agent discovers tools **dynamically** via `list_tools()` at startup. Since you added `get_property_tax_estimate` to the pricing server (Exercise 1), the agent will automatically see it — the planner prompt is built from the server's live tool schemas.
+In `m2_mcp/pricing_server.py`, search for `Exercise 1` and uncomment the `get_property_tax_estimate` function.
+
+### 2. No planner prompt changes needed
+
+The buyer agent discovers tools **dynamically** via `list_tools()` at startup. Since you uncommented `get_property_tax_estimate` on the pricing server, the agent will automatically see it — the planner prompt is built from the server's live tool schemas.
 
 You can verify by watching the startup log:
 ```
@@ -12,7 +16,7 @@ You can verify by watching the startup log:
 [Buyer] Discovered 3 tools: ['get_market_price', 'calculate_discount', 'get_property_tax_estimate']
 ```
 
-### 2. No execution handling changes needed
+### 3. No execution handling changes needed
 
 `_gather_mcp_context()` dispatches tool calls dynamically using the `_tool_server_map` built during discovery. Since `get_property_tax_estimate` is on the pricing server (already mapped), it is automatically routed — no `elif` branch needed.
 
@@ -21,13 +25,15 @@ The flow is:
 2. It finds `get_property_tax_estimate` and maps it: `_tool_server_map["get_property_tax_estimate"] = PRICING_SERVER_PATH`
 3. When the planner selects it, `_gather_mcp_context()` looks up the server path and calls it via `call_mcp_server_batch()`
 
-### 3. Update `BUYER_SYSTEM_PROMPT` strategy section
+### 4. Update `BUYER_SYSTEM_PROMPT` strategy section
 
-Add this line to the strategy bullet list:
+In `m3_langgraph_multiagents/buyer_simple.py`, add this line to the `CRITICAL RULES` section of `BUYER_SYSTEM_PROMPT` (e.g., after `- Always reference market data in your message`):
 
 ```
 - Reference property tax estimates to strengthen your negotiation position
 ```
+
+This nudges GPT-4o to call `get_property_tax_estimate` when planning MCP tool calls.
 
 ### No other changes needed
 

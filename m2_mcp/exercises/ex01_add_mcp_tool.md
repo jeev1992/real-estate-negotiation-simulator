@@ -11,24 +11,14 @@ Look at the existing tools in `m2_mcp/pricing_server.py` (`get_market_price` and
 
 Your new tool follows the same pattern.
 
-## Edit
-In `m2_mcp/pricing_server.py`, add this function near other `@mcp.tool()` functions:
+## Steps
 
-```python
-@mcp.tool()
-def get_property_tax_estimate(price: float, tax_rate: float = 0.02) -> dict:
-   annual_tax = int(price * tax_rate)
-   return {
-      "price": price,
-      "tax_rate": tax_rate,
-      "estimated_annual_tax": annual_tax,
-   }
-```
+Open `m2_mcp/pricing_server.py`. The new tool is already in the file as a **commented-out block** marked with `── Exercise 1 ──`. Find it (search for `Exercise 1`) and uncomment the entire function, including the `@mcp.tool()` decorator.
 
 ## Verify
 ```bash
-python m2_mcp/pricing_server.py
+python m2_mcp/pricing_server.py --check
 ```
 
 ## Expected
-Server starts normally with the new tool registered.
+Output shows 3 tools: `get_market_price`, `calculate_discount`, `get_property_tax_estimate`.

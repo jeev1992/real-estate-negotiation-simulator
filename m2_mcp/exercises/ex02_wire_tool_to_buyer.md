@@ -32,11 +32,13 @@ Run the agent and watch for the discovery log:
 Since `_gather_mcp_context()` dispatches tool calls dynamically via the `_tool_server_map` (built during discovery), **no code changes are needed** for execution — the new tool is automatically routed to the pricing server.
 
 ### Step 3 — Update the system prompt
-In `BUYER_SYSTEM_PROMPT`, add a note encouraging the buyer to consider annual tax costs when justifying offers. For example, add to the strategy section:
+In `m3_langgraph_multiagents/buyer_simple.py`, add this line to the `CRITICAL RULES` section of `BUYER_SYSTEM_PROMPT` (e.g., after `- Always reference market data in your message`):
 
 ```
 - Reference property tax estimates to strengthen your negotiation position
 ```
+
+This nudges GPT-4o to call `get_property_tax_estimate` when planning MCP tool calls.
 
 ### Step 4 — Test the full system
 ```bash
