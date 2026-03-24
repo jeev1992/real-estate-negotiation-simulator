@@ -231,18 +231,18 @@ Each module contains hands-on exercises with difficulty labels (`[Starter]`, `[C
 
 | Module | Exercise | Difficulty | Task |
 |---|---|---|---|
-| M1 | `ex01_identify_failure_modes.md` | `[Core]` | Add a TIMEOUT terminal state to the FSM |
-| M1 | `ex02_fsm_termination_check.md` | `[Core]` | Compare naive vs FSM failure modes |
+| M1 | `ex01_add_timeout_state.md` | `[Core]` | Add a TIMEOUT terminal state to the FSM |
+| M1 | `ex02_compare_failure_modes.md` | `[Core]` | Compare naive vs FSM failure modes |
 | M1 | `ex03_stretch_fsm_different_language.md` | `[Stretch]` | Reimplement the FSM in TypeScript |
-| M2 | `ex01_find_mcp_tool.md` | `[Starter]` | Add a new MCP tool to the pricing server |
-| M2 | `ex02_compare_two_servers.md` | `[Core]` | Wire the new tool into the buyer agent |
+| M2 | `ex01_add_mcp_tool.md` | `[Starter]` | Add a new MCP tool to the pricing server |
+| M2 | `ex02_wire_tool_to_buyer.md` | `[Core]` | Wire the new tool into the buyer agent |
 | M2 | `ex03_stretch_build_appraisal_server.md` | `[Stretch]` | Build an appraisal MCP server from scratch |
-| M3 | `ex01_trace_graph_flow.md` | `[Core]` | Add a deadlock-breaker conditional edge |
-| M3 | `ex02_run_two_rounds.md` | `[Core]` | Add automatic convergence accept |
+| M3 | `ex01_deadlock_breaker.md` | `[Core]` | Add a deadlock-breaker conditional edge |
+| M3 | `ex02_convergence_accept.md` | `[Core]` | Add automatic convergence accept |
 | M3 | `ex03_stretch_state_persistence.md` | `[Stretch]` | Add SQLite state persistence |
 | M3 | `ex04_capstone_inspector_agent.md` | `[Stretch]` | Capstone: add an inspector agent |
 | M4 | `ex01_fetch_agent_card.md` | `[Core]` | Fetch and inspect the A2A Agent Card |
-| M4 | `ex02_one_round_orchestrator.md` | `[Core]` | Add a negotiation history endpoint |
+| M4 | `ex02_history_endpoint.md` | `[Core]` | Add a negotiation history endpoint |
 | M4 | `ex03_stretch_docker_deployment.md` | `[Stretch]` | Deploy seller to Docker |
 
 Solutions are in each module's `solution/` folder.

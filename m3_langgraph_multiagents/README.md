@@ -145,8 +145,8 @@ python m3_langgraph_multiagents/main_langgraph_multiagent.py --rounds 5     # de
 
 | Exercise | Difficulty | Task |
 |---|---|---|
-| `ex01_trace_graph_flow.md` | `[Core]` | Add a deadlock-breaker conditional edge that detects stale prices and ends early |
-| `ex02_run_two_rounds.md` | `[Core]` | Add automatic convergence accept — if offers are within 2%, agree at midpoint |
+| `ex01_deadlock_breaker.md` | `[Core]` | Add a deadlock-breaker conditional edge that detects stale prices and ends early |
+| `ex02_convergence_accept.md` | `[Core]` | Add automatic convergence accept — if offers are within 2%, agree at midpoint |
 | `ex03_stretch_state_persistence.md` | `[Stretch]` | Add SQLite-based state persistence so negotiations can be paused and resumed |
 | `ex04_capstone_inspector_agent.md` | `[Stretch]` | **Capstone**: Add an inspector agent with a new MCP server and LangGraph node — ties all modules together |
 

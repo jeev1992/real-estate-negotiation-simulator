@@ -2,6 +2,8 @@
 
 ## Complete script
 
+> **Runnable version:** `m4_adk_multiagents/solution/sol01_fetch_agent_card.py`
+
 Create `m4_adk_multiagents/fetch_agent_card.py`:
 
 ```python

@@ -198,8 +198,8 @@ python m2_mcp/sse_agent_client.py --both              # includes inventory queri
 
 | Exercise | Difficulty | Task |
 |---|---|---|
-| `ex01_find_mcp_tool.md` | `[Starter]` | Add a `get_property_tax_estimate` tool to the pricing server using `@mcp.tool()` |
-| `ex02_compare_two_servers.md` | `[Core]` | Wire the new tool into the buyer agent and verify it's auto-discovered via `list_tools()` |
+| `ex01_add_mcp_tool.md` | `[Starter]` | Add a `get_property_tax_estimate` tool to the pricing server using `@mcp.tool()` |
+| `ex02_wire_tool_to_buyer.md` | `[Core]` | Wire the new tool into the buyer agent and verify it's auto-discovered via `list_tools()` |
 | `ex03_stretch_build_appraisal_server.md` | `[Stretch]` | Build an appraisal MCP server with comparable sales data and connect it to the seller agent |
 
 Solutions are in `m2_mcp/solution/`. Each exercise includes a reflection question.

@@ -164,7 +164,7 @@ The dashboard shows:
 | Exercise | Difficulty | Task |
 |---|---|---|
 | `ex01_fetch_agent_card.md` | `[Core]` | Write a script to fetch and inspect the seller's A2A Agent Card — learn agent discovery |
-| `ex02_one_round_orchestrator.md` | `[Core]` | Add a `/history` REST endpoint to the seller server for negotiation observability |
+| `ex02_history_endpoint.md` | `[Core]` | Add a `/history` REST endpoint to the seller server for negotiation observability |
 | `ex03_stretch_docker_deployment.md` | `[Stretch]` | Containerize the seller in Docker and run a real networked negotiation |
 
 Solutions are in `m4_adk_multiagents/solution/`. Each exercise includes a reflection question.

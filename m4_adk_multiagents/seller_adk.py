@@ -433,3 +433,24 @@ Return ONLY JSON. No markdown fences. No prose outside JSON."""
 
         return envelope.model_dump(mode="json")
 
+    async def get_negotiation_history(self) -> list[dict]:
+        """Return the per-round state deltas stored via ADK session events."""
+        if self._session_service is None:
+            return []
+        session = await self._session_service.get_session(
+            app_name=APP_NAME,
+            user_id=self.user_id,
+            session_id=self.session_id,
+        )
+        if session is None or not hasattr(session, "events"):
+            return []
+        history = []
+        for event in session.events:
+            if not hasattr(event, "actions") or not event.actions:
+                continue
+            # ADK EventActions may expose the field as state_delta (snake) or stateDelta (camel)
+            delta = getattr(event.actions, "state_delta", None) or getattr(event.actions, "stateDelta", None)
+            if delta:
+                history.append(delta)
+        return history
+

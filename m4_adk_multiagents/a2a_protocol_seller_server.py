@@ -91,6 +91,14 @@ class SellerSessionRegistry:
             self._agents[session_id] = agent
             return agent
 
+    def get_agent(self, session_id: str) -> SellerAgentADK | None:
+        """Return existing agent for this session, or None if not found."""
+        return self._agents.get(session_id)
+
+    def list_sessions(self) -> list[str]:
+        """Return all active session IDs."""
+        return list(self._agents.keys())
+
     async def close_all(self) -> None:
         """Graceful server shutdown: close all managed ADK agent contexts.
 
