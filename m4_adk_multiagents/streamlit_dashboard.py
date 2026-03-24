@@ -62,11 +62,21 @@ def _extract_texts(obj) -> list[str]:
 
 
 def _extract_first_envelope(payload: dict) -> dict | None:
-    """Find the first valid JSON envelope in A2A response text parts."""
+    """Find the first valid seller JSON envelope in A2A response text parts.
+
+    The A2A response may include conversation history containing the buyer's
+    original message alongside the seller's response. We filter for
+    from_agent == 'seller' to avoid returning the buyer's own envelope,
+    which would cause the orchestrator to miss ACCEPT/REJECT signals.
+    """
     for text in _extract_texts(payload):
         try:
             candidate = json.loads(text)
-            if isinstance(candidate, dict) and "message_type" in candidate:
+            if (
+                isinstance(candidate, dict)
+                and candidate.get("from_agent") == "seller"
+                and "message_type" in candidate
+            ):
                 return candidate
         except (json.JSONDecodeError, ValueError):
             continue
