@@ -227,23 +227,18 @@ python m4_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://
 
 ### 10. Module Exercises
 
-Each module contains hands-on exercises with difficulty labels (`[Starter]`, `[Core]`, `[Stretch]`) and worked solutions.
+Each module contains hands-on exercises with worked solutions.
 
 | Module | Exercise | Difficulty | Task |
 |---|---|---|---|
 | M1 | `ex01_add_timeout_state.md` | `[Core]` | Add a TIMEOUT terminal state to the FSM |
 | M1 | `ex02_compare_failure_modes.md` | `[Core]` | Compare naive vs FSM failure modes |
-| M1 | `ex03_stretch_fsm_different_language.md` | `[Stretch]` | Reimplement the FSM in TypeScript |
 | M2 | `ex01_add_mcp_tool.md` | `[Starter]` | Add a new MCP tool to the pricing server |
 | M2 | `ex02_wire_tool_to_buyer.md` | `[Core]` | Wire the new tool into the buyer agent |
-| M2 | `ex03_stretch_build_appraisal_server.md` | `[Stretch]` | Build an appraisal MCP server from scratch |
 | M3 | `ex01_price_gap_tracking.md` | `[Core]` | Add price gap percentage tracking to history |
 | M3 | `ex02_concession_reducer.md` | `[Core]` | Add a concessions reducer (teaches `Annotated[list, operator.add]`) |
-| M3 | `ex03_stretch_state_persistence.md` | `[Stretch]` | Add SQLite state persistence |
-| M3 | `ex04_capstone_inspector_agent.md` | `[Stretch]` | Capstone: add an inspector agent |
 | M4 | `ex01_fetch_agent_card.md` | `[Core]` | Fetch and inspect the A2A Agent Card |
 | M4 | `ex02_history_endpoint.md` | `[Core]` | Add a negotiation history endpoint |
-| M4 | `ex03_stretch_docker_deployment.md` | `[Stretch]` | Deploy seller to Docker |
 
 Solutions are in each module's `solution/` folder.
 

@@ -147,8 +147,6 @@ python m3_langgraph_multiagents/main_langgraph_multiagent.py --rounds 5     # de
 |---|---|---|
 | `ex01_price_gap_tracking.md` | `[Core]` | Add price gap percentage tracking to the negotiation history and results display |
 | `ex02_concession_reducer.md` | `[Core]` | Add a `concessions` reducer to track how much each agent moves per round — teaches the core LangGraph `Annotated[list, operator.add]` pattern |
-| `ex03_stretch_state_persistence.md` | `[Stretch]` | Add SQLite-based state persistence so negotiations can be paused and resumed |
-| `ex04_capstone_inspector_agent.md` | `[Stretch]` | **Capstone**: Add an inspector agent with a new MCP server and LangGraph node — ties all modules together |
 
 Solutions are in `m3_langgraph_multiagents/solution/`. Each exercise includes a reflection question.
 

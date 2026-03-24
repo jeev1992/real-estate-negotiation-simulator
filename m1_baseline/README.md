@@ -135,7 +135,6 @@ python m1_baseline/state_machine.py
 |---|---|---|
 | `ex01_add_timeout_state.md` | `[Core]` | Add a TIMEOUT terminal state to the FSM — new enum, transition table, deadline check, invariants |
 | `ex02_compare_failure_modes.md` | `[Core]` | Run naive vs FSM side by side, fill in a comparison table mapping each failure mode to its fix |
-| `ex03_stretch_fsm_different_language.md` | `[Stretch]` | Reimplement the FSM core in TypeScript to prove the pattern is language-independent |
 
 Solutions are in `m1_baseline/solution/`. Each exercise includes a reflection question.
 
