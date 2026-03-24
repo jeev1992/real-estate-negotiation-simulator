@@ -237,8 +237,8 @@ Each module contains hands-on exercises with difficulty labels (`[Starter]`, `[C
 | M2 | `ex01_add_mcp_tool.md` | `[Starter]` | Add a new MCP tool to the pricing server |
 | M2 | `ex02_wire_tool_to_buyer.md` | `[Core]` | Wire the new tool into the buyer agent |
 | M2 | `ex03_stretch_build_appraisal_server.md` | `[Stretch]` | Build an appraisal MCP server from scratch |
-| M3 | `ex01_deadlock_breaker.md` | `[Core]` | Add a deadlock-breaker conditional edge |
-| M3 | `ex02_convergence_accept.md` | `[Core]` | Add automatic convergence accept |
+| M3 | `ex01_price_gap_tracking.md` | `[Core]` | Add price gap percentage tracking to history |
+| M3 | `ex02_concession_reducer.md` | `[Core]` | Add a concessions reducer (teaches `Annotated[list, operator.add]`) |
 | M3 | `ex03_stretch_state_persistence.md` | `[Stretch]` | Add SQLite state persistence |
 | M3 | `ex04_capstone_inspector_agent.md` | `[Stretch]` | Capstone: add an inspector agent |
 | M4 | `ex01_fetch_agent_card.md` | `[Core]` | Fetch and inspect the A2A Agent Card |

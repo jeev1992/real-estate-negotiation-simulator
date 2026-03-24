@@ -1,35 +1,8 @@
 # Solution 2: Add a Negotiation History Endpoint
 
-## Code change
+## How to apply
 
-In `m4_adk_multiagents/a2a_protocol_seller_server.py`, in the `main()` function, add the `/history` route after `app = app_builder.build(...)`:
-
-```python
-async def main() -> None:
-    # ... existing argparse and card setup ...
-
-    app_builder = A2AFastAPIApplication(agent_card=card, http_handler=handler)
-    app = app_builder.build(agent_card_url="/.well-known/agent-card.json", rpc_url="/")
-
-    # NEW: Add history endpoint for debugging/observability
-    @app.get("/history/{session_id}")
-    async def get_history(session_id: str):
-        """Return negotiation history for a session."""
-        agent = SESSION_REGISTRY.get_agent(session_id)
-        if agent is None:
-            return {"error": f"No session found: {session_id}", "sessions": SESSION_REGISTRY.list_sessions()}
-
-        history = await agent.get_negotiation_history()
-
-        return {
-            "session_id": session_id,
-            "round_count": len(history),
-            "history": history,
-        }
-
-    import uvicorn
-    # ... rest of existing main() ...
-```
+The code is already in `m4_adk_multiagents/a2a_protocol_seller_server.py` as a **commented-out block** marked with `── Exercise 2 ──`. Search for `Exercise 2` in `main()` and uncomment the `@app.get("/history/{session_id}")` route.
 
 ## Why this works
 
@@ -41,9 +14,16 @@ FastAPI allows adding routes to an `app` object at any time before the server st
 
 Each `SellerAgentADK` stores per-round state deltas (round number, status, message type, counter price) via ADK’s `InMemorySessionService`. The `get_negotiation_history()` method retrieves these stored deltas from the session events.
 
-## Important: Session ID format
+## Finding the session ID
 
-The session ID in the registry includes the `seller_a2a_` prefix added by `SellerSessionRegistry.get_or_create()`. So if the orchestrator uses session `a2a_http_abc12345`, the seller registry key is `seller_a2a_a2a_http_abc12345`. Check the orchestrator output for the exact session ID.
+The orchestrator prints the session ID at startup (e.g. `Session: a2a_http_750929b6`). However, the seller's `SESSION_REGISTRY` may store it under a different key. To discover the actual key, hit a nonexistent session:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:9102/history/doesnotexist
+# Returns: {"error": "No session found: doesnotexist", "sessions": ["a2a_http_750929b6_buyer"]}
+```
+
+Then use the session ID from the `sessions` list in your request.
 
 ## Security considerations
 

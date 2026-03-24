@@ -250,6 +250,26 @@ async def main() -> None:
     app_builder = A2AFastAPIApplication(agent_card=card, http_handler=handler)
     app = app_builder.build(agent_card_url="/.well-known/agent-card.json", rpc_url="/")
 
+    # ── Exercise 2 — /history endpoint for negotiation observability ──────────
+    # Uncomment the block below to add a /history REST endpoint.
+    # Search for "Exercise 2" to find this location.
+    #
+    # @app.get("/history/{session_id}")
+    # async def get_history(session_id: str):
+    #     """Return negotiation history for a session."""
+    #     agent = SESSION_REGISTRY.get_agent(session_id)
+    #     if agent is None:
+    #         return {"error": f"No session found: {session_id}", "sessions": SESSION_REGISTRY.list_sessions()}
+    #
+    #     history = await agent.get_negotiation_history()
+    #
+    #     return {
+    #         "session_id": session_id,
+    #         "round_count": len(history),
+    #         "history": history,
+    #     }
+    # ── End Exercise 2 ───────────────────────────────────────────────────────
+
     import uvicorn
 
     print(f"A2A seller server listening at {base_url}")

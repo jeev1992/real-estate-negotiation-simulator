@@ -21,25 +21,8 @@ Also look at `SellerAgentADK` in `seller_adk.py`:
 - Each round, `_append_state_delta()` stores `{round, status, last_message_type, last_counter_price}` via ADK events
 - `get_negotiation_history()` retrieves these stored deltas
 
-### Step 2 — Add the `/history` endpoint
-In `main()`, after `app = app_builder.build(...)`, add a new route:
-
-```python
-@app.get("/history/{session_id}")
-async def get_history(session_id: str):
-    """Return negotiation history for a session."""
-    agent = SESSION_REGISTRY.get_agent(session_id)
-    if agent is None:
-        return {"error": f"No session found: {session_id}", "sessions": SESSION_REGISTRY.list_sessions()}
-
-    history = await agent.get_negotiation_history()
-
-    return {
-        "session_id": session_id,
-        "round_count": len(history),
-        "history": history,
-    }
-```
+### Step 2 — Uncomment the `/history` endpoint
+In `a2a_protocol_seller_server.py`, search for `Exercise 2`. You'll find a commented-out block in `main()` after `app = app_builder.build(...)`. Uncomment the entire `@app.get("/history/{session_id}")` route.
 
 ### Step 3 — Test the endpoint
 
