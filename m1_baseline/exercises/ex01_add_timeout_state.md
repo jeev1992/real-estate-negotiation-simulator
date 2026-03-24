@@ -15,71 +15,39 @@ Your new `TIMEOUT` state must satisfy both properties.
 
 ## Steps
 
-### Step 1 — Add the new state
-In `m1_baseline/state_machine.py`, add `TIMEOUT` to the `NegotiationState` enum:
+Open `m1_baseline/state_machine.py`. All the code you need is already in the file as **commented-out blocks** marked with `── Exercise 1 ──`. Your job is to find each block, understand what it does, and uncomment it.
 
-```python
-class NegotiationState(Enum):
-    IDLE        = auto()
-    NEGOTIATING = auto()
-    AGREED      = auto()
-    FAILED      = auto()
-    TIMEOUT     = auto()    # NEW: wall-clock deadline exceeded
-```
+There are **11 locations** to update. Search for `Exercise 1` in the file to find them all.
 
-### Step 2 — Add a timeout reason
-In the `FailureReason` enum, add:
+### Step 1 — Add the new state and reason
+Uncomment `TIMEOUT = auto()` in `NegotiationState` and `WALL_CLOCK_TIMEOUT = auto()` in `FailureReason`.
 
-```python
-WALL_CLOCK_TIMEOUT  = auto()    # Total negotiation time exceeded
-```
+### Step 2 — Add context fields
+Uncomment `deadline_seconds` and `start_time` in `FSMContext`.
 
 ### Step 3 — Update the transition table
-Add `TIMEOUT` as a reachable state from `NEGOTIATING`, and give `TIMEOUT` an **empty** transition set:
+Add `NegotiationState.TIMEOUT` to the `NEGOTIATING` target set, and uncomment the `NegotiationState.TIMEOUT: set()` terminal entry.
 
-```python
-TRANSITIONS: dict[NegotiationState, set[NegotiationState]] = {
-    NegotiationState.IDLE:        {NegotiationState.NEGOTIATING, NegotiationState.FAILED},
-    NegotiationState.NEGOTIATING: {NegotiationState.NEGOTIATING, NegotiationState.AGREED,
-                                   NegotiationState.FAILED, NegotiationState.TIMEOUT},
-    NegotiationState.AGREED:      set(),
-    NegotiationState.FAILED:      set(),
-    NegotiationState.TIMEOUT:     set(),    # TERMINAL — no outgoing transitions
-}
-```
+### Step 4 — Update `__init__`
+Add `deadline_seconds: float = 60.0` to the `__init__` signature and pass it to `FSMContext`.
 
-### Step 4 — Store and check the deadline
-Add a `deadline_seconds` field to `FSMContext` and a `start_time` field (use `time.time()`). In `process_turn()`, check against the deadline:
+### Step 5 — Update `is_terminal()`
+Add `NegotiationState.TIMEOUT` to the set in `is_terminal()`.
 
-```python
-import time
+### Step 6 — Record start time
+Uncomment `self.context.start_time = time.time()` in `start()`.
 
-# In FSMContext:
-deadline_seconds: float = 60.0   # 60 seconds max
-start_time: float = 0.0          # Set when negotiation starts
+### Step 7 — Add deadline check
+Uncomment the wall-clock timeout check block in `process_turn()`.
 
-# In process_turn(), before the existing max_turns check:
-elapsed = time.time() - self.context.start_time
-if elapsed > self.context.deadline_seconds:
-    self.state = NegotiationState.TIMEOUT
-    self.context.failure_reason = FailureReason.WALL_CLOCK_TIMEOUT
-    return False
-```
-
-### Step 5 — Update `is_terminal()` and `check_invariants()`
-`is_terminal()` must include TIMEOUT:
-```python
-def is_terminal(self) -> bool:
-    return self.state in {NegotiationState.AGREED, NegotiationState.FAILED, NegotiationState.TIMEOUT}
-```
-
-`check_invariants()` should check that TIMEOUT state also has a failure reason set.
+### Step 8 — Update `check_invariants()` and demo
+Uncomment the TIMEOUT invariant check, and uncomment Scenario 4 in `demo_fsm()`.
 
 ## Verify
 ```bash
 python m1_baseline/state_machine.py
 ```
-The demo should still run to completion. All three existing scenarios should pass, and TIMEOUT should never fire during a fast demo.
+All four scenarios should pass (including the new Scenario 4: Wall-Clock Timeout). The TIMEOUT state should fire for a 1ms deadline and be "sticky" — further calls to `accept()` return `False`.
 
 ## Reflection question
 > Does adding `TIMEOUT` break the termination guarantee? Write a 1–2 sentence informal proof that it does not. (Hint: what matters is the transition set of the new state.)

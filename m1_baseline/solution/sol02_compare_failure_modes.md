@@ -29,15 +29,24 @@
 
 ## What to observe when running the naive version
 
+Run `python m1_baseline/naive_negotiation.py` and compare against the failure mode table above.
+
 **Demo 1** (ZOPA exists — Buyer max $460K, Seller min $445K):
-- Typically closes in 3–4 turns at ~$453K
+- Closes in ~3 turns at ~$453K — looks like it works!
+- Example: Buyer opens at $424,580 → Seller counters $453,150 → Buyer says "ACCEPT" → Seller says "DEAL!"
 - Looks correct — but only because the LLM happened to write the price in a format the regex could grab
-- The regex `\$?(\d[\d,]*)` grabs the *first* number it finds. If the seller had mentioned any other number first (comps, square footage, renovation cost), the buyer would have accepted that instead.
+- The regex `\$?(\d[\d,]*)` grabs the *first* number it finds. If the seller had mentioned renovation costs or comps first, the buyer would have latched onto the wrong number (Failure Mode #1/#5).
 
 **Demo 2** (No ZOPA — Buyer max $420K, Seller min $450K):
-- Runs for 8 turns (demo cap), then triggers the emergency exit
-- The buyer stays at $420K; the seller stays at $450K; neither side can move into a range that satisfies both
-- The `while True` loop has no way to detect that no agreement is possible — it just keeps running until the band-aid exit at `max_turns`
+- You might expect the loop to run all 8 turns (the demo cap) since no deal is mathematically possible.
+- **Actual result**: The seller says "DEAL!" at $420,000 after only 3 turns — **below its own $450K floor**.
+- This is **Failure Mode #6** (string-match termination) in action: the LLM generated the word "DEAL" and the naive `if "DEAL" in response:` check triggered an early exit at a price the seller should never have accepted.
+- The code itself flags this: _"NOTICE: LLM accidentally used 'DEAL' or 'REJECT' and triggered early exit. Stopped for the wrong reason."_
+- **Key insight**: The naive version can't distinguish between a genuine acceptance and an LLM that happens to use the word "DEAL" in its response.
+
+**Failure Mode Demos** (printed after Demo 2):
+- Five concrete examples (#1–#5) that demonstrate regex parsing bugs, silent failures, the no-ZOPA infinite loop, hardcoded prices, and false-positive string matching.
+- Compare each one against the FSM table above: #3, #4, #6 are solved; the rest require M2–M4.
 
 ## Reflection answer
 

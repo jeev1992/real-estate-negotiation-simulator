@@ -1,8 +1,10 @@
 # Solution 1: Add a TIMEOUT Terminal State
 
-## Summary of changes
+## How to apply
 
-Six areas of `m1_baseline/state_machine.py` need to be updated.
+All the code is already in `m1_baseline/state_machine.py` as **commented-out blocks** marked with `── Exercise 1 ──`. Search for `Exercise 1` to find all 11 locations, and uncomment/edit each one.
+
+The changes fall into six categories:
 
 ### 1. Add import and new enum members
 

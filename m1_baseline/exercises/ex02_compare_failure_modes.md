@@ -18,8 +18,8 @@ python m1_baseline/naive_negotiation.py
 
 Watch the output carefully. Note:
 - **Demo 1** (Buyer max $460K, Seller min $445K): How many turns does it take to close? Does the price land inside the $445K–$460K zone of agreement?
-- **Demo 2** (Buyer max $420K, Seller min $450K): How does the loop terminate? What triggers the exit? How many LLM calls were wasted?
-- **Demo 3** (static): What happens when parsing fails? What does the regex extract when there are two prices in one message?
+- **Demo 2** (Buyer max $420K, Seller min $450K): Does it loop all 8 turns as you'd expect? If it exits early, what triggered the exit — and is the final price actually valid for both sides?
+- **Failure Mode Demos** (printed after Demo 2): Five static examples showing regex parsing bugs, silent failures, the no-ZOPA problem, hardcoded prices, and false-positive string matching. Which of these could the FSM catch?
 
 ### Step 2 — Run the FSM demo and observe
 ```bash
