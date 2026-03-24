@@ -106,6 +106,11 @@ class NegotiationState(TypedDict):
     # This gives us a complete audit trail of the negotiation
     history: Annotated[list[dict], operator.add]
 
+    # ── Exercise 2: Uncomment the three lines below ────────────────────────────
+    # # Concession tracking (APPEND-ONLY via reducer)
+    # # Tracks how much each agent moved from their previous position
+    # concessions: Annotated[list[dict], operator.add]
+
     # ── Agent-level state ─────────────────────────────────────────────────────
     # These hold references to agent objects across node invocations
     # NOTE: In production, agents would be initialized separately.
@@ -146,6 +151,8 @@ def initial_state(
         "last_buyer_message": None,
         "last_seller_message": None,
         "history": [],  # Will be appended to by nodes
+        # ── Exercise 2: Uncomment the line below ───────────────────────────────
+        # "concessions": [],
         "_buyer_agent_ref": None,
         "_seller_agent_ref": None,
     }
@@ -244,6 +251,17 @@ async def buyer_node(state: dict) -> dict:
         "message": buyer_message.get("message", "")[:200],
     }
 
+    # ── Exercise 2: Uncomment the block below (buyer concession tracking) ───
+    # prev_offer = state.get("buyer_current_offer", 0)
+    # new_offer = buyer_message.get("price", 0)
+    # concession_entry = {
+    #     "round": buyer_message["round"],
+    #     "agent": "buyer",
+    #     "prev_price": prev_offer,
+    #     "new_price": new_offer,
+    #     "moved": (new_offer - prev_offer) if prev_offer > 0 and new_offer > 0 else 0,
+    # }
+
     return {
         "buyer_current_offer": buyer_message.get("price") or state["buyer_current_offer"],
         "round_number": buyer_message["round"],
@@ -251,6 +269,8 @@ async def buyer_node(state: dict) -> dict:
         "agreed_price": buyer_message.get("price") if new_status == "agreed" else state.get("agreed_price"),
         "last_buyer_message": buyer_message,
         "history": [history_entry],  # Reducer appends this
+        # ── Exercise 2: Uncomment the line below ───────────────────────────────
+        # "concessions": [concession_entry],
     }
 
 
@@ -304,13 +324,35 @@ async def seller_node(state: dict) -> dict:
         new_status = "deadlocked"
         print(f"[LangGraph] Max rounds reached -- deadlock")
 
+    # ── Exercise 1: Uncomment the block below (price gap tracking) ──────────
+    # buyer_offer = state.get("buyer_current_offer", 0)
+    # seller_counter = seller_message.get("price", 0)
+    # price_gap_pct = None
+    # if buyer_offer > 0 and seller_counter > 0:
+    #     price_gap_pct = round(
+    #         abs(seller_counter - buyer_offer) / max(seller_counter, buyer_offer) * 100, 1
+    #     )
+
     history_entry = {
         "round": seller_message["round"],
         "agent": "seller",
         "message_type": seller_message["message_type"],
         "price": seller_message.get("price"),
         "message": seller_message.get("message", "")[:200],
+        # ── Exercise 1: Uncomment the line below ───────────────────────────────
+        # "price_gap_pct": price_gap_pct,
     }
+
+    # ── Exercise 2: Uncomment the block below (seller concession tracking) ──
+    # prev_counter = state.get("seller_current_counter", 0)
+    # new_counter = seller_message.get("price", 0)
+    # concession_entry = {
+    #     "round": seller_message["round"],
+    #     "agent": "seller",
+    #     "prev_price": prev_counter,
+    #     "new_price": new_counter,
+    #     "moved": (new_counter - prev_counter) if prev_counter > 0 and new_counter > 0 else 0,
+    # }
 
     # Return only changed fields; LangGraph merges these into the shared state.
     return {
@@ -319,6 +361,8 @@ async def seller_node(state: dict) -> dict:
         "agreed_price": agreed_price,
         "last_seller_message": seller_message,
         "history": [history_entry],  # Reducer appends this
+        # ── Exercise 2: Uncomment the line below ───────────────────────────────
+        # "concessions": [concession_entry],
     }
 
 
@@ -473,6 +517,20 @@ def print_negotiation_results(final_state: dict) -> None:
     # History table
     if history:
         print("\nNEGOTIATION HISTORY:")
+        # ── Exercise 1: Replace the header and loop below with the Gap% version ──
+        # print(f"  {'Rnd':>3} {'Agent':>8} {'Type':>16} {'Price':>12} {'Gap%':>8}")
+        # print("  " + "-" * 53)
+        # for entry in history:
+        #     price_str = f"${entry.get('price', 0):,.0f}" if entry.get("price") else "—"
+        #     gap_str = f"{entry.get('price_gap_pct', '')}%" if entry.get("price_gap_pct") is not None else ""
+        #     print(
+        #         f"  {entry.get('round', 0):>3} "
+        #         f"{entry.get('agent', ''):>8} "
+        #         f"{entry.get('message_type', ''):>16} "
+        #         f"{price_str:>12}"
+        #         f"{gap_str:>8}"
+        #     )
+        # ── Pre-exercise version (delete after uncommenting above) ─────────────
         print(f"  {'Rnd':>3} {'Agent':>8} {'Type':>16} {'Price':>12}")
         print("  " + "-" * 45)
         for entry in history:
@@ -483,6 +541,23 @@ def print_negotiation_results(final_state: dict) -> None:
                 f"{entry.get('message_type', ''):>16} "
                 f"{price_str:>12}"
             )
+
+    # ── Exercise 2: Uncomment the block below (concession analysis display) ──
+    # concessions = final_state.get("concessions", [])
+    # if concessions:
+    #     print("\nCONCESSION ANALYSIS:")
+    #     print(f"  {'Rnd':>3} {'Agent':>8} {'From':>12} {'To':>12} {'Moved':>12}")
+    #     print("  " + "-" * 53)
+    #     for c in concessions:
+    #         if c.get("moved", 0) != 0:
+    #             direction = "↑" if c["moved"] > 0 else "↓"
+    #             print(
+    #                 f"  {c.get('round', 0):>3} "
+    #                 f"{c.get('agent', ''):>8} "
+    #                 f"${c.get('prev_price', 0):>10,.0f} "
+    #                 f"${c.get('new_price', 0):>10,.0f} "
+    #                 f"{direction}${abs(c['moved']):>9,.0f}"
+    #             )
 
     print("\n" + "=" * 65)
 
