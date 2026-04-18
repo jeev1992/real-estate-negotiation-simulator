@@ -51,6 +51,7 @@ real-estate-negotiation-simulator/
 │   ├── sse_agent_client.py             # SSE agent client (LLM picks tools over HTTP)
 │   ├── pricing_server.py              # Custom MCP: market pricing tools
 │   ├── inventory_server.py            # Custom MCP: inventory + seller constraints
+│   ├── demos/                          # Standalone deep-dive demos (handshake, tool loop, primitives, content types, HTTP transport)
 │   ├── exercises/                      # Hands-on coding exercises for Module 2
 │   ├── solution/                       # Worked solutions for Module 2 exercises
 │   └── notes/
@@ -64,6 +65,7 @@ real-estate-negotiation-simulator/
 │   ├── a2a_protocol_http_orchestrator.py # Multi-round HTTP A2A orchestrator (ADK-native state)
 │   ├── a2a_protocol_buyer_client_demo.py # Single-turn A2A protocol client demo
 │   ├── streamlit_dashboard.py          # Visual negotiation dashboard (Streamlit UI)
+│   ├── demos/                          # Standalone deep-dive demos — A2A protocol (01–05) + ADK primitives (06–11)
 │   ├── exercises/                      # Hands-on coding exercises for Module 3
 │   ├── solution/                       # Worked solutions for Module 3 exercises
 │   └── notes/
@@ -81,6 +83,13 @@ real-estate-negotiation-simulator/
 ```
 
 If module files feel overwhelming, start with the README inside each module folder.
+
+### Deep-dive demos
+
+Modules 2 and 3 ship a `demos/` folder of small, single-purpose, runnable scripts that crack open the protocols on the wire — designed to pair with the `notes/` reference docs. See each module README for the per-demo table:
+
+- [m2_mcp/demos/](m2_mcp/demos/) — MCP handshake, tool loop trace, primitives, content types, Streamable HTTP
+- [m3_adk_multiagents/demos/](m3_adk_multiagents/demos/) — A2A `message/send`, task lifecycle, parts/artifacts, streaming, context threading, and ADK workflow agents (Sequential / Parallel / Loop), `AgentTool`, `ToolContext`, callbacks
 
 ### Notes live inside each module
 

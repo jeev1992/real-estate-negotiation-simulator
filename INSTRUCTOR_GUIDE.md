@@ -38,7 +38,8 @@ At the start of the workshop, explicitly orient learners to the repo layout:
 - That module `README.md` explains what the module demonstrates and how to run it.
 - Each module includes `exercises/` (learner tasks) and `solution/` (worked answers with code changes).
 - Each module also has a `notes/` folder for deeper conceptual material.
-- Encourage participants to treat module `README.md` as the runbook and `notes/` as the reference.
+- Modules 2 and 3 also ship a `demos/` folder of small, single-purpose runnable scripts that crack open the protocols on the wire (handshake bytes, task lifecycle, ADK workflow agents). Pair them with the `notes/` reference docs.
+- Encourage participants to treat module `README.md` as the runbook and `notes/` + `demos/` as the reference and exploration sandbox.
 
 ---
 
@@ -552,6 +553,17 @@ Walk through one full request/response on the wire:
 
 Open `m2_mcp/pricing_server.py` and trace one `@mcp.tool()` decorator end-to-end.
 
+**Live deep-dive demos (run as you narrate — these print the wire frames):**
+
+```bash
+python m2_mcp/demos/01_initialize_handshake.py   # raw JSON-RPC handshake bytes
+python m2_mcp/demos/02_tool_loop_trace.py        # narrated model ↔ host ↔ server loop with timestamps
+```
+
+> "Demo 01 prints the four `initialize` / `tools/list` frames you just saw on the whiteboard —
+> with no SDK in the way. Demo 02 then layers OpenAI function calling on top so you can see
+> exactly when the model decides to call a tool and when it stops."
+
 #### Part B: Primitives — Tools, Resources, Prompts (2:00–2:10) — 10 min
 
 **SAY:**
@@ -566,6 +578,17 @@ Show the difference using `m2_mcp/notes/mcp_deep_dive.md`. Whiteboard a comparis
 | Resource  | Model reads   | `inventory://floor-prices` |
 | Prompt    | Model requests | `negotiation-tactics` |
 
+**Live deep-dive demos:**
+
+```bash
+python m2_mcp/demos/03_list_all_primitives.py   # lists Tools, Resources, and Prompts from both servers
+python m2_mcp/demos/04_content_types.py         # text / image / embedded resource content blocks
+```
+
+> "Demo 03 proves our own servers ship more than just tools — the inventory server now exposes a Resource
+> and the pricing server exposes a Prompt. Demo 04 shows the JSON shape of every content-block kind
+> using a tiny inline server."
+
 #### Part C: Transports — stdio vs SSE vs HTTP (2:10–2:20) — 10 min
 
 **SAY:**
@@ -577,6 +600,18 @@ Show the difference using `m2_mcp/notes/mcp_deep_dive.md`. Whiteboard a comparis
 - **Streamable HTTP / HTTP** — for hosted/multi-tenant servers
 
 Run the SSE client briefly so they see a different transport delivering the same protocol.
+
+**Live deep-dive demo (Streamable HTTP):**
+
+```bash
+# Terminal 1
+python m2_mcp/demos/05_streamable_http_transport.py --serve --port 8765
+# Terminal 2
+python m2_mcp/demos/05_streamable_http_transport.py --client --port 8765
+```
+
+> "This is the spec's recommended replacement for raw SSE — same MCP protocol, HTTP transport,
+> identical client code from the model's point of view."
 
 #### Part D: Security, auth, client/server patterns (2:20–2:30) — 10 min
 
@@ -662,6 +697,21 @@ Cover:
 - **Callbacks** — `before_model_callback`, `after_tool_callback`, etc. Where you put PII redaction, audit logging, cost guards.
 - **Events** — every Runner step emits an event; that's how UIs stream partial output.
 - **Auth** — credential injection via `ToolContext` and the OAuth flows ADK ships.
+
+**Live deep-dive demos (each is a single self-contained script — no seller server needed):**
+
+```bash
+python m3_adk_multiagents/demos/06_sequential_agent.py    # market_brief → offer_drafter → message_polisher
+python m3_adk_multiagents/demos/07_parallel_agent.py      # fan-out into different state keys
+python m3_adk_multiagents/demos/08_loop_agent.py          # haggler + judge; judge escalates to break the loop
+python m3_adk_multiagents/demos/09_agent_as_tool.py       # AgentTool: wrap an agent as a callable tool
+python m3_adk_multiagents/demos/10_tool_context.py        # ToolContext: scoped session state across turns
+python m3_adk_multiagents/demos/11_callbacks.py           # before_model PII redact + before_tool allowlist + after_tool log
+```
+
+> "Run any one or two of these as a live demo — they each isolate one ADK primitive so learners
+> can see the building blocks before reading `buyer_adk.py` / `seller_adk.py` where everything
+> is composed together."
 
 **ASK:**
 > "Where in this architecture would you enforce a per-agent budget cap (max dollars of LLM spend per session)?"
@@ -985,6 +1035,20 @@ python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://
 ```bash
 python m3_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
 ```
+
+**Live deep-dive demos against the same running seller server (any subset — each prints the raw A2A wire shape):**
+
+```bash
+python m3_adk_multiagents/demos/01_handcraft_message_send.py --seller-url http://127.0.0.1:9102   # JSON-RPC body by hand, no A2A SDK
+python m3_adk_multiagents/demos/02_task_lifecycle.py        --seller-url http://127.0.0.1:9102   # submitted → working → completed/failed
+python m3_adk_multiagents/demos/03_parts_and_artifacts.py   --seller-url http://127.0.0.1:9102   # multi-part Message + negotiation-summary Artifact
+python m3_adk_multiagents/demos/04_streaming_negotiation.py --seller-url http://127.0.0.1:9102   # message/stream incremental updates
+python m3_adk_multiagents/demos/05_context_threading.py     --seller-url http://127.0.0.1:9102   # contextId reuse across rounds
+```
+
+> "Use these to make A2A concrete after the orchestrator runs — demo 01 strips away the A2A SDK so
+> learners see the raw JSON-RPC body, demo 02 forces a `failed` task on purpose, and demo 04 shows
+> the streaming variant the seller's Agent Card now advertises."
 
 **Watch specifically for:**
 - Buyer runs multi-round offers via ADK (you see OpenAI + MCP tool calls in terminal 2)
