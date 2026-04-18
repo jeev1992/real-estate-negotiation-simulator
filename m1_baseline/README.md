@@ -83,9 +83,7 @@ naive_negotiation.py (the problem)
   |
   +-- m2_mcp/                -> fixes #8 (real pricing data via MCP tools)
   |
-  +-- m3_langgraph_multiagents/ -> fixes #3, #9 (structured workflow + observability)
-  |
-  +-- m4_adk_multiagents/    -> fixes #1, #2, #5 (A2A protocol: structured messages + schema)
+  +-- m3_adk_multiagents/    -> fixes #1, #2, #3, #5, #9 (A2A protocol + ADK runtime: structured messages, schema, workflow agents, event/streaming observability)
 ```
 
 Every module you learn fixes one or more rows in that failure table.
@@ -144,4 +142,4 @@ Solutions are in `m1_baseline/solution/`. Each exercise includes a reflection qu
 
 - If you're confused about *why* this module exists, re-read the 10 failure modes above.
 - If you want to see the termination proof, look at the `TRANSITIONS` dict in `state_machine.py`.
-- The FSM from this module lives on in `m3_langgraph_multiagents/langgraph_flow.py`, which builds on the same idea using LangGraph's graph routing.
+- The FSM idea from this module reappears in Module 3 — Google ADK's workflow agents (`SequentialAgent`, `LoopAgent`) encode the same termination guarantees at the agent-orchestration level.

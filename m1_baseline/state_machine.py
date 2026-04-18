@@ -19,8 +19,8 @@ HOW TO RUN:
   python m1_baseline/state_machine.py
 
 CONNECTION TO THE REST OF THE WORKSHOP:
-  naive_negotiation.py  ->  state_machine.py  ->  m3_langgraph_multiagents/
-  (while True)             (FSM guarantee)        (LangGraph = FSM at workflow scale)
+  naive_negotiation.py  ->  state_machine.py  ->  m3_adk_multiagents/
+  (while True)             (FSM guarantee)        (ADK LoopAgent / workflow agents = FSM at agent scale)
 """
 
 import time
@@ -279,7 +279,7 @@ Adding TIMEOUT does NOT break the termination guarantee because:
    which can only make termination happen sooner, never later.
 
 NEXT:
-  python m3_langgraph_multiagents/main_langgraph_multiagent.py
+  python m3_adk_multiagents/a2a_protocol_seller_server.py
     """)
 
 

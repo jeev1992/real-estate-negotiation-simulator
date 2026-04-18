@@ -18,6 +18,15 @@
 11. [Common Misconceptions](#11-common-misconceptions)
 12. [When to Use MCP vs Direct API](#12-when-to-use-mcp-vs-direct-api)
 
+**Part II — Protocol Internals**
+13. [The `initialize` Handshake](#13-the-initialize-handshake)
+14. [The Full Tool-Calling Loop](#14-the-full-tool-calling-loop)
+15. [The Four Primitives](#15-the-four-primitives)
+16. [Content Blocks](#16-content-blocks)
+17. [Transports](#17-transports)
+18. [The Security Model](#18-the-security-model)
+19. [Client and Server Authoring Patterns](#19-client-and-server-authoring-patterns)
+
 ---
 
 ## 1. The Problem MCP Solves
@@ -830,7 +839,308 @@ Use MCP when:                         Use direct API when:
 
 ---
 
-## Summary
+# Part II — Protocol Internals (Phase 2 Deep-Dive)
+
+The first half of this document explains *why* MCP exists and *how to use it*.
+This section covers *what is actually on the wire* — the message frames, the
+four primitives, content blocks, transports, and the security model. Pair it
+with the runnable demos under [`m2_mcp/demos/`](../demos/).
+
+> Each subsection has a matching demo script. Read the section, then run the
+> demo and watch the wire output line up with the explanation.
+
+---
+
+## 13. The `initialize` Handshake
+
+Every MCP session starts with a two-step JSON-RPC handshake. Nothing else
+is allowed before it completes.
+
+```text
+client                                                   server
+  │   initialize { protocolVersion, capabilities, clientInfo }     →
+  ←   initialize result { protocolVersion, capabilities, serverInfo }
+  │   notifications/initialized                                    →
+  │
+  │   (now free to call tools/list, resources/list, prompts/list,
+  │    tools/call, ...)
+```
+
+**Why two steps?** The `initialize` *request* negotiates the protocol
+version and capabilities. The `notifications/initialized` notification tells
+the server "I am ready to receive normal requests now." Only after that may
+the client issue `tools/call` etc.
+
+**`protocolVersion`** is a date string (e.g. `"2024-11-05"`). The server
+returns the version it agreed to — usually the client's request, but the
+server can downgrade if it doesn't support the requested one. Clients that
+don't understand the returned version must close the connection.
+
+**`capabilities`** is the negotiation surface. Both sides advertise which
+optional features they support:
+
+| Capability key       | Owner    | Meaning                                            |
+|----------------------|----------|----------------------------------------------------|
+| `tools`              | server   | server exposes tools (list/call)                   |
+| `resources`          | server   | server exposes resources (list/read/subscribe)     |
+| `prompts`            | server   | server exposes prompts (list/get)                  |
+| `logging`            | server   | server can emit `notifications/message` log events |
+| `sampling`           | client   | client can satisfy `sampling/createMessage` calls  |
+| `roots`              | client   | client exposes filesystem roots to the server      |
+| `experimental`       | both     | open-ended experimental flags                      |
+
+**Demo:** `m2_mcp/demos/01_initialize_handshake.py` prints every JSON-RPC
+frame of the handshake against `pricing_server.py`.
+
+---
+
+## 14. The Full Tool-Calling Loop
+
+In production, the model never talks to MCP directly. The flow is always:
+
+```text
+   USER prompt
+     │
+     ▼
+   HOST (your app — buyer_adk.py, etc.)
+     │  1. tools/list  ────────────────────────────────► SERVER
+     │  ◄────────────── catalog of tools (with JSON-Schema)
+     │
+     │  2. translate to OpenAI / Anthropic tool spec
+     │
+     ▼
+   MODEL  (GPT-4o, Claude, ...)
+     │  3. emits tool_use(name, args)
+     │
+     ▼
+   HOST
+     │  4. tools/call(name, args)  ───────────────────► SERVER
+     │  ◄────────────── CallToolResult { content[] }
+     │
+     │  5. inject tool_result back into model context
+     ▼
+   MODEL
+     │  6. either calls another tool (loop back to 3)
+     │     or emits the final assistant text
+```
+
+Three things that often confuse newcomers:
+
+1. **The model doesn't know MCP exists.** It only sees a list of "functions".
+   The host translates between MCP's `Tool` shape and the model provider's
+   tool-call shape.
+2. **The host enforces budgets.** Number of hops, total tokens, time —
+   none of those are protocol concerns. Your host code decides when to stop.
+3. **A single user turn can trigger many tool calls.** Each call is an
+   independent JSON-RPC request/response, but they all happen within one
+   user turn from the model's perspective.
+
+**Demo:** `m2_mcp/demos/02_tool_loop_trace.py` narrates the entire loop
+end-to-end with timestamps, against the pricing server + GPT-4o.
+
+---
+
+## 15. The Four Primitives
+
+MCP servers can expose more than tools. There are four primitive kinds.
+
+### 15.1 Tools — *model-invoked* actions
+
+```python
+@mcp.tool()
+def get_market_price(address: str) -> dict:
+    """Estimate the market price of a property."""
+    ...
+```
+
+- The model decides when to call them.
+- Inputs are JSON-Schema-described.
+- Output is one or more `Content` blocks.
+- Listed via `tools/list`, invoked via `tools/call`.
+
+### 15.2 Resources — *host-attached* documents
+
+```python
+@mcp.resource("inventory://floor-prices")
+def floor_prices_resource() -> str:
+    return json.dumps(SELLER_FLOORS, indent=2)
+```
+
+- The **host** (not the model) decides when to attach a resource as context.
+- Resources have a URI (any scheme: `file://`, `inventory://`, `https://`...)
+  and a MIME type.
+- Useful for "here is reference material the agent should always have."
+- Listed via `resources/list`, fetched via `resources/read`.
+
+In Phase 2, `m2_mcp/inventory_server.py` exposes `inventory://floor-prices`
+so the seller agent can be given the floor-price catalog without having to
+call a tool first.
+
+### 15.3 Prompts — *user-selected* templates
+
+```python
+@mcp.prompt("negotiation-tactics")
+def negotiation_tactics_prompt(role: str = "buyer", market_condition: str = "balanced") -> str:
+    return f"You are negotiating as the {role}. Market is {market_condition}. ..."
+```
+
+- A **named, parameterized template** the host can render into the chat.
+- Think "slash commands" or "starter prompts" surfaced to the user.
+- Listed via `prompts/list`, rendered via `prompts/get`.
+
+In Phase 2, `m2_mcp/pricing_server.py` exposes a `negotiation-tactics` prompt
+that the host can render into either the buyer or seller agent's
+conversation depending on the role parameter.
+
+### 15.4 Sampling — *server-initiated* LLM calls
+
+This one inverts the relationship. A *server* asks the host to run an LLM
+call on its behalf:
+
+```text
+server  ──── sampling/createMessage ────►  host
+host    ──── (calls its model) ────►       OpenAI/Anthropic
+host    ◄──── completion ──────────        OpenAI/Anthropic
+host    ──── sampling result ─────►        server
+```
+
+This lets a server compose its own LLM-powered behavior without holding
+API keys. The host stays in control of model choice, redaction, and cost.
+
+The workshop hosts (`buyer_adk.py`, `seller_adk.py`) do **not** advertise
+the `sampling` capability, so we don't demo this on the wire — but the
+pattern is critical for advanced server design.
+
+**Demo:** `m2_mcp/demos/03_list_all_primitives.py` prints all four kinds
+from both workshop servers.
+
+---
+
+## 16. Content Blocks
+
+Every tool result and most messages carry a list of typed content blocks:
+
+```json
+{
+  "content": [
+    { "type": "text",     "text": "..." },
+    { "type": "image",    "data": "<base64>", "mimeType": "image/png" },
+    { "type": "audio",    "data": "<base64>", "mimeType": "audio/wav" },
+    { "type": "resource", "resource": { "uri": "...", "mimeType": "text/plain", "text": "..." } }
+  ]
+}
+```
+
+- **text** — most common; UTF-8 string.
+- **image** — base64 + MIME type.
+- **audio** — base64 + MIME type (added in 2025-03 spec).
+- **resource (embedded)** — inline document, useful when the server wants
+  to ship a file alongside textual output.
+
+The model's host is responsible for converting these into something the
+model provider understands (e.g. OpenAI's `image_url` or Anthropic's
+`content` block). For text-only models, image/audio blocks are usually
+dropped or summarized.
+
+**Demo:** `m2_mcp/demos/04_content_types.py` spawns a tiny server that
+returns each kind of block so you can see the JSON shape.
+
+---
+
+## 17. Transports
+
+The protocol is the same; the carrier changes.
+
+| Transport            | Use when                                       | How it looks                |
+|----------------------|------------------------------------------------|-----------------------------|
+| **stdio**            | local subprocess, single client                | newline-delimited JSON-RPC over pipes |
+| **Streamable HTTP**  | remote/shared server, multiple clients         | HTTP POST + chunked SSE responses     |
+| **SSE (legacy)**     | older deployments — superseded by Streamable   | two endpoints (`/sse` + `/messages`)  |
+
+**stdio** is the workshop default. The host spawns the server as a
+subprocess and talks to it through pipes. Zero network surface, zero auth
+concerns, but only one client can connect.
+
+**Streamable HTTP** is the spec's recommended HTTP transport. A single
+endpoint accepts POST requests and uses Server-Sent Events for streaming
+responses on the same connection. This is what production deployments use
+when the server lives in a different process or host than the agent.
+
+**Demo:** `m2_mcp/demos/05_streamable_http_transport.py` runs the same
+`echo` tool over Streamable HTTP. Compare it to the stdio demos — exact
+same protocol, just a different envelope.
+
+---
+
+## 18. The Security Model
+
+MCP itself defines very little about security. The spec spells out **who
+is responsible for what**, then defers to existing standards:
+
+- **Transport-level auth.**
+  - stdio: assumed local-trust; any auth is whatever you put in env vars.
+  - Streamable HTTP: standard HTTP auth — bearer tokens, OAuth 2.1 PKCE,
+    mTLS — set by the deploying team. The 2025-06-18 revision of the spec
+    formalized OAuth 2.1 with Resource Indicators.
+- **Authorization to call tools.** The server decides. A common pattern
+  is a per-client allowlist; another is signed JWT scopes mapped to tool
+  names. Our `_BUYER_ALLOWED_TOOLS` / `_SELLER_ALLOWED_TOOLS` allowlists
+  in `buyer_adk.py` / `seller_adk.py` show the same pattern enforced
+  *host-side* via ADK callbacks.
+- **Data privacy.** The server is the gatekeeper for what it returns.
+  `get_minimum_acceptable_price` in `inventory_server.py` is the
+  workshop's example: only the seller's host connects to that server, so
+  the buyer's host literally cannot see those numbers.
+- **Sandboxing.** stdio servers run with the same OS privileges as the
+  host — be intentional about which servers you spawn. Streamable HTTP
+  servers can be deployed in containers or behind reverse proxies the
+  same way any other web service is.
+
+The takeaway: **MCP gives you a shared shape for tools and discovery. You
+still own auth, authorization, and isolation.**
+
+---
+
+## 19. Client and Server Authoring Patterns
+
+Two patterns repeat across the workshop:
+
+**Pattern A — host-owned MCP client.** Your application code (the host)
+opens a `ClientSession`, calls `initialize()`, then either lists tools
+manually (the M2 baseline) or hands the session to a higher-level
+framework (M3's `MCPToolset`). The host is responsible for closing the
+session on exit.
+
+```python
+async with stdio_client(server_params) as (read, write):
+    async with ClientSession(read, write) as session:
+        await session.initialize()
+        tools = await session.list_tools()
+        result = await session.call_tool("get_market_price", {...})
+```
+
+**Pattern B — FastMCP server.** Decorate functions with `@mcp.tool()`,
+`@mcp.resource(...)`, or `@mcp.prompt(...)`. FastMCP introspects the
+function signature to build the JSON-Schema, registers the handler, and
+takes care of the protocol envelope. You write *only* the business logic.
+
+```python
+mcp = FastMCP("my-server")
+
+@mcp.tool()
+def my_tool(x: int) -> dict: ...
+
+@mcp.resource("my-scheme://catalog")
+def my_resource() -> str: ...
+
+if __name__ == "__main__":
+    mcp.run()                       # stdio (default)
+    # or: mcp.run(transport="streamable-http")
+```
+
+When in doubt: hosts open + close sessions; servers expose primitives.
+
+
 
 | Concept | Key Takeaway |
 |---|---|
@@ -847,4 +1157,4 @@ Use MCP when:                         Use direct API when:
 ---
 
 *← [Agent Fundamentals](../../m1_baseline/notes/agents_fundamentals.md)*
-*→ [A2A Protocols](../../m4_adk_multiagents/notes/a2a_protocols.md)*
+*→ [A2A Protocols](../../m3_adk_multiagents/notes/a2a_protocols.md)*

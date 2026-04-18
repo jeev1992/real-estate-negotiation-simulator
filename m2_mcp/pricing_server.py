@@ -436,6 +436,56 @@ def calculate_discount(
 #     }
 
 
+# ─── MCP Prompt: reusable negotiation-tactics template ───────────────────────
+#
+# Why a Prompt primitive?
+#   Prompts are *parameterized templates* the host (or user) can pick from.
+#   Unlike a tool, a prompt is not invoked by the model — it's selected
+#   ahead of time and rendered into the conversation as messages. This
+#   keeps tactical guidance out of the agent's static system prompt.
+
+@mcp.prompt("negotiation-tactics")
+def negotiation_tactics_prompt(
+    role: str = "buyer",
+    market_condition: str = "balanced",
+) -> str:
+    """Tactical guidance string for a buyer or seller in a given market.
+
+    Args:
+        role: "buyer" or "seller".
+        market_condition: "hot", "balanced", or "cold".
+    """
+    role = role.lower().strip()
+    market_condition = market_condition.lower().strip()
+
+    role_block = {
+        "buyer": (
+            "You are negotiating as the BUYER. Anchor low but defensible. "
+            "Always cite a comparable sale or market stat for every move."
+        ),
+        "seller": (
+            "You are negotiating as the SELLER. Defend the list price by citing "
+            "recent upgrades and market scarcity. Never disclose your floor."
+        ),
+    }.get(role, "Adopt a balanced negotiation stance citing concrete data.")
+
+    market_block = {
+        "hot":      "Market favors sellers — buyers should move quickly and avoid lowball offers.",
+        "cold":     "Market favors buyers — push for concessions and request inspections.",
+        "balanced": "Market is balanced — small concessions per round are typical.",
+    }.get(market_condition, "Use balanced concessions per round.")
+
+    return (
+        f"{role_block}\n\n"
+        f"Current market context: {market_block}\n\n"
+        "Tactics:\n"
+        "  1. Open with a concrete number, not a range.\n"
+        "  2. Make every concession smaller than the previous one.\n"
+        "  3. Tie every counter to a data point (comp, DOM, upgrade cost).\n"
+        "  4. Reserve at least one non-price concession for late rounds.\n"
+    )
+
+
 # ─── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

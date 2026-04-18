@@ -25,7 +25,7 @@ INTENTIONAL PROBLEMS IN THIS CODE:
 This is the MOTIVATING FAILURE that drives the entire architecture:
   MCP       -> solves problem #8  (grounded context)
   FSM       -> solves problems #3, #4, #6 (state machine + termination guarantee)
-  LangGraph -> solves problems #3, #9 (workflow graph + observability)
+  ADK       -> solves problems #3, #9 (workflow agents + event/streaming observability)
   A2A       -> solves problems #1, #2, #5 (structured messages, schema validation)
 
 HOW TO RUN:
@@ -37,7 +37,7 @@ WHAT TO WATCH FOR:
   • Failure mode demos -- see all 4 ways the regex parser breaks on real LLM output
 
 COMPARE WITH:
-  python m3_langgraph_multiagents/main_langgraph_multiagent.py  <- The fixed version
+  python m3_adk_multiagents/a2a_protocol_seller_server.py  <- The fixed version
 """
 
 import os
@@ -291,7 +291,7 @@ def run_naive_negotiation(
     # ║  This will run until the 100-turn emergency exit -- 100 LLM calls.║
     # ║                                                                    ║
     # ║  FIX: NegotiationFSM (state_machine.py)                           ║
-    # ║  BETTER FIX: LangGraph (m3_langgraph_multiagents/langgraph_flow.py) ║
+    # ║  BETTER FIX: ADK workflow agents (m3_adk_multiagents/)             ║
     # ╚════════════════════════════════════════════════════════════════════╝
     while True:
         turn += 1
@@ -504,20 +504,19 @@ def main() -> None:
     print("""
 Each problem maps to a specific solution in the workshop:
 
-  Problem #1   Raw strings          -> NegotiationMessage TypedDict (negotiation_types.py)
-  Problem #2   No schema            -> NegotiationMessage TypedDict with typed fields
+  Problem #1   Raw strings          -> Pydantic NegotiationMessage at A2A boundary
+  Problem #2   No schema            -> Pydantic / A2A DataPart with typed fields
   Problem #3   No state machine     -> NegotiationFSM (m1_baseline/state_machine.py)
-  Problem #4   No turn limits       -> FSM.process_turn() + LangGraph max_rounds
+  Problem #4   No turn limits       -> FSM.process_turn() + ADK LoopAgent max_iterations
   Problem #5   Fragile regex        -> price: float field -- no regex needed
-  Problem #6   No term. guarantee   -> FSM terminal states + LangGraph END node
+  Problem #6   No term. guarantee   -> FSM terminal states + ADK workflow termination
   Problem #7   Silent failures      -> Pydantic model_validate() at A2A boundary
   Problem #8   Hardcoded prices     -> MCP servers (m2_mcp/pricing_server.py)
-  Problem #9   No observability     -> LangGraph Annotated[list, operator.add] history
+  Problem #9   No observability     -> ADK Event stream + A2A task lifecycle states
   Problem #10  No evaluation        -> Session analytics, agreed price tracking
 
 RUN THE FIXED VERSION:
-  python m3_langgraph_multiagents/main_langgraph_multiagent.py
-  python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102
+  python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
     """)
 
 

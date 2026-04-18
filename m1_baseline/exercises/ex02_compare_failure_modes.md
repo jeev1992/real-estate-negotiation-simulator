@@ -49,7 +49,7 @@ Copy this table and fill in the "Fixed by FSM?" column with Yes/No and a brief e
 | 10 | No evaluation metrics | | |
 
 ### Step 4 — Identify what's still missing
-After filling in the table, answer: **Which failure modes require solutions beyond the FSM?** Map each unsolved failure mode to the module that fixes it (M2 MCP, M3 LangGraph, or M4 A2A).
+After filling in the table, answer: **Which failure modes require solutions beyond the FSM?** Map each unsolved failure mode to the module that fixes it (M2 MCP or M3 ADK + A2A).
 
 ## Verify
 There is no code change to verify for this exercise — your deliverable is the completed table and analysis.

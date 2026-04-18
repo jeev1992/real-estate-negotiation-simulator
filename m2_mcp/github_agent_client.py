@@ -157,7 +157,7 @@ async def run_agent(query: str) -> str:
     Agentic loop: connect to GitHub MCP server, let GPT-4o decide
     which tools to call, execute them, and produce a final answer.
 
-    This follows the same ReAct-style pattern as buyer_simple.py:
+    This follows a ReAct-style tool-use loop:
       1. Discover tools (list_tools)
       2. Give tool schemas to the LLM
       3. LLM returns tool_calls -> we execute them via MCP

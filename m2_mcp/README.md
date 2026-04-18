@@ -32,7 +32,7 @@ Why GitHub? Because you already know what GitHub does. Seeing an LLM agent use M
 - Auto-discovering tools via `list_tools` and converting schemas to OpenAI function-calling format
 - The LLM **choosing** which tools to call (agentic, not scripted)
 - The ReAct-style tool loop: LLM calls tools, gets results, calls more tools or answers
-- This is the **same pattern** used by our buyer/seller agents in Module 3
+- This is the **same pattern** used by our ADK buyer/seller agents in Module 3 (via `MCPToolset`)
 
 **Prerequisites:**
 - Node.js 18+ installed (`node --version`)
@@ -191,6 +191,22 @@ python m2_mcp/sse_agent_client.py --both              # includes inventory queri
 - They start and wait for a client to connect
 - On their own they don't print much — they're servers
 - In Modules 3 and 4, the agents connect to them automatically
+
+---
+
+## Deep-dive demos (`m2_mcp/demos/`)
+
+Standalone, runnable scripts that crack open the MCP protocol so you can see what's happening on the wire. Each one is self-contained and prints what it sends/receives. Read them in order; companion notes live in [m2_mcp/notes/mcp_deep_dive.md](m2_mcp/notes/mcp_deep_dive.md).
+
+| Demo | What it shows | Run |
+|---|---|---|
+| [`01_initialize_handshake.py`](m2_mcp/demos/01_initialize_handshake.py) | Raw JSON-RPC frames of the MCP `initialize` handshake (no SDK) — capability negotiation, `notifications/initialized`, then `tools/list` | `python m2_mcp/demos/01_initialize_handshake.py` |
+| [`02_tool_loop_trace.py`](m2_mcp/demos/02_tool_loop_trace.py) | The full **model ↔ host ↔ server** tool-calling loop, narrated step by step with timestamps (uses the `mcp` SDK + OpenAI function calling) | `python m2_mcp/demos/02_tool_loop_trace.py` |
+| [`03_list_all_primitives.py`](m2_mcp/demos/03_list_all_primitives.py) | Lists **Tools, Resources, and Prompts** from both workshop servers — proves MCP carries more than just tools | `python m2_mcp/demos/03_list_all_primitives.py` |
+| [`04_content_types.py`](m2_mcp/demos/04_content_types.py) | A tiny inline server that returns each `Content` block kind (text / image / embedded resource) so you can see the JSON shape of each | `python m2_mcp/demos/04_content_types.py` |
+| [`05_streamable_http_transport.py`](m2_mcp/demos/05_streamable_http_transport.py) | Same MCP protocol, **Streamable HTTP** transport (the spec's recommended replacement for raw SSE) | Server: `python m2_mcp/demos/05_streamable_http_transport.py --serve --port 8765`<br>Client: `python m2_mcp/demos/05_streamable_http_transport.py --client --port 8765` |
+
+> Demos 01–04 spawn their own server subprocess — no manual setup. Only demo 05 needs two terminals.
 
 ---
 

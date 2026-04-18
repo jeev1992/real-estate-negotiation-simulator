@@ -332,6 +332,34 @@ def get_minimum_acceptable_price(property_id: str) -> dict:
     }
 
 
+# ─── MCP Resource: read-only directory of seller floor prices ─────────────────
+#
+# Why a Resource instead of a Tool?
+#   - Tools are *actions* the model chooses to invoke (with arguments).
+#   - Resources are *documents* the host can attach as context up front.
+#   The floor-prices catalog never takes arguments and is naturally a doc.
+
+@mcp.resource("inventory://floor-prices")
+def floor_prices_resource() -> str:
+    """JSON catalog of seller floor prices for every known property.
+
+    Hosts can fetch this resource and inject it into the system prompt
+    so the seller agent never needs to call a tool just to know its own
+    constraints.
+    """
+    catalog = {
+        pid: {
+            "address": data["display_address"],
+            "list_price": data["list_price"],
+            "minimum_acceptable_price": data["minimum_acceptable_price"],
+            "ideal_price": data["ideal_price"],
+            "motivation": data["seller_motivation_level"],
+        }
+        for pid, data in SELLER_CONSTRAINTS.items()
+    }
+    return json.dumps(catalog, indent=2)
+
+
 # ─── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
