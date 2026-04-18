@@ -14,6 +14,7 @@ Run:
 
 import asyncio
 import base64
+import os
 import sys
 from pathlib import Path
 
@@ -64,26 +65,30 @@ if __name__ == "__main__":
 
 async def main() -> None:
     # Write the inline server to a temp file we can spawn.
-    tmp = Path(__file__).with_name("_inline_content_server.py")
-    tmp.write_text(SERVER_SOURCE)
+    tmp = Path(__file__).resolve().with_name("_inline_content_server.py")
+    tmp.write_text(SERVER_SOURCE, encoding="utf-8")
     try:
         params = StdioServerParameters(command=sys.executable, args=[str(tmp)])
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                for tool_name in ("get_text", "get_image", "get_resource"):
-                    result = await session.call_tool(tool_name, {})
-                    print(f"\n=== {tool_name} ===")
-                    for block in result.content:
-                        block_type = getattr(block, "type", "?")
-                        print(f"  type={block_type}")
-                        if block_type == "text":
-                            print(f"  text={block.text!r}")
-                        elif block_type == "image":
-                            print(f"  mimeType={block.mimeType}  data_len={len(block.data)} (base64)")
-                        elif block_type == "resource":
-                            r = block.resource
-                            print(f"  uri={r.uri}  mimeType={r.mimeType}  text={getattr(r, 'text', None)!r}")
+        # Redirect server stderr away from the parent's stderr — FastMCP's
+        # startup log lines on Windows can race with the JSON-RPC stdio pipe
+        # and trigger spurious "Connection closed" errors.
+        with open(os.devnull, "wb") as errsink:
+            async with stdio_client(params, errlog=errsink) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    for tool_name in ("get_text", "get_image", "get_resource"):
+                        result = await session.call_tool(tool_name, {})
+                        print(f"\n=== {tool_name} ===")
+                        for block in result.content:
+                            block_type = getattr(block, "type", "?")
+                            print(f"  type={block_type}")
+                            if block_type == "text":
+                                print(f"  text={block.text!r}")
+                            elif block_type == "image":
+                                print(f"  mimeType={block.mimeType}  data_len={len(block.data)} (base64)")
+                            elif block_type == "resource":
+                                r = block.resource
+                                print(f"  uri={r.uri}  mimeType={r.mimeType}  text={getattr(r, 'text', None)!r}")
     finally:
         tmp.unlink(missing_ok=True)
 
