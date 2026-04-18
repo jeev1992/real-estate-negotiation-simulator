@@ -160,6 +160,37 @@ The dashboard shows:
 
 ---
 
+## Deep-dive demos (`m3_adk_multiagents/demos/`)
+
+Two flights of standalone, runnable scripts. The first set (01–05) cracks open the **A2A protocol** on the wire against the seller server; the second set (06–11) drills into **Google ADK** primitives without needing the seller server. Companion notes: [a2a_protocols.md](m3_adk_multiagents/notes/a2a_protocols.md), [google_adk_overview.md](m3_adk_multiagents/notes/google_adk_overview.md), [adk_quick_reference.md](m3_adk_multiagents/notes/adk_quick_reference.md).
+
+### A2A protocol demos (need the seller server running)
+
+Start the seller first: `python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102`, then in another terminal:
+
+| Demo | What it shows | Run |
+|---|---|---|
+| [`01_handcraft_message_send.py`](m3_adk_multiagents/demos/01_handcraft_message_send.py) | Hand-built JSON-RPC `message/send` body POSTed with `httpx` — no A2A SDK, no ADK. The exact wire shape | `python m3_adk_multiagents/demos/01_handcraft_message_send.py --seller-url http://127.0.0.1:9102` |
+| [`02_task_lifecycle.py`](m3_adk_multiagents/demos/02_task_lifecycle.py) | Task state transitions: `submitted → working → completed` (valid envelope) and the `failed` path (broken envelope) | `python m3_adk_multiagents/demos/02_task_lifecycle.py --seller-url http://127.0.0.1:9102` |
+| [`03_parts_and_artifacts.py`](m3_adk_multiagents/demos/03_parts_and_artifacts.py) | Multi-part `Message` (text + structured data) and the `negotiation-summary` `Artifact` the seller attaches on completion | `python m3_adk_multiagents/demos/03_parts_and_artifacts.py --seller-url http://127.0.0.1:9102` |
+| [`04_streaming_negotiation.py`](m3_adk_multiagents/demos/04_streaming_negotiation.py) | `message/stream` JSON-RPC method — receive incremental `TaskStatusUpdate` / `TaskArtifactUpdate` events as they arrive | `python m3_adk_multiagents/demos/04_streaming_negotiation.py --seller-url http://127.0.0.1:9102` |
+| [`05_context_threading.py`](m3_adk_multiagents/demos/05_context_threading.py) | Reusing `contextId` + `taskId` across rounds so the seller recognizes follow-ups as the same negotiation | `python m3_adk_multiagents/demos/05_context_threading.py --seller-url http://127.0.0.1:9102` |
+
+### ADK primitives demos (no server needed)
+
+These show ADK building blocks in isolation — useful before reading `buyer_adk.py` / `seller_adk.py`. They call the OpenAI API directly via ADK.
+
+| Demo | What it shows | Run |
+|---|---|---|
+| [`06_sequential_agent.py`](m3_adk_multiagents/demos/06_sequential_agent.py) | `SequentialAgent` chains `market_brief → offer_drafter → message_polisher`, passing data via session state | `python m3_adk_multiagents/demos/06_sequential_agent.py` |
+| [`07_parallel_agent.py`](m3_adk_multiagents/demos/07_parallel_agent.py) | `ParallelAgent` fan-out — three sub-agents run concurrently writing to different state keys | `python m3_adk_multiagents/demos/07_parallel_agent.py` |
+| [`08_loop_agent.py`](m3_adk_multiagents/demos/08_loop_agent.py) | `LoopAgent` with a haggler + judge — the judge `escalate`s to break the loop when the price is in range | `python m3_adk_multiagents/demos/08_loop_agent.py` |
+| [`09_agent_as_tool.py`](m3_adk_multiagents/demos/09_agent_as_tool.py) | `AgentTool` — wrap an agent so another agent can call it like a function (foundation for expert hierarchies) | `python m3_adk_multiagents/demos/09_agent_as_tool.py` |
+| [`10_tool_context.py`](m3_adk_multiagents/demos/10_tool_context.py) | `ToolContext` — a function tool that reads/writes session state with scope prefixes (`app:`, `user:`, `temp:`) across turns | `python m3_adk_multiagents/demos/10_tool_context.py` |
+| [`11_callbacks.py`](m3_adk_multiagents/demos/11_callbacks.py) | `before_model` / `before_tool` / `after_tool` callbacks — PII redaction, tool allowlist, and result logging | `python m3_adk_multiagents/demos/11_callbacks.py` |
+
+---
+
 ## Exercises
 
 | Exercise | Difficulty | Task |
