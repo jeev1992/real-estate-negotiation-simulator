@@ -21,9 +21,8 @@ cp .env.example .env
 python m1_baseline/state_machine.py        # Should print FSM demo, no API key needed
 python m1_baseline/naive_negotiation.py    # Requires OPENAI_API_KEY — Demo 1 should close ~$453K in 3 turns; Demo 2 should run 8 turns (demo cap; production default is 100) then emergency exit
 pytest tests/ -v                           # All tests should pass, no API keys needed
-python m3_langgraph_multiagents/main_langgraph_multiagent.py --rounds 2           # Quick smoke test with OpenAI
-python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102
-python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 1
+python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
+python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 1
 ```
 
 ### What to have on screen when participants arrive
@@ -35,7 +34,7 @@ python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://
 
 At the start of the workshop, explicitly orient learners to the repo layout:
 
-- Each module folder (`m1_baseline/`, `m2_mcp/`, `m3_langgraph_multiagents/`, `m4_adk_multiagents/`) has its own `README.md`.
+- Each module folder (`m1_baseline/`, `m2_mcp/`, `m3_adk_multiagents/`) has its own `README.md`.
 - That module `README.md` explains what the module demonstrates and how to run it.
 - Each module includes `exercises/` (learner tasks) and `solution/` (worked answers with code changes).
 - Each module also has a `notes/` folder for deeper conceptual material.
@@ -45,17 +44,17 @@ At the start of the workshop, explicitly orient learners to the repo layout:
 
 ## WORKSHOP SCHEDULE OVERVIEW
 
-| Time        | Module | Topic                                        | Key Command / File                              |
-|-------------|--------|----------------------------------------------|-------------------------------------------------|
-| 0:00–0:15   | Intro  | What we're building + architecture overview  | Show README diagram                             |
-| 0:15–0:30   | M1     | Why naive AI agents break (demo)             | `python m1_baseline/naive_negotiation.py`       |
-| 0:30–0:45   | M1     | FSM: the termination fix                     | `python m1_baseline/state_machine.py`           |
-| 0:45–1:30   | M2     | MCP deep dive: protocol + GitHub live demo   | `python m2_mcp/github_agent_client.py`           |
-| 1:30–1:45   | Break  | —                                            | —                                               |
-| 1:45–2:05   | M2     | Custom MCP servers + information asymmetry   | Walk `m2_mcp/pricing_server.py`                 |
-| 2:05–2:50   | M3     | LangGraph deep dive + full run               | `m3_langgraph_multiagents/langgraph_flow.py`, `m3_langgraph_multiagents/main_langgraph_multiagent.py` |
-| 2:50–3:50   | M4     | A2A protocol: networked agents               | `m4_adk_multiagents/a2a_protocol_seller_server.py`, `m4_adk_multiagents/a2a_protocol_buyer_client_demo.py` |
-| 3:50–4:00   | Wrap   | Exercises + Q&A                              | `m1_baseline/exercises/`, `m2_mcp/exercises/`, `m3_langgraph_multiagents/exercises/`, `m4_adk_multiagents/exercises/` |
+| Time        | Module | Topic                                                              | Key Command / File                              |
+|-------------|--------|--------------------------------------------------------------------|-------------------------------------------------|
+| 0:00–0:15   | Intro  | What we're building + architecture overview                        | Show README diagram                             |
+| 0:15–0:30   | M1     | Why naive AI agents break (demo)                                   | `python m1_baseline/naive_negotiation.py`       |
+| 0:30–0:45   | M1     | FSM: the termination fix                                           | `python m1_baseline/state_machine.py`           |
+| 0:45–1:30   | M2     | MCP deep dive: protocol internals + GitHub live demo               | `python m2_mcp/github_agent_client.py`           |
+| 1:30–1:45   | Break  | —                                                                  | —                                               |
+| 1:45–2:30   | M2     | MCP primitives, transports, security + custom servers              | `m2_mcp/notes/mcp_deep_dive.md`, `m2_mcp/pricing_server.py` |
+| 2:30–3:15   | M3     | Google ADK deep dive: LlmAgent, workflow agents, sessions, callbacks | `m3_adk_multiagents/buyer_adk.py`, `m3_adk_multiagents/seller_adk.py`, `m3_adk_multiagents/notes/google_adk_overview.md` |
+| 3:15–3:50   | M3     | A2A protocol: Agent Card, JSON-RPC, task lifecycle, streaming      | `m3_adk_multiagents/a2a_protocol_seller_server.py`, `m3_adk_multiagents/a2a_protocol_http_orchestrator.py` |
+| 3:50–4:00   | Wrap   | Exercises + Q&A                                                    | `m1_baseline/exercises/`, `m2_mcp/exercises/`, `m3_adk_multiagents/exercises/` |
 
 ### Note Mapping
 
@@ -65,16 +64,15 @@ Notes live inside each module's `notes/` subfolder.
 |---|---|
 | M1 | `m1_baseline/notes/agents_fundamentals.md` |
 | M2 | `m2_mcp/notes/mcp_deep_dive.md` |
-| M3 | `m3_langgraph_multiagents/notes/langgraph_explained.md` |
-| M4 | `m4_adk_multiagents/notes/a2a_protocols.md` |
-| M4 | `m4_adk_multiagents/notes/google_adk_overview.md` |
-| M4 (cross-module) | `m4_adk_multiagents/notes/langgraph_adk_a2a_comparison.md` |
+| M3 | `m3_adk_multiagents/notes/a2a_protocols.md` |
+| M3 | `m3_adk_multiagents/notes/adk_quick_reference.md` |
+| M3 | `m3_adk_multiagents/notes/google_adk_overview.md` |
 
 ---
 
-## PRE-CODE CONCEPT PRIMER (M3 + M4)
+## PRE-CODE CONCEPT PRIMER (M2 + M3)
 
-Use this as a 8–12 minute primer before opening Module 3/4 code.
+Use this as a 8–12 minute primer before opening Module 2 deep dive and Module 3 code.
 
 ### Shared baseline (teach before both modules)
 
@@ -84,82 +82,98 @@ Use this as a 8–12 minute primer before opening Module 3/4 code.
 - Negotiation state vocabulary: round, status, terminal outcomes (`agreed`, `deadlocked`, `buyer_walked`, `seller_rejected`)
 - Bounded loops and terminal checks are non-negotiable in production systems
 
-### LangGraph concepts to introduce before showing Module 3 code
+### MCP concepts to introduce before the M2 deep dive
 
-1. `StateGraph` mental model
-  - Nodes do work
-  - Edges route
-  - State is the shared contract
+1. Protocol internals
+  - JSON-RPC 2.0 envelope (`id`, `method`, `params`, `result` / `error`)
+  - Initialize handshake, capability negotiation, lifecycle
 
-2. State design discipline
-  - Immutable context vs mutable turn state
-  - Keep explicit fields for routing/termination (don't hide critical values in free-text)
+2. Tool calling loop
+  - `tools/list` → model picks → `tools/call` → result back into context → loop
 
-3. Reducers (`Annotated[..., operator.add]`)
-  - Append vs overwrite behavior for history
-  - Why this avoids losing previous messages
+3. Primitives: Tools, Resources, Prompts
+  - Tools = side-effecting actions invoked by the model
+  - Resources = read-only context the host fetches
+  - Prompts = parameterized templates the host can pin
 
-4. Conditional routing
-  - Router functions are deterministic control logic
-  - This is where termination guarantees are encoded
+4. Content types
+  - `TextContent`, `ImageContent`, embedded resources, structured content
 
-5. Cycles with guarantees
-  - Loops are safe only with explicit terminal checks + max rounds
+5. Transports
+  - stdio (local subprocess), SSE / streamable HTTP (remote)
 
-### Google ADK concepts to introduce before showing Module 4 code
+6. Security and authentication
+  - Auth headers on HTTP transports, OAuth flows for hosted servers
+  - Trust boundaries: who can call which tools
+
+7. Client- and server-side patterns
+  - Server: `@mcp.tool()` registration, error envelopes
+  - Client: dynamic discovery, allowlisting, retry semantics
+
+### Google ADK concepts to introduce before showing Module 3 code
 
 1. ADK runtime primitives
   - `LlmAgent` (agent definition)
   - `Runner` (executes turns)
   - `SessionService` (state/memory across turns)
 
-2. Tool abstraction via `MCPToolset`
+2. Workflow agents (key new content)
+  - `SequentialAgent`, `ParallelAgent`, `LoopAgent`
+  - When to compose with sub_agents vs orchestrate over A2A
+
+3. Tool abstraction via `MCPToolset`
   - Tool discovery and execution loop handled by ADK
   - Model decides when to call tools
+  - `ToolContext` gives tools access to session state
 
-3. Session memory and state deltas
-  - Per-session continuity
-  - Event/state updates for observability and debugging
+4. Session memory and state deltas
+  - Per-session continuity, `EventActions(stateDelta=...)`
+  - Event stream as the observability backbone
 
-4. Provider model clarity (important for this workshop)
+5. Callbacks
+  - `before_model`, `after_model`, `before_tool`, `after_tool`
+  - Use cases: redaction, guardrails, human-in-the-loop
+
+6. Provider model clarity (important for this workshop)
   - Google ADK is a framework layer
   - In this repo, ADK uses OpenAI model IDs (`openai/gpt-4o`)
 
-5. Protocol boundary discipline
+7. Protocol boundary discipline
   - Strict JSON envelopes at A2A boundary
   - Parse/validate early; fail fast on malformed payloads
 
+### A2A concepts to introduce before showing Module 3 code
+
+1. JSON-RPC message structure (`message/send`, `message/stream`, `tasks/get`, `tasks/cancel`)
+2. Task lifecycle states (`submitted` → `working` → `input-required` → `completed` / `failed` / `canceled`)
+3. `Message`, `Part` (TextPart / FilePart / DataPart), and `Artifact` distinction
+4. Streaming: SSE event types and partial updates
+5. Context IDs and threading across turns
+6. Agent Card schema depth: skills, capabilities, security schemes
+7. Authentication: Bearer, OAuth2, mTLS
+8. A2A ↔ MCP relationship: A2A often wraps MCP-using agents; MCP is for tools, A2A is for peer agents
+
 ### While showing Module 3 code (teaching flow)
 
-1. Start with state schema (`TypedDict`)
-2. Then node functions (partial state updates)
-3. Then router functions (termination logic)
-4. Then graph assembly (`add_node`, `add_edge`, `add_conditional_edges`, `compile`)
-
-Ask repeatedly:
-> "Where is termination guaranteed in this flow?"
-
-### While showing Module 4 code (teaching flow)
-
 1. Start at the network boundary first
-  - Agent Card discovery
+  - Agent Card discovery (`/.well-known/agent-card.json`)
   - HTTP JSON-RPC `message/send`
-  - Envelope contract
+  - Envelope contract and task lifecycle
 
 2. Then show ADK internals
   - buyer/seller ADK agent setup
-  - MCP tool usage
-  - session state continuity
+  - MCP tool usage via `MCPToolset`
+  - session state continuity and event stream
 
 3. Emphasize decoupling
-  - No shared in-process graph state between buyer/seller
+  - No shared in-process state between buyer/seller
   - Interop via protocol contract, not imports
 
 ### Suggested mini-sequence (if learners need extra framing)
 
 - 3–4 min: MCP vs A2A vs orchestration recap
-- 4–5 min: LangGraph control-flow mental model
-- 4–5 min: ADK runtime + provider model clarification
+- 4–5 min: ADK runtime + workflow agents + provider model clarification
+- 4–5 min: A2A task lifecycle + Agent Card walkthrough
 - Then open code and map each concept directly to concrete lines
 
 ---
@@ -178,21 +192,21 @@ Ask repeatedly:
 > There's a $15K zone of agreement — the question is whether the agents find it,
 > and how cleanly the system terminates either way.
 >
-> We're building this progressively across four modules so you can see three
-> implementation styles: a broken naive baseline, then OpenAI + LangGraph,
-> then OpenAI + Google ADK over A2A. Same negotiation, same MCP servers, different frameworks."
+> We're building this progressively across three modules so you can see two
+> implementation styles: a broken naive baseline, then a production-style
+> stack — OpenAI + Google ADK over the A2A protocol. Same negotiation,
+> same MCP servers, two levels of rigor."
 
 **EXPLAIN CLEARLY WHAT EACH MODULE DOES (say this explicitly):**
 - **Module 1 (`m1_baseline/`)**: intentionally naive baseline that exposes failure modes (fragile parsing, weak stopping logic), then introduces FSM-based termination guarantees.
-- **Module 2 (`m2_mcp/`)**: adds MCP so agents can call external tools for real data (pricing/inventory) instead of relying on hardcoded prompt knowledge.
-- **Module 3 (`m3_langgraph_multiagents/`)**: adds LangGraph orchestration (shared state + node/edge routing + explicit end conditions) for reliable in-process multi-agent control flow.
-- **Module 4 (`m4_adk_multiagents/`)**: moves to networked A2A over HTTP, with ADK-backed buyer/seller agents behind protocol boundaries (Agent Card discovery + JSON-RPC messaging).
+- **Module 2 (`m2_mcp/`)**: adds MCP so agents can call external tools for real data (pricing/inventory) instead of relying on hardcoded prompt knowledge — with a deep dive on protocol internals, primitives, transports, and security.
+- **Module 3 (`m3_adk_multiagents/`)**: builds the buyer and seller using Google ADK (LlmAgent, workflow agents, sessions, callbacks, MCPToolset) and exposes them over networked A2A (Agent Card discovery, JSON-RPC `message/send`, task lifecycle, streaming).
 
 **SHOW:** README.md — architecture diagram.
 
 **KEY TALKING POINTS:**
 - Every layer of the architecture solves a specific failure mode from the naive version
-- MCP = agent ↔ external data. A2A = agent ↔ agent. LangGraph = workflow orchestration.
+- MCP = agent ↔ external tools/data. A2A = agent ↔ agent. ADK = the agent framework that runs both sides.
 - Google ADK is the agent framework (not a Gemini-only wrapper). In this workshop's ADK code, we use OpenAI models (`openai/gpt-4o`).
 - Why real estate: concrete domain, clear adversarial agents, obvious information asymmetry
 
@@ -260,9 +274,9 @@ Point to the informal proof in the class docstring:
 > the FSM reaches a terminal state in finite steps. QED."
 
 **ASK:**
-> "LangGraph has a node called END with no outgoing edges.
+> "Google ADK has a `LoopAgent` whose body keeps running until a terminal signal is set in session state.
 > Does that structure look familiar?"
-> (Answer: it's the same guarantee, at workflow level. Preview for Module 3.)
+> (Answer: it's the same FSM termination guarantee, applied at the agent-orchestration level. Preview for Module 3.)
 
 **Run the tests:**
 ```bash
@@ -453,8 +467,8 @@ Buyer agent flow:
 pytest tests/test_fsm.py -v
 ```
 
-> "These tests validate the FSM termination guarantee from Module 1 — same guarantee
-> that LangGraph's END node provides at workflow level."
+> "These tests validate the FSM termination guarantee from Module 1 — the same guarantee
+> that ADK's `LoopAgent` provides at the agent-orchestration level."
 
 ---
 
@@ -516,14 +530,88 @@ async def get_minimum_acceptable_price(property_id: str) -> str:
 
 ---
 
-### MODULE 3 (2:05–2:50): "LangGraph Deep Dive + Full Simple Version"
+### MODULE 2 DEEP DIVE (1:45–2:30): "MCP Internals, Primitives, Transports, Security"
 
-This is the most complex module. Take it in three parts.
+The reallocated 45-minute slot from the removed LangGraph module. Use this time
+to take learners through `m2_mcp/notes/mcp_deep_dive.md` and the live servers in
+`m2_mcp/pricing_server.py` and `m2_mcp/inventory_server.py`.
 
-#### Part A: Why orchestration? (2:05–2:15) — 10 min
+#### Part A: Tool calling loop + protocol internals (1:45–2:00) — 15 min
 
 **SAY:**
-> "Before LangGraph, multi-agent coordination looked like this:"
+> "MCP gives the model three operations: list tools, get a schema, call a tool.
+> The agent loop is: model emits a tool call → host runs it on the MCP server
+> → result goes back to the model → repeat until the model returns a final answer."
+
+Walk through one full request/response on the wire:
+1. Client startup: `initialize` handshake (capabilities + protocol version)
+2. `tools/list` — server returns JSON schemas for every tool
+3. Model emits a function call → host translates to `tools/call`
+4. Server returns a `CallToolResult` (text/image/resource content blocks)
+5. Host hands result back to the model
+
+Open `m2_mcp/pricing_server.py` and trace one `@mcp.tool()` decorator end-to-end.
+
+#### Part B: Primitives — Tools, Resources, Prompts (2:00–2:10) — 10 min
+
+**SAY:**
+> "MCP has three primitive types. We use Tools heavily. Resources are read-only
+> data the agent can fetch (think: documents, files). Prompts are server-supplied
+> templates the agent can request. Knowing all three matters even if today we only ship Tools."
+
+Show the difference using `m2_mcp/notes/mcp_deep_dive.md`. Whiteboard a comparison table:
+| Primitive | Direction | Example |
+|-----------|-----------|---------|
+| Tool      | Model invokes | `get_price_estimate(...)` |
+| Resource  | Model reads   | `inventory://floor-prices` |
+| Prompt    | Model requests | `negotiation-tactics` |
+
+#### Part C: Transports — stdio vs SSE vs HTTP (2:10–2:20) — 10 min
+
+**SAY:**
+> "Transport is independent of the protocol. Same `tools/call` JSON works over a
+> subprocess pipe (stdio), an SSE stream, or plain HTTP. Pick based on deployment."
+
+- **stdio** — what we use locally; subprocess + JSON-RPC over stdin/stdout
+- **SSE** — `m2_mcp/sse_agent_client.py` shows a streaming HTTP variant
+- **Streamable HTTP / HTTP** — for hosted/multi-tenant servers
+
+Run the SSE client briefly so they see a different transport delivering the same protocol.
+
+#### Part D: Security, auth, client/server patterns (2:20–2:30) — 10 min
+
+**SAY:**
+> "MCP servers run with the credentials of the host. There is no built-in auth
+> between model and server — the host is responsible for sandboxing, rate limits,
+> tool allowlisting, and credential injection."
+
+Cover:
+- Tool allowlisting (which tools a given agent is allowed to call)
+- Credential injection patterns (env vars vs OAuth-passthrough)
+- Information asymmetry by design: buyer host gets pricing only; seller host gets pricing + inventory
+- Pattern: one server per data domain → compose multiple via `MCPToolset` later in M3
+
+**ASK:**
+> "If the seller's inventory server were exposed over HTTP instead of stdio,
+> what's the first security control you would add?"
+> (Answer: authentication on the transport — bearer token, mTLS, or OAuth — plus per-tool authorization.)
+
+---
+
+### MODULE 3 ADK DEEP DIVE (2:30–3:15): "Google ADK — LlmAgent, Workflow Agents, Sessions"
+
+The other half of the reallocated time. Cover Google ADK as a framework before
+showing it carry the buyer/seller in the next slot.
+
+#### Part A: ADK mental model (2:30–2:40) — 10 min
+
+**SAY:**
+> "ADK is Google's agent framework. It is model-agnostic — we configure it to use
+> OpenAI `gpt-4o`, not Gemini. The unit of composition is `LlmAgent` (model +
+> instruction + tools). The runtime is `Runner` (executes turns, emits events).
+> The memory is `SessionService` (per-conversation state)."
+
+Open `m3_adk_multiagents/notes/google_adk_overview.md` and walk the ecosystem diagram.
 
 ```python
 # Raw Python approach
@@ -533,204 +621,65 @@ buyer_response = buyer_agent(seller_response)
 # ... repeat manually
 ```
 
-> "Problems:
-> - No shared state. Each call is stateless.
-> - You manage the loop. You manage termination. You manage errors.
-> - You can't add a third agent without rewriting the loop.
->
-> LangGraph solves all three: shared state, declarative routing, built-in termination."
-
-**DRAW the mental model:**
+Whiteboard:
 ```
-                    LANGGRAPH MENTAL MODEL
-                    ======================
+                ADK MENTAL MODEL
+                ================
+LlmAgent  (model + instruction + tools, declarative)
+   |
+   v
+Runner    (executes turns, emits events: text, tool_call, tool_result)
+   |
+   v
+Session   (per-conversation state, owned by SessionService)
 
-Raw Python:             LangGraph:
-  while True:             START
-    buyer(...)               |
-    seller(...)           buyer_node
-    if done: break           |
-                          seller_node
-                             |
-                         [conditional router]
-                          /           \
-                      buyer_node      END
-                      (loop)
+Workflow agents = LlmAgents composed:
+   SequentialAgent  -> agents run in order, share session state
+   ParallelAgent    -> agents fan out concurrently, results merged
+   LoopAgent        -> body re-runs until a terminal signal in state
 ```
 
-> "LangGraph turns your orchestration logic into a graph.
-> The graph is the control flow. Nodes are the work. Edges are the routing.
-> And END is a terminal node — same as the FSM's AGREED/FAILED states."
+#### Part B: LlmAgent + MCPToolset code walkthrough (2:40–2:55) — 15 min
 
-#### Part B: LangGraph code walkthrough (2:15–2:35) — 20 min
+Open `m3_adk_multiagents/buyer_adk.py`. Walk:
+1. `MCPToolset(StdioServerParameters(...))` — auto-discovers tools, no hand-rolled `tools/list`/`tools/call` plumbing.
+2. `LlmAgent(model="openai/gpt-4o", instruction=BUYER_INSTRUCTION_TEMPLATE, tools=[pricing_toolset])` — declarative.
+3. `InMemorySessionService` + `Runner.run_async(...)` — the actual execution loop.
+4. The async event stream — `event.is_final_response()`, `event.content.parts[*].text`.
+5. `__aenter__` / `__aexit__` — guarantees MCP subprocess cleanup.
 
-Open `m3_langgraph_multiagents/langgraph_flow.py`.
+Then open `m3_adk_multiagents/seller_adk.py` and contrast: **two** MCPToolsets (pricing + inventory) merged into one tools list. Same pattern, more data access.
 
-**1. The State — 5 min**
+#### Part C: Workflow agents, callbacks, ToolContext (2:55–3:10) — 15 min
 
-```python
-class NegotiationState(TypedDict):
-    # Immutable context: session_id, property_address, listing_price
-    # Agent constraints: buyer_budget, seller_minimum, max_rounds
-    # Current positions: buyer_current_offer, seller_current_counter
-    # Round tracking: round_number
-    # Outcome: status, agreed_price
-    # Last messages (node-to-node handoff): last_buyer_message, last_seller_message
-    # Append-only audit trail: history
-    # Agent references (set once in init node): _buyer_agent_ref, _seller_agent_ref
-```
+Open `m3_adk_multiagents/notes/google_adk_overview.md` and `notes/adk_quick_reference.md`.
 
-> "This TypedDict is the SINGLE source of truth for the entire negotiation.
-> Every node reads from it. Every node writes to it.
-> No global variables. No passing objects between functions.
-> The state flows through the graph."
-
-**Point to the Annotated reducer pattern:**
-```python
-# From langgraph_flow.py — the actual field definition:
-history: Annotated[list[dict], operator.add]
-```
-
-> "This is LangGraph's Annotated reducer. Instead of overwriting the list,
-> each node APPENDS to it. So after 5 rounds you have all 10 messages in order.
-> Without this: each node would overwrite the previous history.
-> With it: history accumulates automatically."
+Cover:
+- **`SequentialAgent`** — pipeline of sub-agents (e.g., research → draft → review).
+- **`ParallelAgent`** — fan out N agents, gather results.
+- **`LoopAgent`** — iterate until a sub-agent sets a termination key in session state. *This is the ADK analogue of the FSM termination guarantee from Module 1.*
+- **`ToolContext`** — what a tool receives at call time: session state, invocation ID, callable for emitting intermediate events.
+- **Callbacks** — `before_model_callback`, `after_tool_callback`, etc. Where you put PII redaction, audit logging, cost guards.
+- **Events** — every Runner step emits an event; that's how UIs stream partial output.
+- **Auth** — credential injection via `ToolContext` and the OAuth flows ADK ships.
 
 **ASK:**
-> "Why not just use a global variable for the message history?"
-> (Answer: graph nodes run async, possibly in parallel in other workflows.
-> State is thread-safe. Globals are not.)
+> "Where in this architecture would you enforce a per-agent budget cap (max dollars of LLM spend per session)?"
+> (Answer: a `before_model_callback` that reads cost from session state and aborts the turn if exceeded.)
 
-**2. The Nodes — 5 min**
+#### Part D: Set up for A2A (3:10–3:15) — 5 min
 
-```python
-async def buyer_node(state: dict) -> dict:
-    buyer_agent: BuyerAgent = state["_buyer_agent_ref"]
-    last_seller_msg = state.get("last_seller_message")
-
-    if last_seller_msg is None:
-        buyer_message = await buyer_agent.make_initial_offer()   # Round 1
-    else:
-        buyer_message = await buyer_agent.respond_to_counter(last_seller_msg)  # Round 2+
-
-    # Determine status from message type
-    new_status = state["status"]
-    if buyer_message["message_type"] == "WITHDRAW":
-        new_status = "buyer_walked"
-    elif buyer_message["message_type"] == "ACCEPT":
-        new_status = "agreed"
-
-    return {
-        "buyer_current_offer": buyer_message.get("price") or state["buyer_current_offer"],
-        "round_number": buyer_message["round"],
-        "status": new_status,
-        "last_buyer_message": buyer_message,
-        "history": [{"round": buyer_message["round"], "agent": "buyer", ...}],  # reducer appends
-    }
-```
-
-> "Notice: the node takes state, does work, returns a PARTIAL state update.
-> LangGraph merges the returned dict into the existing state.
-> The node doesn't know about other nodes. It communicates through state:
-> buyer_node writes last_buyer_message → seller_node reads last_buyer_message.
->
-> Node types in LangGraph:
-> - LLM step: calls a language model (buyer_node, seller_node)
-> - Data step: reads/transforms data
-> - Action step: calls an API, tool, or side effect
-> - User input step: waits for human input (interrupts)
->
-> Our buyer_node is all three: it reads state (data), calls MCP (action), calls GPT-4o (LLM)."
-
-**3. The Router — 5 min**
-
-```python
-def route_after_seller(state: dict) -> Literal["continue", "end"]:
-    status = state.get("status", "negotiating")
-    if status != "negotiating":
-        return "end"
-    if state.get("round_number", 0) >= state.get("max_rounds", 5):
-        return "end"
-    return "continue"
-```
-
-> "This is the FSM translated into LangGraph. Every non-negotiating status routes to 'end'.
-> 'end' maps to the END constant — a special node with no outgoing edges.
-> The graph CANNOT leave END. Termination guaranteed at the workflow level."
-
-**Show how the graph is assembled:**
-```python
-workflow = StateGraph(NegotiationState)
-workflow.add_node("init", initialize_agents_node)
-workflow.add_node("buyer", buyer_node)
-workflow.add_node("seller", seller_node)
-workflow.set_entry_point("init")
-workflow.add_edge("init", "buyer")
-workflow.add_conditional_edges("buyer", route_after_buyer, {"to_seller": "seller", "end": END})
-workflow.add_conditional_edges("seller", route_after_seller, {"continue": "buyer", "end": END})
-graph = workflow.compile()
-```
-
-> "add_node: register the function.
-> add_edge: unconditional transition.
-> add_conditional_edges: the router function returns a string key, mapped to the next node.
-> compile(): validates the graph, checks for unreachable nodes, builds the execution plan."
-
-**4. The cycle — 2 min**
-
-> "The buyer → seller → buyer loop is a CYCLE in the graph.
-> LangGraph allows cycles. The termination guarantee comes from two sources:
-> 1. The router returns 'end' for terminal states
-> 2. max_rounds enforces a hard ceiling on iterations
-> Both are explicit in the code — not hidden in a while loop."
-
-**COMPARISON — put these side by side:**
-```python
-# Naive (naive_negotiation.py)          # LangGraph (langgraph_flow.py)
-while True:                              # while not fsm.is_terminal():
-    buyer_msg = buyer.respond(...)       #   buyer_node(state) -> returns update
-    if "DEAL" in buyer_msg: break        #   route_after_buyer -> "to_seller" or "end"
-    seller_msg = seller.respond(...)     #   seller_node(state) -> returns update
-    if turn > 100: break                 #   route_after_seller -> "continue" or "end"
-```
-
-> "LangGraph forces you to be explicit about routing. You can't accidentally forget
-> to check a terminal condition. The graph structure IS the termination logic."
-
-#### Part C: Run and observe (2:35–2:50) — 15 min
-
-```bash
-python m3_langgraph_multiagents/main_langgraph_multiagent.py
-```
-
-**SAY:**
-> "Watch the output with this mental model:
-> - '[Buyer] Calling MCP' = MCP protocol in action (Module 2)
-> - '[LangGraph] routing' = conditional edge firing
-> - 'A2A messages' = structured agent-to-agent communication
-> Each line you see corresponds to a specific layer of the architecture."
-
-**AFTER IT RUNS — debrief (5 min):**
-- What round did they agree? (Usually 2–4)
-- Was the price in the $445K–$460K zone?
-- Which agent conceded more? Why? (Seller starts higher, must come down more)
-
-**TRY a deadlock scenario:**
-```bash
-python m3_langgraph_multiagents/main_langgraph_multiagent.py --seller-minimum 470000 --buyer-budget 460000
-```
-> "No overlap zone. Watch LangGraph terminate cleanly at round 5.
-> Count the lines — exactly 5 rounds, then END. No emergency exit needed."
+Transition: "Now we wrap these ADK agents behind A2A so they can run as independent network services."
 
 ---
 
-### MODULE 4 (2:50–3:50): "True A2A Protocol — Networked Agents"
+### MODULE 3 A2A (3:15–3:50): "True A2A Protocol — Networked Agents"
 
 This module shows what production multi-agent systems look like: two agents running
 as independent HTTP services, communicating over the A2A protocol standard.
 
 **THE BIG PICTURE:**
-> "In Modules 2 and 3, both agents lived in the same Python process.
+> "Up to this point both ADK agents lived in the same Python process.
 > The buyer called the seller like a function.
 > In the real world, agents run on different machines, owned by different teams,
 > possibly written in different languages.
@@ -744,12 +693,12 @@ as independent HTTP services, communicating over the A2A protocol standard.
 
 **DRAW the architecture shift:**
 ```
-MODULE 3 (same process):
-  main_langgraph_multiagent.py
-    buyer_node() ----calls----> seller_node()
-    (Python function call — same memory, same machine)
+IN-PROCESS BASELINE (same process):
+  one Python script runs both ADK agents
+    buyer_runner ----calls----> seller_runner
+    (function call — same memory, same machine)
 
-MODULE 4 (networked A2A):
+NETWORKED A2A:
   Terminal 1: a2a_protocol_seller_server.py   <-- HTTP server, port 9102
   Terminal 2: a2a_protocol_buyer_client_demo.py
 
@@ -821,7 +770,7 @@ AgentCard(
 
 #### Part B: ADK as the Agent Backing Layer (3:05–3:15) — 10 min
 
-Open `m4_adk_multiagents/buyer_adk.py` and `m4_adk_multiagents/seller_adk.py`.
+Open `m3_adk_multiagents/buyer_adk.py` and `m3_adk_multiagents/seller_adk.py`.
 
 **SAY:**
 > "The ADK agents are the LLM + MCP layer — the intelligence behind the A2A endpoints.
@@ -841,7 +790,7 @@ self._agent = LlmAgent(
 )
 ```
 
-> "MCPToolset replaces all the manual `stdio_client` / `call_tool` code from Module 3.
+> "MCPToolset replaces all the manual `stdio_client` / `call_tool` plumbing you'd write by hand.
 > The model decides when to call which tools — the tool-use loop is inside the ADK runner.
 > The seller uses TWO toolsets merged together: pricing + inventory."
 
@@ -859,7 +808,7 @@ self._agent = LlmAgent(
 
 #### Part C: The A2A Seller Server (3:15–3:30) — 15 min
 
-Open `m4_adk_multiagents/a2a_protocol_seller_server.py`.
+Open `m3_adk_multiagents/a2a_protocol_seller_server.py`.
 
 **Walk through the executor — the heart of the server:**
 
@@ -913,7 +862,7 @@ uvicorn.run(app, host=args.host, port=args.port)
 
 #### Part D: The A2A Buyer Client (3:30–3:40) — 10 min
 
-Open `m4_adk_multiagents/a2a_protocol_buyer_client_demo.py`.
+Open `m3_adk_multiagents/a2a_protocol_buyer_client_demo.py`.
 
 **Walk through the three-step client flow:**
 
@@ -945,8 +894,8 @@ async with httpx.AsyncClient() as http_client:
 > Step 3: send the offer as an A2A message. The seller could be on any machine."
 
 **ASK:**
-> "In Module 3, the buyer and seller shared a LangGraph state dict.
-> In Module 4, what does the buyer know about the seller's internal state?"
+> "In a naive in-process design, the buyer and seller would share a single Python state dict.
+> In Module 3, what does the buyer know about the seller's internal state?"
 >
 > Answer: Nothing. The buyer only knows what's in the Agent Card and the response message.
 > The seller's floor price, MCP calls, model reasoning — all hidden behind the A2A interface.
@@ -964,7 +913,7 @@ export OPENAI_API_KEY=sk-...
 
 **Terminal 1 — start the seller A2A server:**
 ```bash
-python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102
+python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
 # Output: A2A seller server listening at http://127.0.0.1:9102
 #         Agent card: http://127.0.0.1:9102/.well-known/agent-card.json
 ```
@@ -1029,12 +978,12 @@ Expected response shape:
 
 **Terminal 2 — run the HTTP orchestrator loop:**
 ```bash
-python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
+python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
 ```
 
 **Optional single-turn demo:**
 ```bash
-python m4_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
+python m3_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
 ```
 
 **Watch specifically for:**
@@ -1071,45 +1020,42 @@ Exercises use difficulty labels: `[Starter]` (15 min), `[Core]` (30–45 min), `
 
 **If 30–45 min remaining (pick two):**
 - M1 Exercise 1 `[Core]` — Add a TIMEOUT terminal state to the FSM (no API keys, teaches transition tables)
-- M2 Exercise 2 `[Core]` — Wire the new MCP tool into the buyer agent (builds on M2 ex01)
-- M3 Exercise 1 `[Core]` — Add a deadlock-breaker conditional edge (teaches LangGraph routing)
+- M2 Exercise 2 `[Core]` — Wire the new MCP tool into the ADK buyer agent (builds on M2 ex01)
+- M3 Exercise 1 `[Core]` — Fetch and inspect the A2A Agent Card (teaches A2A discovery)
 
 **If 45–60 min remaining (core + challenge):**
-- M3 Exercise 2 `[Core]` — Add automatic convergence accept (business logic in graph nodes)
-- M4 Exercise 1 `[Core]` — Fetch and inspect the A2A Agent Card (teaches A2A discovery)
-- M4 Exercise 2 `[Core]` — Add a negotiation history endpoint (FastAPI + A2A server extension)
+- M3 Exercise 1 `[Core]` — Fetch and inspect the A2A Agent Card (teaches A2A discovery)
+- M3 Exercise 2 `[Core]` — Add a negotiation history endpoint (FastAPI + A2A server extension)
 
 **For take-home / self-paced learners (Stretch exercises):**
 - M1 Exercise 3 `[Stretch]` — Reimplement the FSM in TypeScript
 - M2 Exercise 3 `[Stretch]` — Build an appraisal MCP server from scratch
-- M3 Exercise 3 `[Stretch]` — Add SQLite state persistence for pause/resume
-- M3 Exercise 4 `[Stretch]` — **Capstone**: Add an inspector agent (ties all 4 modules together)
-- M4 Exercise 3 `[Stretch]` — Deploy seller to Docker, run networked negotiation
+- M3 Exercise 3 `[Stretch]` — Deploy seller to Docker, run networked negotiation
 
 **Solution lookup:**
 - Match each exercise with its paired file in the module's `solution/` folder.
 
 **Prerequisites for exercises requiring API keys:**
 ```bash
-# Ensure OPENAI_API_KEY is set for M2 ex02, M3, and M4 exercises
+# Ensure OPENAI_API_KEY is set for M2 ex02 and M3 exercises
 source .env
 ```
 
 **Q&A prompts if the group is quiet:**
-- "If you had to add a third agent — a real estate attorney who reviews the final deal — where would it go in the LangGraph graph?"
+- "If you had to add a third agent — a real estate attorney who reviews the final deal — how would you compose it with the existing buyer/seller? Sub-agent of a `SequentialAgent`? Separate A2A service?"
 - "The seller's floor price is enforced in parse_seller_response(). Is that the right place? What are the alternatives?"
 - "How would you test whether the buyer agent behaves correctly? What would you mock?"
-- "Our ADK version doesn't use LangGraph at all. Could you add LangGraph to orchestrate ADK agents? Why might you want to?"
+- "Right now the buyer talks to one seller. How would you let the buyer discover and choose between multiple competing seller A2A endpoints?"
 
 ---
 
 ## COMMON ISSUES AND FIXES
 
-### "ModuleNotFoundError: No module named 'm3_langgraph_multiagents'"
+### "ModuleNotFoundError: No module named 'm2_mcp'" or 'm3_adk_multiagents'
 ```bash
 # Must run from negotiation_workshop/ directory
 cd path/to/negotiation_workshop
-python m3_langgraph_multiagents/main_langgraph_multiagent.py
+python m3_adk_multiagents/a2a_protocol_seller_server.py
 ```
 
 ### "OPENAI_API_KEY not set"
@@ -1134,13 +1080,13 @@ npx --version       # must work
 npx clear-npx-cache
 ```
 
-### Module 4 exercise run fails with provider quota / rate-limit errors
+### Module 3 exercise run fails with provider quota / rate-limit errors
 This usually means provider quota is exhausted for the active project or API key limits are reached.
 
 ```bash
 # Retry later, or use a key/project with available quota.
 # Example affected command:
-python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 1
+python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 1
 ```
 
 ### Windows Unicode errors in baseline
@@ -1162,17 +1108,16 @@ pytest tests/ -v
 | Concept | One-line Definition | Where in Code |
 |---------|-------------------|---------------|
 | MCP | Standard protocol for agent ↔ external tool (3 operations: list, schema, call) | `m2_mcp/` |
-| A2A (workshop) | Structured JSON envelopes exchanged over HTTP JSON-RPC between buyer and seller agents | `m4_adk_multiagents/a2a_protocol_http_orchestrator.py`, `m4_adk_multiagents/a2a_protocol_seller_server.py` |
-| A2A (bonus demo) | True networked A2A protocol server (Agent Card + JSON-RPC via a2a-sdk) | `m4_adk_multiagents/a2a_protocol_seller_server.py` + `a2a_protocol_buyer_client_demo.py` |
+| A2A (workshop) | Structured JSON envelopes exchanged over HTTP JSON-RPC between buyer and seller agents | `m3_adk_multiagents/a2a_protocol_http_orchestrator.py`, `m3_adk_multiagents/a2a_protocol_seller_server.py` |
+| A2A (bonus demo) | True networked A2A protocol server (Agent Card + JSON-RPC via a2a-sdk) | `m3_adk_multiagents/a2a_protocol_seller_server.py` + `a2a_protocol_buyer_client_demo.py` |
 | FSM | Termination guaranteed by empty transition sets on terminal states | `m1_baseline/state_machine.py` |
-| LangGraph StateGraph | Declarative workflow graph with shared state and conditional routing | `m3_langgraph_multiagents/langgraph_flow.py` |
-| Annotated reducer | Append-not-overwrite pattern for lists in LangGraph state | `langgraph_flow.py` line ~110 |
-| LlmAgent | ADK's agent object: model + instruction + tools (not a running process) | `m4_adk_multiagents/buyer_adk.py` |
-| MCPToolset | Connects to MCP server, discovers tools, converts to model function schemas | `m4_adk_multiagents/buyer_adk.py` |
-| Runner | Executes ADK agent turns, returns async event stream | `m4_adk_multiagents/buyer_adk.py` |
-| InMemorySessionService | ADK's per-agent conversation memory | `m4_adk_multiagents/buyer_adk.py` |
+| LlmAgent | ADK's agent object: model + instruction + tools (not a running process) | `m3_adk_multiagents/buyer_adk.py` |
+| MCPToolset | Connects to MCP server, discovers tools, converts to model function schemas | `m3_adk_multiagents/buyer_adk.py` |
+| Runner | Executes ADK agent turns, returns async event stream | `m3_adk_multiagents/buyer_adk.py` |
+| InMemorySessionService | ADK's per-agent conversation memory | `m3_adk_multiagents/buyer_adk.py` |
+| Workflow agents | `SequentialAgent`, `ParallelAgent`, `LoopAgent` for bounded multi-agent orchestration | `m3_adk_multiagents/notes/google_adk_overview.md` |
 | Information Asymmetry | Seller knows its floor via inventory server; buyer infers from market data | `m2_mcp/inventory_server.py` |
-| Context manager | Ensures MCP subprocess cleanup even on error | `m4_adk_multiagents/buyer_adk.py` `__aenter__`/`__aexit__` |
+| Context manager | Ensures MCP subprocess cleanup even on error | `m3_adk_multiagents/buyer_adk.py` `__aenter__`/`__aexit__` |
 
 ---
 
@@ -1182,40 +1127,38 @@ pytest tests/ -v
                     WORKSHOP ARCHITECTURE
                     =====================
 
-MODULE 2: MCP          MODULE 3: AGENTS     MODULE 3: ORCHESTRATION
-─────────────────      ───────────────      ──────────────────────
+MODULE 2: MCP                MODULE 3: AGENTS + ORCHESTRATION (ADK + A2A)
+───────────────────────       ───────────────────────────────────────────
 
-External Data           Buyer Agent          LangGraph StateGraph
-┌─────────────┐         ┌──────────┐         ┌────────────────────┐
-│  pricing    │ tools   │ GPT-4o / │  A2A    │ START              │
-│  server     │◄────────│ OpenAI   │─────────► buyer_node         │
-└─────────────┘         │          │         │   |                │
-                        │  OFFER   │         │   v                │
-External Data           └──────────┘         │ seller_node        │
-┌─────────────┐                              │   |        |       │
-│  pricing +  │ tools   ┌──────────┐         │ loop      END      │
-│  inventory  │◄────────│ GPT-4o / │◄────────└────────────────────┘
-│  server     │         │ OpenAI   │  A2A
-└─────────────┘         │          │
-                        │  COUNTER │
-                        └──────────┘
-                         Seller Agent
+External Data                Buyer Agent (BuyerAgentADK)
+┌─────────────┐                ┌────────────────────────┐      A2A JSON-RPC
+│  pricing    │ tools          │ LlmAgent + MCPToolset      │   ───────────────────────────
+│  server     ◄───────────────│ (model: openai/gpt-4o)     │   ───────────────────────────
+└─────────────┘                │ Runner + SessionService    │
+                                └────────────────────────┘
+External Data                                                       v
+┌─────────────┐                Seller Agent (SellerAgentADK)
+│  pricing +  │ tools          ┌────────────────────────┐
+│  inventory  ◄───────────────│ LlmAgent + MCPToolset      │
+│  server     │                │ (model: openai/gpt-4o)     │
+└─────────────┘                │ Workflow agent + Runner    │
+                                └────────────────────────┘
 
-MODULE 4: TRUE A2A PROTOCOL — NETWORKED AGENTS
+MODULE 3: TRUE A2A PROTOCOL — NETWORKED AGENTS
 ──────────────────────────────────────────────
 Terminal 1: a2a_protocol_seller_server.py   (HTTP server, port 9102)
   [Agent Card at /.well-known/agent-card.json]
   [SellerAgentADK: OpenAI + MCPToolset (pricing + inventory)]
 
-Terminal 2: a2a_protocol_buyer_client_demo.py
+Terminal 2: a2a_protocol_buyer_client_demo.py / a2a_protocol_http_orchestrator.py
   [BuyerAgentADK: OpenAI + MCPToolset (pricing only)]
        |
-      | 1. make offer via ADK (OpenAI + MCP)
+       | 1. make offer via ADK (OpenAI + MCP)
        | 2. A2ACardResolver.get_agent_card()  -> GET /.well-known/agent-card.json
        | 3. A2AClient.send_message()          -> POST / (message/send JSON-RPC)
        | 4. receive counter-offer in response <-
 
-MODULE 1: BASELINE (shows what breaks WITHOUT modules 2-4)
+MODULE 1: BASELINE (shows what breaks WITHOUT modules 2 and 4)
 ```
 
 ---
@@ -1223,8 +1166,9 @@ MODULE 1: BASELINE (shows what breaks WITHOUT modules 2-4)
 ## TIMING NOTES FOR REPEAT SESSIONS
 
 - **If running long on M2 (GitHub demo):** Skip the wire protocol section (Section 3 above). Jump straight from conceptual framing to the live demo.
-- **If running long on M3 (LangGraph):** Skip Part A (philosophy). Go straight to code walkthrough. The code speaks for itself.
-- **If running long on M4 (A2A):** Skip Part B (ADK backing layer detail) entirely — just say "ADK agents = OpenAI + MCPToolset" and move straight to the server and client walkthroughs. The A2A protocol itself is the key insight, not ADK internals.
-- **2-hour condensed version:** M1 Part 1 (15 min) + M2 GitHub demo (25 min) + M3 run only (30 min) + M4 compare (25 min) + Q&A (25 min). Skip M1 Part 2, M2 custom servers, and all deep dives.
+- **If running long on M2 deep dive:** Cut the security/auth subsection — cover it as a take-home reading from `m2_mcp/notes/mcp_deep_dive.md`.
+- **If running long on M3 (ADK):** Cut callbacks and event-stream details, keep `LlmAgent` + `MCPToolset` + `Runner` + workflow agents.
+- **If running long on M3 (A2A):** Skip the streaming and `tasks/get` subsections — keep Agent Card discovery + `message/send` + task lifecycle.
+- **2-hour condensed version:** M1 Part 1 (15 min) + M2 GitHub demo (25 min) + M2 protocol primitives (15 min) + M3 ADK + A2A end-to-end (40 min) + Q&A (25 min). Skip M1 Part 2, M2 transports/security deep dive, and M3 callbacks/streaming detail.
 - Negotiation outcomes are non-deterministic — run twice if the first run is uninteresting.
 - Costs vary by provider and plan. For workshops, keep prompts short and rounds low to control spend.

@@ -270,7 +270,7 @@ The most common pattern for tool-using LLM agents. The model alternates between 
     └───────────────────────────────────────────────────┘
 ```
 
-**Implementation note**: In our simple version, GPT-4o implements ReAct implicitly through its system prompt and structured output. In LangGraph, we make the loop explicit as graph nodes.
+**Implementation note**: In our simple version, GPT-4o implements ReAct implicitly through its system prompt and structured output. In M3's ADK build, the same loop is made explicit by the `Runner` + `MCPToolset` pair driving each turn.
 
 ### 5.2 Plan-and-Execute
 
@@ -398,8 +398,7 @@ Two agents with **opposing goals** interact through structured communication.
                         │
                         ▼
              ┌──────────────────────┐
-             │  LANGGRAPH           │
-             │  ORCHESTRATOR        │
+             │  ADK ORCHESTRATOR    │
              │                      │
              │  • Manages state     │
              │  • Controls rounds   │
@@ -485,7 +484,7 @@ This IS an agent — it just doesn't use an LLM.
 
 ### The Air Traffic Controller Analogy
 
-An LLM orchestrator (like LangGraph) is like an air traffic controller:
+An LLM orchestrator (like ADK's workflow agents) is like an air traffic controller:
 - It doesn't fly any planes (it doesn't execute business logic)
 - It coordinates multiple agents (planes) following defined protocols
 - It manages state (which runway is free, which agents are active)
@@ -571,7 +570,7 @@ A2A Communication         Structured JSON messages between agents (see note 03)
 MCP Tool Use              Both agents use MCP to query external pricing and
                           inventory data (see note 02)
 
-LangGraph Orchestration   The negotiation loop is a stateful graph (see note 04)
+ADK Orchestration         The negotiation loop is bounded by ADK workflow agents and the A2A message lifecycle (see notes in `m3_adk_multiagents/notes/`)
 
 Google ADK                Production-style agent framework (see note 05)
 ```
@@ -580,7 +579,7 @@ Google ADK                Production-style agent framework (see note 05)
 
 ```
                     ┌─────────────────────────────┐
-                    │   LANGGRAPH ORCHESTRATOR    │
+                    │   ADK ORCHESTRATOR          │
                     │   (manages negotiation       │
                     │    state across all rounds)  │
                     └──────────┬──────────────────┘

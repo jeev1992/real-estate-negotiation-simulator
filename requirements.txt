@@ -39,15 +39,6 @@ litellm>=1.75.5
 a2a-sdk>=0.3.24
 
 
-# ── Orchestration ─────────────────────────────────────────────────────────────
-
-# LangGraph — stateful multi-agent workflow orchestration
-langgraph>=0.2.0
-
-# LangChain core (required by LangGraph)
-langchain-core>=0.3.0
-
-
 # ── Data Validation ───────────────────────────────────────────────────────────
 
 # Pydantic — A2A message schema validation
@@ -74,7 +65,7 @@ typing-extensions>=4.0.0
 
 # ── Dashboard ────────────────────────────────────────────────────────────────
 
-# Streamlit — negotiation dashboard UI (Module 4)
+# Streamlit — negotiation dashboard UI (Module 3)
 streamlit>=1.35.0
 
 # pandas — data manipulation for the dashboard chart

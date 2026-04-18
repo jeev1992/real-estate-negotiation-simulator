@@ -32,7 +32,7 @@ Why GitHub? Because you already know what GitHub does. Seeing an LLM agent use M
 - Auto-discovering tools via `list_tools` and converting schemas to OpenAI function-calling format
 - The LLM **choosing** which tools to call (agentic, not scripted)
 - The ReAct-style tool loop: LLM calls tools, gets results, calls more tools or answers
-- This is the **same pattern** used by our buyer/seller agents in Module 3
+- This is the **same pattern** used by our ADK buyer/seller agents in Module 3 (via `MCPToolset`)
 
 **Prerequisites:**
 - Node.js 18+ installed (`node --version`)

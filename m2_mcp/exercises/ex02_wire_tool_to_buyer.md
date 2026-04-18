@@ -3,14 +3,25 @@
 ## Goal
 After adding `get_property_tax_estimate` in Exercise 1, connect it to the buyer agent so it can factor property tax data into its negotiation strategy. This teaches you how agents **consume** MCP tools — the other side of the protocol.
 
-> **Note — cross-module exercise:** This exercise bridges M2 (MCP servers) and M3 (LangGraph agents). You'll edit files in both `m2_mcp/` and `m3_langgraph_multiagents/`. The MCP tool lives in M2; the agent that consumes it lives in M3.
+> **Note — cross-module exercise:** This exercise bridges M2 (MCP servers) and M3 (ADK buyer agent). You'll edit files in both `m2_mcp/` and `m3_adk_multiagents/`. The MCP tool lives in M2; the agent that consumes it lives in M3.
 
 ## What to look for
-In `m3_langgraph_multiagents/buyer_simple.py`, the buyer agent uses a two-phase pattern:
-1. **Planning phase** (`_plan_mcp_tool_calls`): GPT-4o decides which MCP tools to call
-2. **Execution phase** (`call_mcp_server_batch()`): The agent executes those tool calls in a single MCP session
+In `m3_adk_multiagents/buyer_adk.py`, the buyer is built on Google ADK and connects to the pricing MCP server through ADK's `MCPToolset`:
 
-The planner prompt is built **dynamically** — the agent calls `list_tools()` on the MCP server at startup and injects the discovered tool schemas into the prompt. A `_tool_server_map` built during discovery maps each tool name to its originating server, so execution is fully dynamic. Adding a tool to the pricing server is enough — the agent discovers it, the planner can select it, and the dispatch routes it automatically.
+```python
+self._pricing_toolset = MCPToolset(
+    connection_params=StdioConnectionParams(
+        server_params=StdioServerParameters(
+            command="python",
+            args=[_PRICING_SERVER],
+        )
+    ),
+)
+```
+
+`MCPToolset` performs `tools/list` against the pricing server at startup and exposes every discovered tool to the underlying `LlmAgent` as a function-calling tool. The model decides when to call which tool; ADK runs the MCP `tools/call` and feeds the result back into the conversation — fully automatic.
+
+The buyer instruction (`BUYER_INSTRUCTION_TEMPLATE`) interpolates a `{tools_section}` block that is built from those discovered schemas. Adding a new `@mcp.tool()` to the pricing server is therefore enough — ADK will pick it up on the next start and surface it to the model.
 
 ## Steps
 
@@ -21,36 +32,33 @@ python m2_mcp/pricing_server.py
 ```
 
 ### Step 2 — Verify the tool is auto-discovered
-The buyer agent discovers tools dynamically via `list_tools()` at startup. Since you added `get_property_tax_estimate` to the pricing server, the agent will automatically see it in its planner prompt — **no manual prompt editing needed**.
+No wiring code needs to change. `MCPToolset` calls `tools/list` against the pricing server when the buyer agent starts, so `get_property_tax_estimate` is automatically:
+1. Listed in the agent's tool catalog
+2. Rendered into the `{tools_section}` of `BUYER_INSTRUCTION_TEMPLATE`
+3. Available for the model to invoke via ADK's tool-calling loop
 
-Run the agent and watch for the discovery log:
-```
-[Buyer] Discovering MCP tools (first call)...
-[Buyer] Discovered 3 tools: ['get_market_price', 'calculate_discount', 'get_property_tax_estimate']
-```
-
-Since `_gather_mcp_context()` dispatches tool calls dynamically via the `_tool_server_map` (built during discovery), **no code changes are needed** for execution — the new tool is automatically routed to the pricing server.
-
-### Step 3 — Update the system prompt
-In `m3_langgraph_multiagents/buyer_simple.py`, add this line to the `CRITICAL RULES` section of `BUYER_SYSTEM_PROMPT` (e.g., after `- Always reference market data in your message`):
+### Step 3 — Nudge the model to use it
+In `m3_adk_multiagents/buyer_adk.py`, in `BUYER_INSTRUCTION_TEMPLATE`, add this line to the `YOUR STRATEGY` section (e.g., after `- Use market data to justify EVERY offer`):
 
 ```
 - Reference property tax estimates to strengthen your negotiation position
 ```
 
-This nudges GPT-4o to call `get_property_tax_estimate` when planning MCP tool calls.
+This nudges GPT-4o (via ADK) to call `get_property_tax_estimate` when reasoning about its next offer.
 
 ### Step 4 — Test the full system
+Start the seller and run a short negotiation:
 ```bash
-python m3_langgraph_multiagents/main_langgraph_multiagent.py --rounds 2
+python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
+python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 2
 ```
 
-Watch the buyer agent output. It may or may not call `get_property_tax_estimate` (that's the LLM's choice based on context). The key is that the tool is **available** for the agent to use.
+Watch the buyer agent output. It may or may not call `get_property_tax_estimate` (that's the LLM's choice based on context). The key is that the tool is **available** for the agent to use — with zero changes to the buyer's wiring code.
 
 ## Verify
 - The pricing server starts without errors after Exercise 1
-- The buyer agent discovers 3 tools (including `get_property_tax_estimate`) on startup
-- If the agent calls `get_property_tax_estimate`, the MCP call succeeds and returns tax data
+- The buyer agent boots without errors and lists `get_property_tax_estimate` among its tools
+- If the agent calls `get_property_tax_estimate`, the MCP `tools/call` succeeds and returns tax data
 
 ## Reflection question
-> The planner prompt is now built dynamically from `list_tools()`. What are the advantages and risks of auto-discovering tools vs. a hardcoded allowlist? Think about: security (what if a server exposes a dangerous tool), prompt size (20+ tools), and deployment (adding tools without redeploying agents).
+> The buyer's tool catalog is built dynamically from `tools/list`. What are the advantages and risks of auto-discovering tools vs. a hardcoded allowlist? Think about: security (what if a server exposes a dangerous tool), prompt size (20+ tools), and deployment (adding tools without redeploying agents).

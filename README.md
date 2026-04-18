@@ -1,5 +1,5 @@
 # Real Estate Negotiation Workshop
-## Learn MCP · A2A · LangGraph · Google ADK
+## Learn MCP · A2A · Google ADK
 
 A **4-hour hands-on workshop** teaching modern AI agent frameworks through a concrete, runnable project: an autonomous real estate negotiation between a Buyer Agent and a Seller Agent.
 
@@ -10,9 +10,8 @@ A **4-hour hands-on workshop** teaching modern AI agent frameworks through a con
 | Concept | What It Is | How We Use It |
 |---|---|---|
 | **MCP** | Standard protocol for agents to access external tools | Agents query pricing/inventory servers via MCP |
-| **A2A** | Agent-to-Agent communication patterns | Module 4 uses true networked A2A protocol transport (`a2a-sdk`) |
-| **LangGraph** | Stateful multi-agent workflow orchestration | Module 3 is pure LangGraph state-driven multi-agent workflow |
-| **Google ADK** | Production-grade agent framework | Alternative implementation using OpenAI-backed agents |
+| **A2A** | Agent-to-Agent protocol (Agent Card discovery + JSON-RPC over HTTP, task lifecycle, streaming) | Module 3 uses the true networked A2A protocol via `a2a-sdk` |
+| **Google ADK** | Production-grade agent framework (LlmAgent, workflow agents, sessions, MCPToolset, callbacks) | Module 3 builds the buyer and seller agents with ADK |
 
 ---
 
@@ -57,18 +56,7 @@ real-estate-negotiation-simulator/
 │   └── notes/
 │       └── mcp_deep_dive.md           # Reference: MCP protocol deep dive
 │
-├── m3_langgraph_multiagents/          # MODULE 3 — Pure LangGraph multi-agent workflow
-│   ├── README.md                      # Module guide for learners
-│   ├── negotiation_types.py           # Internal state/message types for LangGraph
-│   ├── buyer_simple.py                # Buyer agent (OpenAI GPT-4o)
-│   ├── seller_simple.py               # Seller agent (OpenAI GPT-4o)
-│   ├── langgraph_flow.py              # LangGraph negotiation workflow
-│   ├── exercises/                      # Hands-on coding exercises for Module 3
-│   ├── solution/                       # Worked solutions for Module 3 exercises
-│   └── notes/
-│       └── langgraph_explained.md     # Reference: LangGraph deep dive
-│
-├── m4_adk_multiagents/                # MODULE 4 — Google ADK + true A2A protocol
+├── m3_adk_multiagents/                # MODULE 3 — Google ADK + true A2A protocol
 │   ├── README.md                      # Module guide for learners
 │   ├── buyer_adk.py                   # Buyer agent (OpenAI model via ADK)
 │   ├── seller_adk.py                  # Seller agent (OpenAI model via ADK)
@@ -76,18 +64,17 @@ real-estate-negotiation-simulator/
 │   ├── a2a_protocol_http_orchestrator.py # Multi-round HTTP A2A orchestrator (ADK-native state)
 │   ├── a2a_protocol_buyer_client_demo.py # Single-turn A2A protocol client demo
 │   ├── streamlit_dashboard.py          # Visual negotiation dashboard (Streamlit UI)
-│   ├── exercises/                      # Hands-on coding exercises for Module 4
-│   ├── solution/                       # Worked solutions for Module 4 exercises
+│   ├── exercises/                      # Hands-on coding exercises for Module 3
+│   ├── solution/                       # Worked solutions for Module 3 exercises
 │   └── notes/
 │       ├── a2a_protocols.md           # Reference: A2A protocol deep dive
-│       ├── google_adk_overview.md     # Reference: Google ADK overview
-│       └── langgraph_adk_a2a_comparison.md  # Reference: cross-module comparison
+│       ├── adk_quick_reference.md     # Reference: ADK API quick reference
+│       └── google_adk_overview.md     # Reference: Google ADK overview
 │
-├── m3_langgraph_multiagents/main_langgraph_multiagent.py             # Entry point — Module 3 (OpenAI + LangGraph)
-├── m4_adk_multiagents/a2a_protocol_seller_server.py                  # Entry point — Module 4 (A2A server)
-├── m4_adk_multiagents/a2a_protocol_http_orchestrator.py              # Entry point — Module 4 (A2A orchestrator)
-├── m4_adk_multiagents/a2a_protocol_buyer_client_demo.py              # Entry point — Module 4 (single-turn demo)
-├── m4_adk_multiagents/streamlit_dashboard.py                         # Entry point — Module 4 (visual dashboard)
+├── m3_adk_multiagents/a2a_protocol_seller_server.py                  # Entry point — Module 3 (A2A server)
+├── m3_adk_multiagents/a2a_protocol_http_orchestrator.py              # Entry point — Module 3 (A2A orchestrator)
+├── m3_adk_multiagents/a2a_protocol_buyer_client_demo.py              # Entry point — Module 3 (single-turn demo)
+├── m3_adk_multiagents/streamlit_dashboard.py                         # Entry point — Module 3 (visual dashboard)
 ├── INSTRUCTOR_GUIDE.md                # 4-hour workshop script for instructors
 ├── .env.example                       # Copy to .env and add your API keys
 └── requirements.txt
@@ -103,12 +90,11 @@ Each module has a `notes/` subfolder with reference documentation for that modul
 |---|---|
 | `m1_baseline/notes/` | `agents_fundamentals.md` — agent fundamentals and failure modes |
 | `m2_mcp/notes/` | `mcp_deep_dive.md` — MCP protocol and tool integration |
-| `m3_langgraph_multiagents/notes/` | `langgraph_explained.md` — LangGraph orchestration deep dive |
-| `m4_adk_multiagents/notes/` | `a2a_protocols.md` — A2A protocol deep dive |
+| `m3_adk_multiagents/notes/` | `a2a_protocols.md` — A2A protocol deep dive |
+| | `adk_quick_reference.md` — ADK API quick reference |
 | | `google_adk_overview.md` — Google ADK overview |
-| | `langgraph_adk_a2a_comparison.md` — cross-module comparison (M3 vs M4) |
 
-Module 4 has three notes because it spans two distinct topics: the A2A protocol standard and the ADK runtime.
+Module 3 has three notes because it spans two distinct topics: the A2A protocol standard and the ADK runtime.
 
 ---
 
@@ -215,14 +201,11 @@ python m2_mcp/github_agent_client.py      # GitHub MCP agent (needs GITHUB_TOKEN
 python m2_mcp/pricing_server.py           # Run MCP server standalone (stdio)
 python m2_mcp/pricing_server.py --sse --port 8001  # SSE transport mode
 
-# MODULE 3: Full simple version (needs OPENAI_API_KEY)
-python m3_langgraph_multiagents/main_langgraph_multiagent.py
-
-# MODULE 4: True A2A protocol demo (needs OPENAI_API_KEY)
-python m4_adk_multiagents/a2a_protocol_seller_server.py --port 9102
-python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
+# MODULE 3: True A2A protocol demo (needs OPENAI_API_KEY)
+python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
+python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
 # Optional: single-turn request/response demo
-python m4_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
+python m3_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
 ```
 
 ### 10. Module Exercises
@@ -234,11 +217,9 @@ Each module contains hands-on exercises with worked solutions.
 | M1 | `ex01_add_timeout_state.md` | `[Core]` | Add a TIMEOUT terminal state to the FSM |
 | M1 | `ex02_compare_failure_modes.md` | `[Core]` | Compare naive vs FSM failure modes |
 | M2 | `ex01_add_mcp_tool.md` | `[Starter]` | Add a new MCP tool to the pricing server |
-| M2 | `ex02_wire_tool_to_buyer.md` | `[Core]` | Wire the new tool into the buyer agent |
-| M3 | `ex01_price_gap_tracking.md` | `[Core]` | Add price gap percentage tracking to history |
-| M3 | `ex02_concession_reducer.md` | `[Core]` | Add a concessions reducer (teaches `Annotated[list, operator.add]`) |
-| M4 | `ex01_fetch_agent_card.md` | `[Core]` | Fetch and inspect the A2A Agent Card |
-| M4 | `ex02_history_endpoint.md` | `[Core]` | Add a negotiation history endpoint |
+| M2 | `ex02_wire_tool_to_buyer.md` | `[Core]` | Wire the new tool into the ADK buyer agent |
+| M3 | `ex01_fetch_agent_card.md` | `[Core]` | Fetch and inspect the A2A Agent Card |
+| M3 | `ex02_history_endpoint.md` | `[Core]` | Add a negotiation history endpoint |
 
 Solutions are in each module's `solution/` folder.
 
@@ -246,49 +227,23 @@ Solutions are in each module's `solution/` folder.
 
 ## Architecture Deep Dive
 
-### Simple Version Flow
+### ADK + A2A Flow
 
 ```
-python m3_langgraph_multiagents/main_langgraph_multiagent.py
-    │
-    └── m3_langgraph_multiagents/langgraph_flow.py
-          │
-          ├── LangGraph Graph: START → init → [buyer ↔ seller] → END
-          │
-          ├── buyer_node (async)
-          │     ├── BuyerAgent.make_initial_offer()
-            │     │     ├── GPT-4o planner selects MCP tool(s) for this turn
-            │     │     ├── MCP call(s) execute only for selected tool(s)
-          │     │     └── OpenAI GPT-4o → decide offer price
-          │     └── Returns A2AMessage (OFFER) → stored in LangGraph state
-          │
-          └── seller_node (async)
-                ├── SellerAgent.respond_to_offer()
-                │     ├── GPT-4o planner selects MCP tool(s) for this turn
-                │     ├── MCP call(s) execute only for selected tool(s)
-                │     └── OpenAI GPT-4o → decide counter-offer
-                └── Returns A2AMessage (COUNTER_OFFER) → stored in LangGraph state
-```
-
-    Note: Module 3 currently runs in strict planner mode — MCP tools are invoked only when explicitly selected by the LLM planner for that round.
-
-### ADK Version Flow
-
-```
-python m4_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
+python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
     │
     └── A2A HTTP orchestration loop
           │
           ├── BuyerAgentADK (async context manager)
           │     ├── MCPToolset → m2_mcp/pricing_server.py (discovers tools)
-          │     ├── LlmAgent(model="gpt-4o", tools=[...])
+          │     ├── LlmAgent(model="openai/gpt-4o", tools=[...])
           │     └── Runner → executes agent turns
-          │           Agent autonomously calls MCP tools → model decides
+          │           Agent autonomously calls MCP tools — model decides
           │
           └── SellerAgentADK (async context manager)
                 ├── MCPToolset → m2_mcp/pricing_server.py
                 ├── MCPToolset → m2_mcp/inventory_server.py (seller ONLY)
-                ├── LlmAgent(model="gpt-4o", tools=[...merged...])
+                ├── LlmAgent(model="openai/gpt-4o", tools=[...merged...])
                 └── Runner → executes agent turns
 ```
 
@@ -331,10 +286,10 @@ See `INSTRUCTOR_GUIDE.md` for the full 4-hour script, talking points, and debrie
 | 0:00–0:15 | Intro | What we're building | `README.md` |
 | 0:15–0:45 | M1 | Why naive agents break + FSM fix | `m1_baseline/` |
 | 0:45–1:30 | M2 | MCP with GitHub | `m2_mcp/github_agent_client.py` |
-| 1:30–2:05 | M2 | Custom MCP servers (break at 1:30) | `m2_mcp/pricing_server.py` |
-| 2:05–2:50 | M3 | Pure LangGraph multi-agent flow + full simple run | `m3_langgraph_multiagents/`, `m3_langgraph_multiagents/main_langgraph_multiagent.py` |
-| 2:50–3:50 | M4 | True A2A protocol demos (ADK backing) | `m4_adk_multiagents/a2a_protocol_seller_server.py`, `m4_adk_multiagents/a2a_protocol_buyer_client_demo.py` |
-| 3:50–4:00 | Wrap | Exercises + Q&A | `m1_baseline/exercises/`, `m2_mcp/exercises/`, `m3_langgraph_multiagents/exercises/`, `m4_adk_multiagents/exercises/` |
+| 1:30–2:15 | M2 | MCP deep dive: protocol, primitives, transports, custom servers | `m2_mcp/notes/mcp_deep_dive.md`, `m2_mcp/pricing_server.py` |
+| 2:15–3:00 | M3 | Google ADK deep dive: LlmAgent, workflow agents, sessions, callbacks | `m3_adk_multiagents/buyer_adk.py`, `m3_adk_multiagents/seller_adk.py` |
+| 3:00–3:50 | M3 | A2A protocol: Agent Card, JSON-RPC, task lifecycle, streaming | `m3_adk_multiagents/a2a_protocol_seller_server.py`, `m3_adk_multiagents/a2a_protocol_http_orchestrator.py` |
+| 3:50–4:00 | Wrap | Exercises + Q&A | `m1_baseline/exercises/`, `m2_mcp/exercises/`, `m3_adk_multiagents/exercises/` |
 
 ---
 
@@ -388,7 +343,7 @@ asyncio.run(test())
 
 ### Change the Property
 
-Edit these values in `buyer_simple.py`, `seller_simple.py`, `buyer_adk.py`, `seller_adk.py`:
+Edit these values in `m3_adk_multiagents/buyer_adk.py` and `m3_adk_multiagents/seller_adk.py`:
 
 ```python
 PROPERTY_ADDRESS = "1234 Oak Street, Dallas, TX 75201"
@@ -417,7 +372,7 @@ def get_neighborhood_score(zip_code: str) -> dict:
 
 ### Change Negotiation Strategy
 
-In `m3_langgraph_multiagents/buyer_simple.py`, modify `BUYER_SYSTEM_PROMPT`:
+In `m3_adk_multiagents/buyer_adk.py`, modify `BUYER_INSTRUCTION_TEMPLATE`:
 
 ```python
 # Change from "start 12% below asking" to "start 8% below"
@@ -426,7 +381,7 @@ In `m3_langgraph_multiagents/buyer_simple.py`, modify `BUYER_SYSTEM_PROMPT`:
 
 ### Add a Mediator Agent
 
-Start from `m3_langgraph_multiagents/langgraph_flow.py` and add a mediator node plus conditional routing between buyer and seller.
+Use ADK's workflow agents — wrap buyer, mediator, and seller as `sub_agents` of a `SequentialAgent` (or a custom routing agent) and orchestrate over A2A.
 
 ---
 
@@ -434,15 +389,12 @@ Start from `m3_langgraph_multiagents/langgraph_flow.py` and add a mediator node 
 
 | File | Key Class/Function | What It Does |
 |---|---|---|
-| `negotiation_types.py` | `create_offer`, `create_counter_offer`, `create_acceptance` | Module 3 typed negotiation message builders |
-| `buyer_simple.py` | `BuyerAgent` | GPT-4o buyer with MCP tool calls |
-| `seller_simple.py` | `SellerAgent` | GPT-4o seller with dual MCP servers |
-| `pricing_server.py` | `get_market_price`, `calculate_discount` | MCP pricing tools |
-| `inventory_server.py` | `get_inventory_level`, `get_minimum_acceptable_price` | MCP inventory tools |
-| `langgraph_flow.py` | `create_negotiation_graph`, `run_negotiation` | LangGraph workflow |
-| `buyer_adk.py` | `BuyerAgentADK` | ADK buyer with MCPToolset |
-| `seller_adk.py` | `SellerAgentADK` | ADK seller with dual MCPToolsets |
-| `a2a_protocol_http_orchestrator.py` | `ADKOrchestrationState`, round loop | HTTP A2A orchestration + ADK session state |
+| `m2_mcp/pricing_server.py` | `get_market_price`, `calculate_discount` | MCP pricing tools |
+| `m2_mcp/inventory_server.py` | `get_inventory_level`, `get_minimum_acceptable_price` | MCP inventory tools |
+| `m3_adk_multiagents/buyer_adk.py` | `BuyerAgentADK` | ADK buyer with MCPToolset |
+| `m3_adk_multiagents/seller_adk.py` | `SellerAgentADK` | ADK seller with dual MCPToolsets |
+| `m3_adk_multiagents/a2a_protocol_seller_server.py` | `SellerADKA2AExecutor` | A2A protocol server (Agent Card + JSON-RPC) |
+| `m3_adk_multiagents/a2a_protocol_http_orchestrator.py` | `ADKOrchestrationState`, round loop | HTTP A2A orchestration + ADK session state |
 
 ---
 
@@ -467,7 +419,7 @@ export OPENAI_API_KEY=sk-your-actual-key
 ```bash
 # Run from the real-estate-negotiation-simulator/ directory
 cd real-estate-negotiation-simulator
-python m3_langgraph_multiagents/main_langgraph_multiagent.py  # Not: python real-estate-negotiation-simulator/m3_langgraph_multiagents/main_langgraph_multiagent.py
+python m2_mcp/pricing_server.py  # Not: python real-estate-negotiation-simulator/m2_mcp/pricing_server.py
 ```
 
 **GitHub MCP demo fails with `command not found: npx`**
@@ -486,10 +438,10 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; .\.venv\Scripts\Acti
 # Set UTF-8 mode before running any script
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
-python m3_langgraph_multiagents/main_langgraph_multiagent.py
+python m3_adk_multiagents/a2a_protocol_seller_server.py
 ```
 Or add `PYTHONUTF8=1` to your `.env` file to make it permanent.
 
 ---
 
-*Built for the AI Agent Systems Workshop — teaching MCP, A2A, LangGraph, and Google ADK through a real estate negotiation simulator.*
+*Built for the AI Agent Systems Workshop — teaching MCP, A2A, and Google ADK through a real estate negotiation simulator.*
