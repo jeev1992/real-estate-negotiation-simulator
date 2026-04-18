@@ -4,11 +4,11 @@
 
 | # | Failure Mode | Fixed by FSM? | Explanation |
 |---|---|---|---|
-| 1 | Raw string communication | **No** | FSM controls lifecycle, not message format. Fixed by **A2A typed messages** in M3/M3. |
-| 2 | No schema validation | **No** | FSM doesn't validate message content. Fixed by **negotiation_types.py** `NegotiationMessage` TypedDict in M3. |
+| 1 | Raw string communication | **No** | FSM controls lifecycle, not message format. Fixed by **A2A typed Message/Part envelopes** in M3. |
+| 2 | No schema validation | **No** | FSM doesn't validate message content. Fixed by **Pydantic-validated A2A payloads** in M3. |
 | 3 | No state machine (while True) | **Yes** | The FSM replaces `while True` with explicit states and a transition table. |
 | 4 | No turn limits | **Yes** | `process_turn()` enforces `max_turns` automatically. |
-| 5 | Ambiguous parsing (regex) | **No** | FSM doesn't handle message parsing. Fixed by **structured JSON envelopes** in M3 (`negotiation_types.py`). |
+| 5 | Ambiguous parsing (regex) | **No** | FSM doesn't handle message parsing. Fixed by **structured JSON parts** in M3 (A2A `DataPart` + Pydantic). |
 | 6 | No termination guarantees | **Yes** | Terminal states (AGREED, FAILED) have empty transition sets. Turn counter is bounded. Mathematical guarantee. |
 | 7 | Silent failures | **Partially** | `check_invariants()` catches FSM-level bugs, but message-level silent failures are still possible. Fully fixed by typed messages in M3. |
 | 8 | No grounded context (hardcoded prices) | **No** | FSM is about lifecycle, not data sourcing. Fixed by **MCP servers** in M2. |
@@ -19,9 +19,9 @@
 
 | Failure Mode | Fixed By |
 |---|---|
-| #1 Raw strings | M3 — `negotiation_types.py` (typed envelopes) |
+| #1 Raw strings | M3 — A2A typed Message/Part envelopes |
 | #2 No schema validation | M3 — Pydantic-validated message envelopes at the A2A boundary |
-| #5 Ambiguous parsing | M3 — explicit `price` field replaces regex extraction |
+| #5 Ambiguous parsing | M3 — explicit `price` field on A2A `DataPart` replaces regex extraction |
 | #7 Silent failures (full fix) | M3 — strict `json.loads` + Pydantic + A2A task-failed responses |
 | #8 No grounded context | M2 — MCP servers (`pricing_server.py`, `inventory_server.py`) |
 | #9 No observability (full fix) | M3 — ADK event stream plus the A2A audit trail |

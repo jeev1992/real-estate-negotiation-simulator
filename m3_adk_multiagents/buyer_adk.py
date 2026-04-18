@@ -9,13 +9,7 @@ ADK CONCEPTS DEMONSTRATED:
   3. Runner — executing the agent and getting responses
     4. InMemorySessionService — managing conversation state across turns
 
-COMPARISON WITH SIMPLE VERSION:
-  Simple (buyer_simple.py):
-    - Manual MCP client calls
-    - Manual conversation history management
-    - Returns structured JSON via response_format
-
-  ADK (this file):
+WHY ADK (vs. hand-rolling the loop):
     - MCPToolset handles MCP connections automatically
     - ADK Runner manages conversation history via sessions
     - Agent instructions guide response format
