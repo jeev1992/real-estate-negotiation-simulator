@@ -807,7 +807,7 @@ MCP (agent ↔ tool):           A2A (agent ↔ agent):
 
 **Terminal 2 — run the wire format demo:**
 ```bash
-python m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/seller_agent
 ```
 
 **Walk through the output:**
@@ -844,7 +844,7 @@ body = {
 
 **Terminal 2 — run the context threading demo:**
 ```bash
-python m3_adk_multiagents/adk_demos/a2a_10_context_threading.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/seller_agent
 ```
 
 > "This demo sends 3 rounds ($432K → $440K → $446K) and threads them via `contextId`.
@@ -854,8 +854,8 @@ python m3_adk_multiagents/adk_demos/a2a_10_context_threading.py --seller-url htt
 
 **If time permits — run the parts/artifacts and streaming demos:**
 ```bash
-python m3_adk_multiagents/adk_demos/a2a_11_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/seller_agent
-python m3_adk_multiagents/adk_demos/a2a_12_streaming.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_13_streaming.py --seller-url http://127.0.0.1:8000/seller_agent
 ```
 
 > "Demo 11 sends a message with both TextPart and DataPart — same offer in human and machine form.

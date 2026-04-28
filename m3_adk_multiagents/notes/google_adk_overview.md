@@ -1486,10 +1486,10 @@ Compare with the traditional approach (what we deleted):
 - You need to integrate with a non-ADK agent implementation
 
 **Demos:**
-- `adk_demos/a2a_09_wire_lifecycle.py` — client talking to `adk web --a2a`
-- `adk_demos/a2a_10_context_threading.py` — multi-turn via contextId
-- `adk_demos/a2a_11_parts_and_artifacts.py` — multi-part messages
-- `adk_demos/a2a_12_streaming.py` — message/stream SSE events
+- `adk_demos/a2a_10_wire_lifecycle.py` — client talking to `adk web --a2a`
+- `adk_demos/a2a_11_context_threading.py` — multi-turn via contextId
+- `adk_demos/a2a_12_parts_and_artifacts.py` — multi-part messages
+- `adk_demos/a2a_13_streaming.py` — message/stream SSE events
 
 ---
 

@@ -13,7 +13,7 @@ Prereq:
     adk web --a2a m3_adk_multiagents/negotiation_agents/ --port 8000
 
 Run:
-    python m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py \\
+    python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py \\
         --seller-url http://127.0.0.1:8000/seller_agent
 """
 

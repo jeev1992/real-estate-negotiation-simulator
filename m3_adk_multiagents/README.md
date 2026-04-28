@@ -43,10 +43,10 @@ m3_adk_multiagents/
     d07_agent_as_tool/agent.py     AgentTool wrapper
     d08_callbacks/agent.py         before_model / before_tool / after_tool
     d09_event_stream/agent.py      ADK event stream: tool calls, state deltas, markers
-    a2a_09_wire_lifecycle.py       Terminal script: raw JSON-RPC + task states
-    a2a_10_context_threading.py    Terminal script: contextId across rounds
-    a2a_11_parts_and_artifacts.py  Terminal script: multi-part messages + artifacts
-    a2a_12_streaming.py            Terminal script: message/stream SSE events
+    a2a_10_wire_lifecycle.py       Terminal script: raw JSON-RPC + task states
+    a2a_11_context_threading.py    Terminal script: contextId across rounds
+    a2a_12_parts_and_artifacts.py  Terminal script: multi-part messages + artifacts
+    a2a_13_streaming.py            Terminal script: message/stream SSE events
   exercises/
   solution/
   notes/
@@ -87,10 +87,10 @@ With `--a2a`, each agent gets an Agent Card at:
 adk web --a2a m3_adk_multiagents/negotiation_agents/
 
 # Terminal 2 — run the A2A demos
-python m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py --seller-url http://127.0.0.1:8000/seller_agent
-python m3_adk_multiagents/adk_demos/a2a_10_context_threading.py --seller-url http://127.0.0.1:8000/seller_agent
-python m3_adk_multiagents/adk_demos/a2a_11_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/seller_agent
-python m3_adk_multiagents/adk_demos/a2a_12_streaming.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_13_streaming.py --seller-url http://127.0.0.1:8000/seller_agent
 ```
 
 ---
