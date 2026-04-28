@@ -27,7 +27,10 @@ See also: [A2A Protocols](a2a_protocols.md) for the protocol layer that lets ADK
 16. [`ToolContext`, Scoped State, and Artifacts](#16-toolcontext-scoped-state-and-artifacts)
 17. [Callbacks (`before_model`, `before_tool`, `after_tool`, `after_agent`)](#17-callbacks)
 18. [Events, Actions, and Escalation](#18-events-actions-and-escalation)
-19. [Putting It All Together — How the Workshop Uses These](#19-putting-it-all-together)
+19. [Authentication and Credentials](#19-authentication-and-credentials)
+20. [Agent Discovery — The `adk web` Convention](#20-agent-discovery--the-adk-web-convention)
+21. [ADK ↔ A2A Integration](#21-adk--a2a-integration)
+22. [Putting It All Together — How the Workshop Uses These](#22-putting-it-all-together)
 
 ---
 
@@ -1287,7 +1290,210 @@ uses `output_key` and `after_agent_callback` to track round state.
 
 ---
 
-## 19. Putting It All Together
+## 19. Authentication and Credentials
+
+ADK agents often need credentials to call external services (MCP servers,
+APIs, OAuth-protected endpoints). ADK provides a layered auth model.
+
+### Tool-level credential injection
+
+Tools can receive credentials through `ToolContext`. When a tool needs
+authentication, it can read from session state or environment:
+
+```python
+def call_paid_api(query: str, tool_context: ToolContext) -> dict:
+    # Read API key from session state (injected at session creation)
+    api_key = tool_context.state.get("app:paid_api_key")
+    # Or from environment (simpler, less dynamic)
+    api_key = os.environ.get("PAID_API_KEY")
+    ...
+```
+
+### before_tool_callback for auth enforcement
+
+The `before_tool_callback` pattern used in our buyer/seller agents is
+also how you enforce *authorization* — which tools a given agent is
+allowed to call, regardless of what the MCP server exposes:
+
+```python
+def _enforce_buyer_allowlist(tool, args, tool_context):
+    if tool.name not in _BUYER_ALLOWED_TOOLS:
+        return {"error": f"tool '{tool.name}' is not authorized"}
+    return None
+```
+
+### CredentialService (advanced)
+
+ADK ships an `InMemoryCredentialService` (experimental) for managing
+OAuth flows. When `adk web` starts, it creates one automatically. For
+production, implement a custom `BaseCredentialService` backed by a
+secrets manager.
+
+### MCP server credentials
+
+MCPToolset with `StdioServerParameters` can pass environment variables
+to the spawned server process — this is how you inject API keys:
+
+```python
+MCPToolset(
+    connection_params=StdioConnectionParams(
+        server_params=StdioServerParameters(
+            command=sys.executable,
+            args=["my_server.py"],
+            env={"API_KEY": os.environ["API_KEY"]},  # injected
+        )
+    )
+)
+```
+
+### A2A-level auth
+
+When using `adk web --a2a`, A2A endpoints inherit whatever HTTP auth
+the deployment provides. The Agent Card declares supported auth schemes.
+For local development, no auth is configured.
+
+---
+
+## 20. Agent Discovery — The `adk web` Convention
+
+`adk web` discovers agents through a specific directory convention.
+Understanding this convention is essential for creating new agents.
+
+### The package structure
+
+```
+my_agents/                    # ← pass this directory to adk web
+    agent_one/                # each subfolder = one agent
+        __init__.py           # must contain: from . import agent
+        agent.py              # must define: root_agent = LlmAgent(...)
+    agent_two/
+        __init__.py
+        agent.py
+```
+
+### Discovery rules
+
+1. `adk web my_agents/` scans each immediate subfolder
+2. Each subfolder must be a valid Python package (`__init__.py`)
+3. The `__init__.py` must import the `agent` module
+4. The `agent.py` must define a module-level variable named `root_agent`
+5. The `root_agent` can be any ADK agent: `LlmAgent`, `SequentialAgent`, `LoopAgent`, etc.
+
+### What `adk web` creates automatically
+
+For each discovered agent, `adk web` creates:
+- A `Runner` instance
+- An `InMemorySessionService` (or database-backed via `--session_service_uri`)
+- A web UI entry in the dropdown
+- Session management and conversation history
+
+### With `--a2a`: additional A2A infrastructure
+
+Adding the `--a2a` flag also creates for each agent:
+- An **Agent Card** at `/<agent_name>/.well-known/agent-card.json`
+  (auto-generated from `name`, `description`, and tools)
+- A **JSON-RPC endpoint** at `POST /<agent_name>/`
+  (handles `message/send` and `message/stream`)
+- A **Task store** for managing task lifecycle
+
+```bash
+# Interactive only
+adk web m3_adk_multiagents/negotiation_agents/
+
+# Interactive + A2A endpoints
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+```
+
+### Our workshop structure
+
+```
+negotiation_agents/
+    buyer_agent/    → root_agent = LlmAgent(name="buyer_agent", ...)
+    seller_agent/   → root_agent = LlmAgent(name="seller_agent", ...)
+    negotiation/    → root_agent = LoopAgent(name="negotiation", ...)
+
+adk_demos/
+    d01_basic_agent/  → root_agent = LlmAgent(name="basic_agent", ...)
+    d02_mcp_tools/    → root_agent = LlmAgent(name="mcp_tools_agent", ...)
+    ...               → 9 total demo agents
+```
+
+**Demo:** `adk web m3_adk_multiagents/adk_demos/` — 9 agents in the dropdown.
+
+---
+
+## 21. ADK ↔ A2A Integration
+
+ADK and A2A are complementary. ADK builds agents; A2A exposes them as
+network services. The bridge is `adk web --a2a`.
+
+### How it works
+
+```
+agent.py                          adk web --a2a
+─────────                         ─────────────────────────
+root_agent = LlmAgent(            Reads root_agent →
+    name="seller_agent",            Generates Agent Card:
+    description="...",                name: "seller_agent"
+    tools=[MCPToolset(...)],          description: "..."
+)                                     skills: [from tools]
+                                      url: "http://host:port/seller_agent"
+
+                                    Serves:
+                                      GET /.well-known/agent-card.json
+                                      POST / (message/send JSON-RPC)
+                                      POST / (message/stream SSE)
+```
+
+### The agent as MCP client AND A2A server
+
+A single ADK agent commonly plays both roles:
+
+```
+                    ┌──────────────────────────────┐
+                    │     seller_agent (ADK)        │
+                    │                               │
+ A2A client  ──────►  A2A server (auto by adk web) │
+ (buyer demo)       │                               │
+                    │  LlmAgent                     │
+                    │    ├── MCPToolset → pricing    │──── MCP client
+                    │    └── MCPToolset → inventory  │──── MCP client
+                    └──────────────────────────────┘
+```
+
+- **Inbound**: A2A messages arrive via JSON-RPC
+- **Processing**: LlmAgent reasons with GPT-4o, calls MCP tools
+- **Outbound**: Response sent back as A2A Task result
+
+### No custom server code needed
+
+Compare with the traditional approach (what we deleted):
+
+| Aspect | Old approach | New approach |
+|--------|-------------|-------------|
+| Server code | 200+ lines (`a2a_protocol_seller_server.py`) | 0 lines (`adk web --a2a`) |
+| Agent Card | Manually constructed `AgentCard(...)` | Auto-generated |
+| Request handling | Custom `AgentExecutor` subclass | Built into ADK |
+| Task lifecycle | Manual `TaskUpdater` calls | Automatic |
+| MCP lifecycle | `__aenter__`/`__aexit__` context managers | Managed by MCPToolset |
+
+### When you need a custom server
+
+`adk web --a2a` covers most cases. You'd write a custom A2A server when:
+- You need custom HTTP middleware (rate limiting, custom auth)
+- You need to transform messages before they reach the agent
+- You need to run multiple agents behind a single endpoint with custom routing
+- You need to integrate with a non-ADK agent implementation
+
+**Demos:**
+- `adk_demos/a2a_09_wire_lifecycle.py` — client talking to `adk web --a2a`
+- `adk_demos/a2a_10_context_threading.py` — multi-turn via contextId
+- `adk_demos/a2a_11_parts_and_artifacts.py` — multi-part messages
+- `adk_demos/a2a_12_streaming.py` — message/stream SSE events
+
+---
+
+## 22. Putting It All Together
 
 These pieces land in our module as follows:
 
@@ -1303,6 +1509,9 @@ These pieces land in our module as follows:
 | `AgentTool`                  | `adk_demos/d07_agent_as_tool`                                    |
 | `ToolContext` scoped state   | `adk_demos/d03_sessions_state`                                   |
 | Callbacks (PII / allowlist / logging) | `adk_demos/d08_callbacks`                               |
+| Event stream + state deltas  | `adk_demos/d09_event_stream`                                     |
+| Agent discovery convention   | `__init__.py` + `agent.py` + `root_agent` in every package       |
+| ADK ↔ A2A bridge             | `adk web --a2a negotiation_agents/`                              |
 
 Run the demos as a kit: each one shows *one* ADK abstraction in
 isolation, then the negotiation agents show them composed.

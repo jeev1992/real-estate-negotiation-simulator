@@ -39,8 +39,11 @@ m3_adk_multiagents/
     d06_loop/agent.py              LoopAgent with escalation callback
     d07_agent_as_tool/agent.py     AgentTool wrapper
     d08_callbacks/agent.py         before_model / before_tool / after_tool
+    d09_event_stream/agent.py      ADK event stream: tool calls, state deltas, markers
     a2a_09_wire_lifecycle.py       Terminal script: raw JSON-RPC + task states
     a2a_10_context_threading.py    Terminal script: contextId across rounds
+    a2a_11_parts_and_artifacts.py  Terminal script: multi-part messages + artifacts
+    a2a_12_streaming.py            Terminal script: message/stream SSE events
   exercises/
   solution/
   notes/
@@ -74,7 +77,7 @@ With `--a2a`, each agent gets an Agent Card at:
 - `http://localhost:8000/seller_agent/.well-known/agent-card.json`
 - `http://localhost:8000/negotiation/.well-known/agent-card.json`
 
-### A2A protocol demos (09–10) — terminal scripts
+### A2A protocol demos (09–12) — terminal scripts
 
 ```bash
 # Terminal 1 — start agents with A2A endpoints
@@ -83,6 +86,8 @@ adk web --a2a m3_adk_multiagents/negotiation_agents/
 # Terminal 2 — run the A2A demos
 python m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py --seller-url http://127.0.0.1:8000/seller_agent
 python m3_adk_multiagents/adk_demos/a2a_10_context_threading.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_11_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_12_streaming.py --seller-url http://127.0.0.1:8000/seller_agent
 ```
 
 ---
@@ -115,8 +120,11 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)`. Each round, the bu
 | 06 | `LoopAgent` | Iterate until `callback_context.actions.escalate = True` |
 | 07 | `AgentTool` | Wrap an agent as a callable tool — hierarchical delegation |
 | 08 | Callbacks | `before_model` (PII redaction), `before_tool` (allowlist), `after_tool` (logging) |
-| 09 | A2A wire format | Hand-craft JSON-RPC, see Agent Card discovery, task state transitions |
-| 10 | A2A context threading | `contextId` ties multiple rounds into one conversation |
+| 09 | Event stream | See ADK events: tool calls, state deltas, final response markers |
+| 10 | A2A wire format | Hand-craft JSON-RPC, see Agent Card discovery, task state transitions |
+| 11 | A2A context threading | `contextId` ties multiple rounds into one conversation |
+| 12 | A2A parts & artifacts | Multi-part Messages (TextPart + DataPart), inspect Artifacts |
+| 13 | A2A streaming | `message/stream` SSE events — see status transitions in real time |
 
 ---
 
