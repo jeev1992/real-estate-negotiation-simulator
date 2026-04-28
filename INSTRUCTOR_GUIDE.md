@@ -22,7 +22,7 @@ python m1_baseline/state_machine.py        # Should print FSM demo, no API key n
 python m1_baseline/naive_negotiation.py    # Requires OPENAI_API_KEY — Demo 1 should close ~$453K in 3 turns; Demo 2 should run 8 turns (demo cap; production default is 100) then emergency exit
 pytest tests/ -v                           # All tests should pass, no API keys needed
 adk web m3_adk_multiagents/negotiation_agents/ --port 8000   # Should show 3 agents in dropdown
-adk web m3_adk_multiagents/adk_demos/ --port 8001            # Should show 8 demos in dropdown
+adk web m3_adk_multiagents/adk_demos/ --port 8001            # Should show 9 demos in dropdown
 ```
 
 ### What to have on screen when participants arrive
@@ -38,7 +38,7 @@ At the start of the workshop, explicitly orient learners to the repo layout:
 - That module `README.md` explains what the module demonstrates and how to run it.
 - Each module includes `exercises/` (learner tasks) and `solution/` (worked answers with code changes).
 - Each module also has a `notes/` folder for deeper conceptual material.
-- Modules 2 and 3 also ship runnable demos: M2 has `demos/` scripts for protocol internals; M3 has `adk_demos/` as `adk web`-launchable agent packages (8 demos in the dropdown) plus 2 terminal scripts for A2A protocol.
+- Modules 2 and 3 also ship runnable demos: M2 has `demos/` scripts for protocol internals; M3 has `adk_demos/` as `adk web`-launchable agent packages (9 demos in the dropdown) plus 4 terminal scripts for A2A protocol.
 - Module 3 also has `negotiation_agents/` — the buyer, seller, and negotiation orchestrator as declarative ADK agent packages (3 agents in the dropdown via `adk web`).
 - Encourage participants to treat module `README.md` as the runbook and `notes/` + demos as the reference and exploration sandbox.
 
@@ -55,7 +55,7 @@ At the start of the workshop, explicitly orient learners to the repo layout:
 | 1:30–1:45   | Break  | —                                                                  | —                                               |
 | 1:45–2:30   | M2     | MCP primitives, transports, security + custom servers              | `m2_mcp/notes/mcp_deep_dive.md`, `m2_mcp/pricing_server.py` |
 | 2:30–3:15   | M3     | Google ADK deep dive: LlmAgent, workflow agents, sessions, callbacks | `adk web m3_adk_multiagents/adk_demos/`, `m3_adk_multiagents/notes/google_adk_overview.md` |
-| 3:15–3:50   | M3     | A2A protocol: Agent Card, JSON-RPC, task lifecycle                   | `adk web --a2a m3_adk_multiagents/negotiation_agents/`, `adk_demos/a2a_09_wire_lifecycle.py` |
+| 3:15–3:50   | M3     | A2A protocol: Agent Card, JSON-RPC, task lifecycle, streaming        | `adk web --a2a m3_adk_multiagents/negotiation_agents/`, `adk_demos/a2a_09–12` |
 | 3:50–4:00   | Wrap   | Exercises + Q&A                                                    | `m1_baseline/exercises/`, `m2_mcp/exercises/`, `m3_adk_multiagents/exercises/` |
 
 ### Note Mapping
@@ -710,7 +710,7 @@ Cover:
 
 ```bash
 adk web m3_adk_multiagents/adk_demos/
-# 8 agents appear in the dropdown:
+# 9 agents appear in the dropdown:
 # d01_basic_agent          — bare LlmAgent + function tool
 # d02_mcp_tools            — MCPToolset auto-discovery
 # d03_sessions_state       — ToolContext + state persistence
@@ -719,6 +719,7 @@ adk web m3_adk_multiagents/adk_demos/
 # d06_loop                 — haggler + judge; judge escalates to break the loop
 # d07_agent_as_tool        — AgentTool: wrap an agent as a callable tool
 # d08_callbacks            — before_model PII redact + before_tool allowlist + after_tool log
+# d09_event_stream         — ADK event stream: tool calls, state deltas, markers
 ```
 
 > "Pick any demo from the dropdown and chat with it. Each isolates one ADK primitive so learners
@@ -839,7 +840,7 @@ body = {
 
 ---
 
-#### Part C: Context Threading Demo (3:35–3:45) — 10 min
+#### Part C: Context Threading + Additional Demos (3:35–3:45) — 10 min
 
 **Terminal 2 — run the context threading demo:**
 ```bash
@@ -850,6 +851,16 @@ python m3_adk_multiagents/adk_demos/a2a_10_context_threading.py --seller-url htt
 > Round 1 gets a `contextId` from the server response. Rounds 2 and 3 reuse it.
 > Without contextId, each message starts a new conversation — the agent forgets everything.
 > With it, the seller remembers prior offers and adjusts accordingly."
+
+**If time permits — run the parts/artifacts and streaming demos:**
+```bash
+python m3_adk_multiagents/adk_demos/a2a_11_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_12_streaming.py --seller-url http://127.0.0.1:8000/seller_agent
+```
+
+> "Demo 11 sends a message with both TextPart and DataPart — same offer in human and machine form.
+> Demo 12 uses `message/stream` instead of `message/send` — you see SSE events arriving in real time
+> as the task transitions through submitted → working → completed."
 
 **ASK:**
 > "In a naive in-process design, the buyer and seller would share a single Python state dict.
@@ -1038,7 +1049,7 @@ External Data                └────────────────
 HOW TO RUN:
   adk web negotiation_agents/           → chat UI (dropdown)
   adk web --a2a negotiation_agents/     → same + A2A endpoints
-  adk web adk_demos/                    → 8 concept demos
+  adk web adk_demos/                    → 9 concept demos
 
 A2A ENDPOINTS (auto-generated by adk web --a2a):
   GET /buyer_agent/.well-known/agent-card.json   → discovery

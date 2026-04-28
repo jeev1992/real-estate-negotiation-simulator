@@ -99,7 +99,7 @@ The primary way to run agents in this module. Discovers agent packages automatic
 # Run agents (buyer, seller, negotiation in dropdown)
 adk web m3_adk_multiagents/negotiation_agents/
 
-# Run demos (8 concept demos in dropdown)
+# Run demos (9 concept demos in dropdown)
 adk web m3_adk_multiagents/adk_demos/
 
 # Enable A2A endpoints (auto-generates Agent Cards)

@@ -83,7 +83,7 @@ If module files feel overwhelming, start with the README inside each module fold
 Modules 2 and 3 ship a `demos/` folder of small, single-purpose, runnable scripts that crack open the protocols on the wire — designed to pair with the `notes/` reference docs. See each module README for the per-demo table:
 
 - [m2_mcp/demos/](m2_mcp/demos/) — MCP handshake, tool loop trace, primitives, content types, Streamable HTTP
-- [m3_adk_multiagents/adk_demos/](m3_adk_multiagents/adk_demos/) — ADK concept demos (basic agent, MCP tools, sessions, sequential, parallel, loop, agent-as-tool, callbacks) + A2A protocol scripts (wire format, context threading)
+- [m3_adk_multiagents/adk_demos/](m3_adk_multiagents/adk_demos/) — ADK concept demos (basic agent, MCP tools, sessions, sequential, parallel, loop, agent-as-tool, callbacks, event stream) + A2A protocol scripts (wire format, context threading, parts/artifacts, streaming)
 
 ### Notes live inside each module
 
@@ -205,12 +205,14 @@ python m2_mcp/pricing_server.py           # Run MCP server standalone (stdio)
 python m2_mcp/pricing_server.py --sse --port 8001  # SSE transport mode
 
 # MODULE 3: Google ADK + A2A protocol (needs OPENAI_API_KEY)
-adk web m3_adk_multiagents/adk_demos/               # 8 concept demos in dropdown
+adk web m3_adk_multiagents/adk_demos/               # 9 concept demos in dropdown
 adk web m3_adk_multiagents/negotiation_agents/       # buyer, seller, negotiation in dropdown
 adk web --a2a m3_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Agent Cards
 # A2A protocol demos (run against adk web --a2a):
 python m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py --seller-url http://127.0.0.1:8000/seller_agent
 python m3_adk_multiagents/adk_demos/a2a_10_context_threading.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_11_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_12_streaming.py --seller-url http://127.0.0.1:8000/seller_agent
 ```
 
 ### 10. Module Exercises

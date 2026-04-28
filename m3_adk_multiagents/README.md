@@ -16,8 +16,11 @@ This module teaches Google's Agent Development Kit (ADK) from first principles, 
 | `SequentialAgent`, `ParallelAgent`, `LoopAgent` | Demos 04–06 |
 | `AgentTool` — agent-as-a-callable-tool | Demo 07 |
 | Callbacks — policy hooks (PII, allowlists) | Demo 08 |
-| A2A wire format & task lifecycle | Demo 09 (terminal script) |
-| A2A context threading | Demo 10 (terminal script) |
+| ADK event stream — tool calls, state deltas | Demo 09 |
+| A2A wire format & task lifecycle | Demo 10 (terminal script) |
+| A2A context threading | Demo 11 (terminal script) |
+| A2A parts & artifacts | Demo 12 (terminal script) |
+| A2A streaming (`message/stream`) | Demo 13 (terminal script) |
 | Full negotiation orchestration | `negotiation_agents/negotiation` |
 
 ---
@@ -30,7 +33,7 @@ m3_adk_multiagents/
     buyer_agent/agent.py           LlmAgent + MCPToolset (pricing)
     seller_agent/agent.py          LlmAgent + MCPToolset (pricing + inventory)
     negotiation/agent.py           LoopAgent ↔ SequentialAgent orchestration
-  adk_demos/                       ← adk web adk_demos/  (8 agents in dropdown)
+  adk_demos/                       ← adk web adk_demos/  (9 agents in dropdown)
     d01_basic_agent/agent.py       Bare LlmAgent + function tool
     d02_mcp_tools/agent.py         LlmAgent + MCPToolset (pricing server)
     d03_sessions_state/agent.py    ToolContext: read/write session state
@@ -56,7 +59,7 @@ m3_adk_multiagents/
 ### ADK demos (01–08) — interactive web UI
 
 ```bash
-# Run ALL demos (8 agents appear in the dropdown)
+# Run ALL demos (9 agents appear in the dropdown)
 adk web m3_adk_multiagents/adk_demos/
 
 # Open http://localhost:8000, pick a demo from the dropdown, chat with it
