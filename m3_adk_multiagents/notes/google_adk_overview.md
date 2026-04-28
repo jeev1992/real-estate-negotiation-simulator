@@ -1024,7 +1024,7 @@ adk web m3_adk_multiagents/negotiation_agents/
 # With A2A endpoints (Agent Cards auto-generated)
 adk web --a2a m3_adk_multiagents/negotiation_agents/
 
-# ADK demos (8 concept demos in dropdown)
+# ADK demos (9 concept demos in dropdown)
 adk web m3_adk_multiagents/adk_demos/
 ```
 Property: 742 Evergreen Terrace, Austin, TX 78701
@@ -1471,7 +1471,7 @@ Compare with the traditional approach (what we deleted):
 
 | Aspect | Old approach | New approach |
 |--------|-------------|-------------|
-| Server code | 200+ lines (`a2a_protocol_seller_server.py`) | 0 lines (`adk web --a2a`) |
+| Server code | Manual server code | 0 lines (`adk web --a2a`) |
 | Agent Card | Manually constructed `AgentCard(...)` | Auto-generated |
 | Request handling | Custom `AgentExecutor` subclass | Built into ADK |
 | Task lifecycle | Manual `TaskUpdater` calls | Automatic |
