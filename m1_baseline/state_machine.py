@@ -279,7 +279,7 @@ Adding TIMEOUT does NOT break the termination guarantee because:
    which can only make termination happen sooner, never later.
 
 NEXT:
-  python m3_adk_multiagents/a2a_protocol_seller_server.py
+  adk web m3_adk_multiagents/negotiation_agents/
     """)
 
 

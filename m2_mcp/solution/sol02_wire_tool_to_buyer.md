@@ -8,22 +8,21 @@ In `m2_mcp/pricing_server.py`, search for `Exercise 1` and uncomment the `get_pr
 
 ### 2. No discovery code changes needed
 
-The M3 buyer (`m3_adk_multiagents/buyer_adk.py`) connects to the pricing server through ADK's `MCPToolset`, which performs `tools/list` against the server at startup. Once you uncomment `get_property_tax_estimate`, ADK will automatically:
+The M3 buyer (`m3_adk_multiagents/negotiation_agents/buyer_agent/agent.py`) connects to the pricing server through ADK's `MCPToolset`, which performs `tools/list` against the server at startup. Once you uncomment `get_property_tax_estimate`, ADK will automatically:
 
 1. Discover the new tool via `tools/list`
 2. Add it to the agent's tool catalog
-3. Render it into the `{tools_section}` of `BUYER_INSTRUCTION_TEMPLATE`
-4. Allow the underlying `LlmAgent` to call it via the standard tool-calling loop
+3. Allow the `LlmAgent` to call it via the standard tool-calling loop
 
-No wiring code in `buyer_adk.py` needs to change.
+No wiring code in `agent.py` needs to change.
 
 ### 3. No execution handling changes needed
 
 When the model decides to call `get_property_tax_estimate`, ADK runs the MCP `tools/call` against the pricing server (already mapped through the `MCPToolset` connection) and feeds the result back into the conversation — fully automatic.
 
-### 4. Update `BUYER_INSTRUCTION_TEMPLATE` strategy section
+### 4. Update buyer instruction
 
-In `m3_adk_multiagents/buyer_adk.py`, in `BUYER_INSTRUCTION_TEMPLATE`, add this line to the `YOUR STRATEGY` section (e.g., after `- Use market data to justify EVERY offer`):
+In `m3_adk_multiagents/negotiation_agents/buyer_agent/agent.py`, add this to the `instruction` string in the STRATEGY section:
 
 ```
 - Reference property tax estimates to strengthen your negotiation position
@@ -49,6 +48,7 @@ The risks to consider:
 
 ## Verify
 ```bash
-python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
-python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 2
+adk web m3_adk_multiagents/negotiation_agents/
+# Pick buyer_agent from dropdown, ask about 742 Evergreen Terrace
+# Watch for get_property_tax_estimate in tool call traces
 ```

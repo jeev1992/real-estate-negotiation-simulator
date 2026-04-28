@@ -384,13 +384,13 @@ negotiation_loop = LoopAgent(
 )
 ```
 
-In this repo, orchestration for Module 3 is handled by the HTTP A2A runner (`m3_adk_multiagents/a2a_protocol_http_orchestrator.py`), where buyer/seller turns are coordinated over networked A2A transport.
+In this repo, orchestration for Module 3 is handled by the `negotiation_agents/negotiation/agent.py` `LoopAgent`, which wraps a `SequentialAgent(buyer → seller)`. The buyer and seller communicate via session state (`output_key` / `{placeholder}`).
 
-Other orchestration patterns are still valid depending on use case:
-- `SequentialAgent`: pipeline steps like `research → validate → recommend`
-- `ParallelAgent`: independent fan-out tasks like `market analysis` and `risk analysis`
-- `LlmAgent` with `sub_agents`: dynamic routing when the model chooses which specialist to invoke
-- `BaseAgent` subclass with `_run_async_impl`: fully custom orchestration logic
+To see these workflow agents live:
+```bash
+adk web m3_adk_multiagents/adk_demos/   # demos d04–d06 show sequential/parallel/loop
+adk web m3_adk_multiagents/negotiation_agents/   # the full negotiation orchestration
+```
 
 ---
 
@@ -883,7 +883,9 @@ buyer_agent = LlmAgent(
 | **Generator-Critic** | Agent A drafts, Agent B reviews via state | Quality-sensitive output requiring review cycles |
 | **Iterative Refinement** | `LoopAgent` with escalation signals until quality threshold met | Negotiation, code generation, writing tasks |
 
-**In our workshop, we use the Adversarial pattern** — two independent agents (buyer and seller) coordinated by the HTTP orchestrator (`m3_adk_multiagents/a2a_protocol_http_orchestrator.py`). This is not a standard ADK hierarchy — the agents don't delegate to each other. The orchestrator loop manages turns and termination over A2A transport.
+**In our workshop, we use two patterns:**
+- **Declarative agents** (`negotiation_agents/buyer_agent/agent.py`, `seller_agent/agent.py`) — each is a `root_agent = LlmAgent(...)` with MCPToolset
+- **Orchestrated negotiation** (`negotiation_agents/negotiation/agent.py`) — a `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` with `after_agent_callback` for termination
 
 ### Agent Hierarchy Design Principles
 
@@ -940,70 +942,88 @@ os.environ["OPENAI_API_KEY"] = "sk-..."
 
 Here's how our negotiation simulator uses ADK (detailed in `m3_adk_multiagents/`).
 
-### Buyer Agent (ADK Version)
+### Buyer Agent — Declarative (Idiomatic ADK)
 
 ```python
-# m3_adk_multiagents/buyer_adk.py — conceptual overview
+# m3_adk_multiagents/negotiation_agents/buyer_agent/agent.py
 
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioConnectionParams, StdioServerParameters
 
-BUYER_INSTRUCTION_TEMPLATE = f"""
-You are a real estate buyer agent for a client purchasing:
-Property: 742 Evergreen Terrace, Austin, TX 78701
-Type: Single Family, 4BR/3BA, 2,400 sqft
-
-Your client's profile:
-- Maximum budget: $460,000 (NEVER exceed this)
-- Initial strategy: Offer ~12% below asking price
-- Acceptable outcome: Any price at or below $455,000
-- Walk-away point: Seller won't go below $460,000
-
-Before making any offer, call your available MCP tools to get market data.
-
-AVAILABLE MCP TOOLS (auto-discovered):
-{{tools_section}}
-
-Output your response as JSON:
-{{
-    "offer_price": <number>,
-    "message": "<your message to the seller>",
-    "reasoning": "<internal strategy notes>",
-    "walk_away": <true/false>
-}}
-"""
-
-async def create_buyer_agent() -> LlmAgent:
-    toolset = MCPToolset(
-        connection_params=StdioConnectionParams(
-            server_params=StdioServerParameters(
-                command="python",
-                args=["m2_mcp/pricing_server.py"]
+root_agent = LlmAgent(
+    name="buyer_agent",
+    model="openai/gpt-4o",
+    description="Real estate buyer agent for 742 Evergreen Terrace, Austin TX.",
+    instruction=(
+        "You are an expert real estate buyer agent...\n"
+        "Maximum budget: $460,000. Call MCP tools before every offer."
+    ),
+    tools=[
+        MCPToolset(
+            connection_params=StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command=sys.executable,
+                    args=[_PRICING_SERVER],
+                )
             )
         )
-    )
-    tools = await toolset.get_tools()
-
-    agent = LlmAgent(
-        name="buyer_agent",
-        model="openai/gpt-4o",
-        description="Real estate buyer agent for 742 Evergreen Terrace",
-        instruction=BUYER_INSTRUCTION_TEMPLATE.format(
-            tools_section="\n".join(f"- {t.name}" for t in tools)
-        ),
-        tools=tools
-    )
-
-    return agent
+    ],
+    before_tool_callback=_enforce_buyer_allowlist,
+)
 ```
 
-### Seller Agent (ADK Version)
+**Key points:**
+- No class, no `__aenter__`/`__aexit__`, no manual Runner — just `root_agent = LlmAgent(...)`
+- MCPToolset goes directly in the `tools` list — ADK manages the lifecycle
+- `adk web` discovers this agent automatically from the package structure
+- `adk web --a2a` serves it as an A2A endpoint with an auto-generated Agent Card
+
+### Seller Agent — Dual MCPToolsets
 
 ```python
-# m3_adk_multiagents/seller_adk.py — conceptual overview
+# m3_adk_multiagents/negotiation_agents/seller_agent/agent.py
 
-SELLER_INSTRUCTION_TEMPLATE = f"""
-You are a real estate seller agent representing the owners of:
+root_agent = LlmAgent(
+    name="seller_agent",
+    model="openai/gpt-4o",
+    instruction="...",
+    tools=[
+        MCPToolset(...)  # pricing server
+        MCPToolset(...)  # inventory server — has get_minimum_acceptable_price
+    ],
+    before_tool_callback=_enforce_seller_allowlist,
+)
+```
+
+Seller has access to `get_minimum_acceptable_price` — the buyer does not. Same information asymmetry as Module 2, now declarative.
+
+### Negotiation Orchestrator — LoopAgent + SequentialAgent
+
+```python
+# m3_adk_multiagents/negotiation_agents/negotiation/agent.py
+
+from google.adk.agents import LlmAgent, LoopAgent, SequentialAgent
+
+buyer = LlmAgent(name="buyer", output_key="buyer_offer", ...)
+seller = LlmAgent(name="seller", output_key="seller_response",
+                  after_agent_callback=_check_agreement, ...)
+
+round = SequentialAgent(name="round", sub_agents=[buyer, seller])
+root_agent = LoopAgent(name="negotiation", sub_agents=[round], max_iterations=5)
+```
+
+### How to Run
+
+```bash
+# Interactive web UI — pick buyer, seller, or negotiation from dropdown
+adk web m3_adk_multiagents/negotiation_agents/
+
+# With A2A endpoints (Agent Cards auto-generated)
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+
+# ADK demos (8 concept demos in dropdown)
+adk web m3_adk_multiagents/adk_demos/
+```
 Property: 742 Evergreen Terrace, Austin, TX 78701
 Listed at: $485,000
 
@@ -1085,7 +1105,7 @@ The first half of this document showed *what ADK is* and the basic
 LlmAgent + Runner + Session + MCPToolset + workflow-agent vocabulary.
 This half drills into the abstractions you reach for once a single
 LlmAgent is no longer enough. Each section has a runnable demo under
-[`m3_adk_multiagents/demos/`](../demos/).
+[`m3_adk_multiagents/adk_demos/`](../adk_demos/).
 
 ---
 
@@ -1107,7 +1127,7 @@ SequentialAgent(name="pipeline", sub_agents=[market_brief, drafter, polisher])
 
 Use it for: deterministic pipelines (research → draft → polish).
 
-**Demo:** `m3_adk_multiagents/demos/06_sequential_agent.py`.
+**Demo:** `m3_adk_multiagents/adk_demos/d04_sequential/agent.py`.
 
 ### 14.2 `ParallelAgent`
 
@@ -1125,7 +1145,7 @@ Use it for: independent fan-out research where order doesn't matter.
 > children automatically; if two children write to the same key the last
 > writer wins. Give each child its own `output_key`.
 
-**Demo:** `m3_adk_multiagents/demos/07_parallel_agent.py`.
+**Demo:** `m3_adk_multiagents/adk_demos/d05_parallel/agent.py`.
 
 ### 14.3 `LoopAgent`
 
@@ -1143,7 +1163,7 @@ is in the target range.
 
 Use it for: iterate-until-good-enough loops (refine, retry, sample).
 
-**Demo:** `m3_adk_multiagents/demos/08_loop_agent.py`.
+**Demo:** `m3_adk_multiagents/adk_demos/d06_loop/agent.py`.
 
 ---
 
@@ -1172,7 +1192,7 @@ coordinator = LlmAgent(
 Use AgentTool for "expert hierarchy" patterns where the coordinator may
 or may not need a specialist on any given turn.
 
-**Demo:** `m3_adk_multiagents/demos/09_agent_as_tool.py`.
+**Demo:** `m3_adk_multiagents/adk_demos/d07_agent_as_tool/agent.py`.
 
 ---
 
@@ -1206,11 +1226,12 @@ Through `tool_context` a tool can:
 | `app:`     | Bound to the `app_name`; shared across users and sessions.    |
 | `temp:`    | Lives only for the current invocation; not persisted.         |
 
-In Phase 2, `buyer_adk.py` seeds `state["user:max_budget"] = BUYER_BUDGET`
-so the buyer's budget cap travels with the user, not the session — useful
-for buyers who negotiate on multiple properties.
+In our agents, `negotiation_agents/buyer_agent/agent.py` uses
+`before_tool_callback=_enforce_buyer_allowlist` to scope the buyer's
+allowed tools. The seller has a similar allowlist that additionally
+permits `get_minimum_acceptable_price`.
 
-**Demo:** `m3_adk_multiagents/demos/10_tool_context.py`.
+**Demo:** `m3_adk_multiagents/adk_demos/d03_sessions_state/agent.py`.
 
 ---
 
@@ -1231,11 +1252,12 @@ instruction. They run synchronously around model and tool calls.
 Each callback receives a `CallbackContext` (or `ToolContext` for tool
 callbacks) with the same state/artifact/actions surface as `ToolContext`.
 
-In Phase 2, `buyer_adk.py` and `seller_adk.py` use `before_tool_callback`
+In our agents, `negotiation_agents/buyer_agent/agent.py` and
+`negotiation_agents/seller_agent/agent.py` use `before_tool_callback`
 to enforce a tool allowlist — the buyer can never accidentally call the
 seller-private inventory tools, even if the model tries.
 
-**Demo:** `m3_adk_multiagents/demos/11_callbacks.py` wires
+**Demo:** `m3_adk_multiagents/adk_demos/d08_callbacks/agent.py` wires
 `before_model` (PII redaction), `before_tool` (allowlist), and
 `after_tool` (logging) into a single agent.
 
@@ -1260,31 +1282,41 @@ carries:
 (`LoopAgent` is the typical target) to stop iterating after this event.
 
 State deltas attached to events become the canonical record of how state
-changed during the invocation — `seller_adk.py` and `buyer_adk.py` both
-use `_append_state_delta(...)` to record per-round status, so a later
-`/history/{session_id}` endpoint can reconstruct what happened.
+changed during the invocation — the `negotiation_agents/negotiation/agent.py`
+uses `output_key` and `after_agent_callback` to track round state.
 
 ---
 
 ## 19. Putting It All Together
 
-These pieces land in our headline demo as follows:
+These pieces land in our module as follows:
 
 | Concept                      | Where it lives in the workshop                                  |
 |------------------------------|-----------------------------------------------------------------|
-| `LlmAgent`                   | `BuyerAgentADK._agent`, `SellerAgentADK._agent`                 |
-| `Runner` + `InMemorySessionService` | both ADK agent classes                                    |
-| `MCPToolset` (multiple)      | `SellerAgentADK` connects pricing + inventory                   |
-| Scoped state (`user:` prefix)| `buyer_adk.py` seeds `user:max_budget`                          |
-| `before_tool_callback` allowlist | `_enforce_buyer_tool_allowlist`, `_enforce_seller_tool_allowlist` |
-| State deltas                 | `_append_state_delta(...)` in both ADK classes                  |
-| Workflow agents (Seq/Par/Loop) | `m3_adk_multiagents/demos/06–08`                              |
-| `AgentTool`                  | `m3_adk_multiagents/demos/09`                                   |
-| `ToolContext` scoped state   | `m3_adk_multiagents/demos/10`                                   |
-| Callbacks (PII / allowlist / logging) | `m3_adk_multiagents/demos/11`                          |
+| `LlmAgent`                   | `negotiation_agents/buyer_agent/agent.py`, `seller_agent/agent.py` |
+| `MCPToolset` (multiple)      | Seller connects pricing + inventory MCPToolsets                  |
+| `before_tool_callback` allowlist | `_enforce_buyer_allowlist`, `_enforce_seller_allowlist`       |
+| `SequentialAgent` + `LoopAgent` | `negotiation_agents/negotiation/agent.py`                     |
+| `output_key` state passing   | buyer writes `buyer_offer`, seller reads `{buyer_offer}`         |
+| `after_agent_callback` escalation | Seller callback checks for ACCEPT, breaks the loop          |
+| Workflow agents (Seq/Par/Loop) | `adk_demos/d04–d06`                                            |
+| `AgentTool`                  | `adk_demos/d07_agent_as_tool`                                    |
+| `ToolContext` scoped state   | `adk_demos/d03_sessions_state`                                   |
+| Callbacks (PII / allowlist / logging) | `adk_demos/d08_callbacks`                               |
 
-Read the demos as a kit: each one shows *one* ADK abstraction in
-isolation, then the headline negotiation file shows them composed.
+Run the demos as a kit: each one shows *one* ADK abstraction in
+isolation, then the negotiation agents show them composed.
+
+```bash
+# Demos (pick from dropdown)
+adk web m3_adk_multiagents/adk_demos/
+
+# Full agents (buyer, seller, negotiation)
+adk web m3_adk_multiagents/negotiation_agents/
+
+# A2A endpoints (Agent Cards auto-generated)
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+```
 
 
 

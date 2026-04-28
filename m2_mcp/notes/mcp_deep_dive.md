@@ -902,7 +902,7 @@ In production, the model never talks to MCP directly. The flow is always:
    USER prompt
      │
      ▼
-   HOST (your app — buyer_adk.py, etc.)
+   HOST (your app — negotiation_agents/buyer_agent/agent.py, etc.)
      │  1. tools/list  ────────────────────────────────► SERVER
      │  ◄────────────── catalog of tools (with JSON-Schema)
      │
@@ -1007,7 +1007,7 @@ host    ──── sampling result ─────►        server
 This lets a server compose its own LLM-powered behavior without holding
 API keys. The host stays in control of model choice, redaction, and cost.
 
-The workshop hosts (`buyer_adk.py`, `seller_adk.py`) do **not** advertise
+The workshop agents (`negotiation_agents/buyer_agent/`, `seller_agent/`) do **not** advertise
 the `sampling` capability, so we don't demo this on the wire — but the
 pattern is critical for advanced server design.
 
@@ -1085,7 +1085,7 @@ is responsible for what**, then defers to existing standards:
 - **Authorization to call tools.** The server decides. A common pattern
   is a per-client allowlist; another is signed JWT scopes mapped to tool
   names. Our `_BUYER_ALLOWED_TOOLS` / `_SELLER_ALLOWED_TOOLS` allowlists
-  in `buyer_adk.py` / `seller_adk.py` show the same pattern enforced
+  in `negotiation_agents/buyer_agent/agent.py` / `seller_agent/agent.py` show the same pattern enforced
   *host-side* via ADK callbacks.
 - **Data privacy.** The server is the gatekeeper for what it returns.
   `get_minimum_acceptable_price` in `inventory_server.py` is the

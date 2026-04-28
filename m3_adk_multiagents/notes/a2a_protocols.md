@@ -571,7 +571,7 @@ ADK workflow agents (`LoopAgent`, `SequentialAgent`, `ParallelAgent`) **are** st
 ```bash
 python m1_baseline/naive_negotiation.py   # ← See the while True problem
 python m1_baseline/state_machine.py       # ← See the FSM fix
-python m3_adk_multiagents/a2a_protocol_seller_server.py    # ← See the same principle inside ADK + A2A
+adk web m3_adk_multiagents/negotiation_agents/  # ← See the same principle inside ADK
 ```
 
 ---
@@ -709,7 +709,7 @@ error_msg = A2AMessage(
 
 ## 9. Implementing A2A in Python
 
-For the production protocol transport in this workshop, see Module 3 (`m3_adk_multiagents/a2a_protocol_*`).
+For the production protocol transport in this workshop, use `adk web --a2a`.
 Here's a minimal in-process routing pattern for learning:
 
 ### Message Router
@@ -783,26 +783,27 @@ async def run_negotiation():
     return bus.history
 ```
 
-### 9.1 Google ADK True A2A Demo in This Repo
+### 9.1 Google ADK A2A in This Repo
 
-If you want the **Google ADK true protocol A2A** version in this repo, run:
+The idiomatic way to run A2A in this repo:
 
 ```bash
-python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
-python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
-python m3_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
+# Terminal 1 — start agents with A2A endpoints
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+
+# Terminal 2 — see the wire format and task lifecycle
+python m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py \
+    --seller-url http://127.0.0.1:8000/seller_agent
+
+# Terminal 2 — see context threading across rounds
+python m3_adk_multiagents/adk_demos/a2a_10_context_threading.py \
+    --seller-url http://127.0.0.1:8000/seller_agent
 ```
 
-What this demonstrates:
-- Buyer and seller are both ADK `LlmAgent`-based agents
-- Communication happens over networked A2A JSON-RPC transport
-- Seller endpoint publishes an A2A agent card for discovery
-
 Key files:
-- `m3_adk_multiagents/a2a_protocol_seller_server.py` (A2A protocol seller endpoint)
-- `m3_adk_multiagents/a2a_protocol_http_orchestrator.py` (A2A protocol multi-round HTTP orchestrator)
-- `m3_adk_multiagents/a2a_protocol_buyer_client_demo.py` (A2A protocol buyer client)
-- `m3_adk_multiagents/buyer_adk.py` and `m3_adk_multiagents/seller_adk.py` (ADK agents)
+- `m3_adk_multiagents/negotiation_agents/buyer_agent/agent.py` (buyer LlmAgent + MCPToolset)
+- `m3_adk_multiagents/negotiation_agents/seller_agent/agent.py` (seller LlmAgent + dual MCPToolsets)
+- `m3_adk_multiagents/negotiation_agents/negotiation/agent.py` (LoopAgent + SequentialAgent)
 
 ---
 
@@ -939,13 +940,23 @@ delegation_message = A2AMessage(
 
 ---
 
-# Part II — The A2A Protocol Spec (Phase 2 Deep-Dive)
+# Part II — The A2A Protocol Spec (Deep-Dive)
 
 The first half of this document explains the *idea* of agent-to-agent
-communication and a hand-rolled implementation of it. This part walks
-through the actual A2A specification — the one our `a2a_protocol_*.py`
-files implement on top of `a2a-sdk`. Pair each section with a runnable
-demo under [`m3_adk_multiagents/demos/`](../demos/).
+communication. This part walks through the actual A2A specification.
+Pair each section with a runnable demo under
+[`m3_adk_multiagents/adk_demos/`](../adk_demos/).
+
+To see the protocol live, start the agents with:
+```bash
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+```
+
+Then run:
+```bash
+python m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py
+python m3_adk_multiagents/adk_demos/a2a_10_context_threading.py
+```
 
 ---
 
@@ -973,7 +984,7 @@ they don't understand. The workshop uses `"0.3.0"`.
 
 A2A is **not a replacement for MCP**. MCP is *agent ↔ tool*; A2A is
 *agent ↔ agent*. A single agent can be an A2A server *and* an MCP client
-at the same time — that's exactly what `a2a_protocol_seller_server.py` is.
+at the same time — that's exactly what `adk web --a2a` does for our agents.
 
 ---
 
@@ -1005,11 +1016,10 @@ Each `AgentSkill` should have an `id`, `name`, `description`, `tags`,
 `examples`, and per-skill `inputModes`/`outputModes`. Skills are how a
 caller (human or another agent) decides whether your agent is a fit.
 
-In Phase 2, `a2a_protocol_seller_server.py` advertises two skills
-(`real_estate_seller_negotiation` and `negotiation_history`) and turns on
-`capabilities.streaming = True`.
+With `adk web --a2a`, the seller agent advertises skills automatically
+based on its `description` and tools. Agent Cards are auto-generated.
 
-**Demo:** `m3_adk_multiagents/demos/01_handcraft_message_send.py` fetches
+**Demo:** `m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py` fetches
 and prints the Agent Card before sending the first message.
 
 ---
@@ -1051,7 +1061,7 @@ Four object types describe everything that flows between agents.
 In Phase 2, the seller server attaches a `negotiation-summary` artifact
 (a `DataPart` with the full structured response) to every completed Task.
 
-**Demo:** `m3_adk_multiagents/demos/03_parts_and_artifacts.py` sends a
+**Demo:** `m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py` sends a
 multi-part message and inspects any artifacts the server returns.
 
 ---
@@ -1085,7 +1095,7 @@ The request envelope is plain JSON-RPC 2.0:
 }
 ```
 
-**Demo:** `m3_adk_multiagents/demos/01_handcraft_message_send.py` builds
+**Demo:** `m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py` builds
 this envelope by hand — no SDK helpers — so you can see the exact wire
 shape.
 
@@ -1118,7 +1128,7 @@ The server advances the state by calling `TaskUpdater` methods:
 In Phase 2, our seller server emits a `working` status update *before* the
 slow LLM/MCP roundtrip starts so streaming clients see the agent is alive.
 
-**Demo:** `m3_adk_multiagents/demos/02_task_lifecycle.py` sends a valid
+**Demo:** `m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py` sends a valid
 and an invalid envelope so you can compare `completed` vs `failed`.
 
 ---
@@ -1139,7 +1149,7 @@ they happen:
 This is best for in-flight UX — show "Seller is thinking..." and then
 the final answer in the same connection.
 
-**Demo:** `m3_adk_multiagents/demos/04_streaming_negotiation.py` consumes
+**Demo:** Streaming is handled automatically by `adk web`. The protocol supports
 the stream and prints every event as it arrives.
 
 ### 17.2 Push notifications (webhooks)

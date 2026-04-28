@@ -21,8 +21,8 @@ cp .env.example .env
 python m1_baseline/state_machine.py        # Should print FSM demo, no API key needed
 python m1_baseline/naive_negotiation.py    # Requires OPENAI_API_KEY — Demo 1 should close ~$453K in 3 turns; Demo 2 should run 8 turns (demo cap; production default is 100) then emergency exit
 pytest tests/ -v                           # All tests should pass, no API keys needed
-python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
-python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 1
+adk web m3_adk_multiagents/negotiation_agents/ --port 8000   # Should show 3 agents in dropdown
+adk web m3_adk_multiagents/adk_demos/ --port 8001            # Should show 8 demos in dropdown
 ```
 
 ### What to have on screen when participants arrive
@@ -38,8 +38,9 @@ At the start of the workshop, explicitly orient learners to the repo layout:
 - That module `README.md` explains what the module demonstrates and how to run it.
 - Each module includes `exercises/` (learner tasks) and `solution/` (worked answers with code changes).
 - Each module also has a `notes/` folder for deeper conceptual material.
-- Modules 2 and 3 also ship a `demos/` folder of small, single-purpose runnable scripts that crack open the protocols on the wire (handshake bytes, task lifecycle, ADK workflow agents). Pair them with the `notes/` reference docs.
-- Encourage participants to treat module `README.md` as the runbook and `notes/` + `demos/` as the reference and exploration sandbox.
+- Modules 2 and 3 also ship runnable demos: M2 has `demos/` scripts for protocol internals; M3 has `adk_demos/` as `adk web`-launchable agent packages (8 demos in the dropdown) plus 2 terminal scripts for A2A protocol.
+- Module 3 also has `negotiation_agents/` — the buyer, seller, and negotiation orchestrator as declarative ADK agent packages (3 agents in the dropdown via `adk web`).
+- Encourage participants to treat module `README.md` as the runbook and `notes/` + demos as the reference and exploration sandbox.
 
 ---
 
@@ -53,8 +54,8 @@ At the start of the workshop, explicitly orient learners to the repo layout:
 | 0:45–1:30   | M2     | MCP deep dive: protocol internals + GitHub live demo               | `python m2_mcp/github_agent_client.py`           |
 | 1:30–1:45   | Break  | —                                                                  | —                                               |
 | 1:45–2:30   | M2     | MCP primitives, transports, security + custom servers              | `m2_mcp/notes/mcp_deep_dive.md`, `m2_mcp/pricing_server.py` |
-| 2:30–3:15   | M3     | Google ADK deep dive: LlmAgent, workflow agents, sessions, callbacks | `m3_adk_multiagents/buyer_adk.py`, `m3_adk_multiagents/seller_adk.py`, `m3_adk_multiagents/notes/google_adk_overview.md` |
-| 3:15–3:50   | M3     | A2A protocol: Agent Card, JSON-RPC, task lifecycle, streaming      | `m3_adk_multiagents/a2a_protocol_seller_server.py`, `m3_adk_multiagents/a2a_protocol_http_orchestrator.py` |
+| 2:30–3:15   | M3     | Google ADK deep dive: LlmAgent, workflow agents, sessions, callbacks | `adk web m3_adk_multiagents/adk_demos/`, `m3_adk_multiagents/notes/google_adk_overview.md` |
+| 3:15–3:50   | M3     | A2A protocol: Agent Card, JSON-RPC, task lifecycle                   | `adk web --a2a m3_adk_multiagents/negotiation_agents/`, `adk_demos/a2a_09_wire_lifecycle.py` |
 | 3:50–4:00   | Wrap   | Exercises + Q&A                                                    | `m1_baseline/exercises/`, `m2_mcp/exercises/`, `m3_adk_multiagents/exercises/` |
 
 ### Note Mapping
@@ -676,14 +677,21 @@ Workflow agents = LlmAgents composed:
 
 #### Part B: LlmAgent + MCPToolset code walkthrough (2:40–2:55) — 15 min
 
-Open `m3_adk_multiagents/buyer_adk.py`. Walk:
-1. `MCPToolset(StdioServerParameters(...))` — auto-discovers tools, no hand-rolled `tools/list`/`tools/call` plumbing.
-2. `LlmAgent(model="openai/gpt-4o", instruction=BUYER_INSTRUCTION_TEMPLATE, tools=[pricing_toolset])` — declarative.
-3. `InMemorySessionService` + `Runner.run_async(...)` — the actual execution loop.
-4. The async event stream — `event.is_final_response()`, `event.content.parts[*].text`.
-5. `__aenter__` / `__aexit__` — guarantees MCP subprocess cleanup.
+Open `m3_adk_multiagents/negotiation_agents/buyer_agent/agent.py`. Walk:
+1. `MCPToolset(StdioConnectionParams(...))` in the `tools` list — auto-discovers tools, no hand-rolled `tools/list`/`tools/call` plumbing.
+2. `root_agent = LlmAgent(model="openai/gpt-4o", instruction=..., tools=[MCPToolset(...)])` — declarative, no class wrappers.
+3. `before_tool_callback=_enforce_buyer_allowlist` — blocks seller-only tools.
+4. No `Runner`, no `SessionService`, no `__aenter__` — `adk web` handles all of that.
 
-Then open `m3_adk_multiagents/seller_adk.py` and contrast: **two** MCPToolsets (pricing + inventory) merged into one tools list. Same pattern, more data access.
+Then open `m3_adk_multiagents/negotiation_agents/seller_agent/agent.py` and contrast: **two** MCPToolsets (pricing + inventory) in the `tools` list. Same pattern, more data access.
+
+**Live demo:**
+```bash
+adk web m3_adk_multiagents/negotiation_agents/
+```
+> "Pick `buyer_agent` from the dropdown. Ask it about 742 Evergreen Terrace.
+> Watch the tool call traces in the web UI — you can see which MCP tools fired and what they returned.
+> Then switch to `seller_agent` and see it call `get_minimum_acceptable_price` — a tool the buyer never sees."
 
 #### Part C: Workflow agents, callbacks, ToolContext (2:55–3:10) — 15 min
 
@@ -698,20 +706,24 @@ Cover:
 - **Events** — every Runner step emits an event; that's how UIs stream partial output.
 - **Auth** — credential injection via `ToolContext` and the OAuth flows ADK ships.
 
-**Live deep-dive demos (each is a single self-contained script — no seller server needed):**
+**Live deep-dive demos (each is an `adk web`-launchable agent package — pick from the dropdown):**
 
 ```bash
-python m3_adk_multiagents/demos/06_sequential_agent.py    # market_brief → offer_drafter → message_polisher
-python m3_adk_multiagents/demos/07_parallel_agent.py      # fan-out into different state keys
-python m3_adk_multiagents/demos/08_loop_agent.py          # haggler + judge; judge escalates to break the loop
-python m3_adk_multiagents/demos/09_agent_as_tool.py       # AgentTool: wrap an agent as a callable tool
-python m3_adk_multiagents/demos/10_tool_context.py        # ToolContext: scoped session state across turns
-python m3_adk_multiagents/demos/11_callbacks.py           # before_model PII redact + before_tool allowlist + after_tool log
+adk web m3_adk_multiagents/adk_demos/
+# 8 agents appear in the dropdown:
+# d01_basic_agent          — bare LlmAgent + function tool
+# d02_mcp_tools            — MCPToolset auto-discovery
+# d03_sessions_state       — ToolContext + state persistence
+# d04_sequential           — market_brief → offer_drafter → message_polisher
+# d05_parallel             — fan-out into different state keys
+# d06_loop                 — haggler + judge; judge escalates to break the loop
+# d07_agent_as_tool        — AgentTool: wrap an agent as a callable tool
+# d08_callbacks            — before_model PII redact + before_tool allowlist + after_tool log
 ```
 
-> "Run any one or two of these as a live demo — they each isolate one ADK primitive so learners
-> can see the building blocks before reading `buyer_adk.py` / `seller_adk.py` where everything
-> is composed together."
+> "Pick any demo from the dropdown and chat with it. Each isolates one ADK primitive so learners
+> can see the building blocks before opening `negotiation_agents/` where everything is composed together.
+> The ADK web UI shows tool call traces, session state, and events — much more informative than terminal output."
 
 **ASK:**
 > "Where in this architecture would you enforce a per-agent budget cap (max dollars of LLM spend per session)?"
@@ -723,19 +735,16 @@ Transition: "Now we wrap these ADK agents behind A2A so they can run as independ
 
 ---
 
-### MODULE 3 A2A (3:15–3:50): "True A2A Protocol — Networked Agents"
+### MODULE 3 A2A (3:15–3:50): "A2A Protocol — Agents as Network Services"
 
-This module shows what production multi-agent systems look like: two agents running
-as independent HTTP services, communicating over the A2A protocol standard.
+This module shows how `adk web --a2a` turns declarative ADK agents into A2A endpoints
+automatically — Agent Cards, JSON-RPC, task lifecycle, all for free.
 
 **THE BIG PICTURE:**
-> "Up to this point both ADK agents lived in the same Python process.
-> The buyer called the seller like a function.
-> In the real world, agents run on different machines, owned by different teams,
-> possibly written in different languages.
-> The A2A protocol is the standard that makes that possible.
-> This module shows the exact same negotiation — but now the seller is an HTTP server
-> and the buyer calls it over the network."
+> "Up to this point we've been chatting with agents in the `adk web` dropdown.
+> Now we flip a switch — `--a2a` — and each agent becomes a network service
+> that any A2A-compatible client can discover and call over HTTP.
+> No custom server code. No manual Agent Card creation. ADK does it all."
 
 **IMPORTANT CLARIFICATION (say this explicitly):**
 > "Google ADK is the framework layer. It can run different LLM providers.
@@ -743,325 +752,132 @@ as independent HTTP services, communicating over the A2A protocol standard.
 
 **DRAW the architecture shift:**
 ```
-IN-PROCESS BASELINE (same process):
-  one Python script runs both ADK agents
-    buyer_runner ----calls----> seller_runner
-    (function call — same memory, same machine)
+ADK WEB (interactive chat):
+  adk web negotiation_agents/
+  → dropdown with buyer_agent, seller_agent, negotiation
+  → you chat in the browser
 
-NETWORKED A2A:
-  Terminal 1: a2a_protocol_seller_server.py   <-- HTTP server, port 9102
-  Terminal 2: a2a_protocol_buyer_client_demo.py
-
-  buyer_adk.py                   a2a_protocol_seller_server.py
-  [OpenAI + MCP]                 [A2A endpoint]
-       |                               |
-       | 1. make offer via ADK         | 3. receive A2A message
-       | 2. send via A2AClient ------> | 4. run SellerAgentADK
-       |    HTTP POST /               | 5. return counter-offer
-       | 6. parse response <--------- |
+ADK WEB --A2A (network services):
+  adk web --a2a negotiation_agents/
+  → same agents, now also A2A endpoints:
+    GET /buyer_agent/.well-known/agent-card.json   → discovery
+    POST /buyer_agent  (JSON-RPC message/send)     → send messages
+    GET /seller_agent/.well-known/agent-card.json
+    POST /seller_agent
 ```
 
 ---
 
-#### Part A: The A2A Protocol (2:50–3:05) — 15 min
+#### Part A: Start the A2A server + browse Agent Cards (3:15–3:25) — 10 min
 
-**SAY:**
-> "A2A (Agent-to-Agent) is an open protocol for agents to discover and call each other.
-> It defines three things — the same three things MCP defines, but for agents instead of tools."
+**Terminal 1 — start agents with A2A endpoints:**
+```bash
+adk web --a2a m3_adk_multiagents/negotiation_agents/ --port 8000
+```
+
+**Instructor live demo: open Agent Card in browser**
+
+Open: `http://127.0.0.1:8000/seller_agent/.well-known/agent-card.json`
+
+> "This is the seller agent's self-description — auto-generated by ADK from the `root_agent`
+> definition in `agent.py`. It includes the agent's name, description, capabilities, and skills.
+> Any A2A client fetches this first to learn what the agent can do."
+
+Then open: `http://127.0.0.1:8000/buyer_agent/.well-known/agent-card.json`
+
+> "Notice both cards have the same structure but different descriptions and tools.
+> The buyer's card doesn't mention `get_minimum_acceptable_price` — information asymmetry
+> is now visible at the protocol level."
 
 **DRAW the parallel:**
 ```
-MCP (agent <-> tool):           A2A (agent <-> agent):
-  1. list_tools()                 1. GET /.well-known/agent-card.json
-     "What can you do?"              "Who are you and what can you do?"
-  2. Tool JSON Schema             2. Agent Card (skills, input/output modes)
-     "How do I call you?"            "Here's my full capability description"
-  3. tools/call                   3. POST / (message/send JSON-RPC)
-     "Do this thing"                 "Handle this task"
+MCP (agent ↔ tool):           A2A (agent ↔ agent):
+  1. list_tools()               1. GET /.well-known/agent-card.json
+     "What can you do?"            "Who are you and what can you do?"
+  2. Tool JSON Schema           2. Agent Card (skills, input/output modes)
+     "How do I call you?"          "Here's my full capability description"
+  3. tools/call                 3. POST / (message/send JSON-RPC)
+     "Do this thing"               "Handle this task"
 ```
-
-> "The Agent Card is the A2A equivalent of MCP's tool schema.
-> It's a JSON document at a well-known URL that describes what the agent does,
-> what inputs it accepts, and what it returns.
-> Any client can discover any A2A agent just by fetching that URL."
-
-**Show the Agent Card from `a2a_protocol_seller_server.py`:**
-```python
-AgentCard(
-    name="adk_seller_a2a_server",
-    description="Google ADK-backed seller agent exposed via A2A protocol",
-    url=base_url,
-    skills=[
-        AgentSkill(
-            id="real_estate_seller_negotiation",
-            name="Real Estate Seller Negotiation",
-            description="Responds to buyer offers with ADK-generated counter-offers or acceptance",
-            tags=["real_estate", "negotiation", "seller", "adk", "a2a"],
-            examples=["Buyer offers $438,000 with 45-day close"],
-        )
-    ],
-)
-```
-
-> "This Agent Card is served at `GET /agent-card.json`.
-> The buyer client fetches it first, before sending a single message.
-> From the card, the client knows: what this agent does, what format it accepts,
-> and what URL to POST tasks to.
-> No documentation needed. Self-describing, like MCP tools."
-
-**The task lifecycle — 2 min:**
-> "A2A introduces the concept of a Task — a unit of work with a lifecycle:
-> submitted -> working -> completed (or failed).
-> The `TaskUpdater` in our server code drives this:
-> `await updater.start_work()` ... `await updater.complete(message)`
-> Long-running agents can stream partial results back through the task lifecycle."
 
 ---
 
-#### Part B: ADK as the Agent Backing Layer (3:05–3:15) — 10 min
+#### Part B: A2A Wire Format Demo (3:25–3:35) — 10 min
 
-Open `m3_adk_multiagents/buyer_adk.py` and `m3_adk_multiagents/seller_adk.py`.
-
-**SAY:**
-> "The ADK agents are the LLM + MCP layer — the intelligence behind the A2A endpoints.
-> Understanding three things is enough:"
-
-**1. LlmAgent + MCPToolset — the agent definition**
-
-```python
-pricing_toolset = MCPToolset(connection_params=StdioConnectionParams(...))
-tools = await pricing_toolset.get_tools()   # discovers get_market_price, calculate_discount
-
-self._agent = LlmAgent(
-    name="buyer_agent",
-  model="openai/gpt-4o",
-    instruction=buyer_instruction,   # built dynamically from discovered tool names
-    tools=tools,   # model can now call MCP tools autonomously
-)
+**Terminal 2 — run the wire format demo:**
+```bash
+python m3_adk_multiagents/adk_demos/a2a_09_wire_lifecycle.py --seller-url http://127.0.0.1:8000/seller_agent
 ```
 
-> "MCPToolset replaces all the manual `stdio_client` / `call_tool` plumbing you'd write by hand.
-> The model decides when to call which tools — the tool-use loop is inside the ADK runner.
-> The seller uses TWO toolsets merged together: pricing + inventory."
+**Walk through the output:**
 
-**2. Runner executes turns, SessionService holds memory**
-
-> "Runner.run_async() returns an event stream — tool calls, tool results, final response.
-> SessionService gives the agent memory across rounds. That's the full ADK picture."
-
-**3. Context manager = clean MCP subprocess management**
-
-> "Both agents are async context managers. `__aenter__` connects to MCP servers.
-> `__aexit__` closes them. No leaked subprocesses even if the negotiation crashes."
-
----
-
-#### Part C: The A2A Seller Server (3:15–3:30) — 15 min
-
-Open `m3_adk_multiagents/a2a_protocol_seller_server.py`.
-
-**Walk through the executor — the heart of the server:**
-
-```python
-class SellerADKA2AExecutor(AgentExecutor):
-    async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        updater = TaskUpdater(event_queue, task_id=context.task_id, ...)
-        await updater.start_work()                       # task is now "working"
-
-        incoming_text = context.get_user_input().strip() # the buyer's message
-        buyer_price = _extract_price(incoming_text)      # parse the offer
-
-        buyer_message = create_offer(...)                # wrap as ADK A2A type
-
-        async with SellerAgentADK(...) as seller:
-            seller_reply = await seller.respond_to_offer(buyer_message)  # run ADK agent
-
-        response_payload = {                             # serialize response
-            "message_type": seller_reply.message_type,
-            "price": seller_reply.payload.price,
-            "message": seller_reply.payload.message,
-        }
-
-        agent_message = updater.new_agent_message(parts=[TextPart(text=json.dumps(response_payload))])
-        await updater.complete(agent_message)            # task is now "completed"
-```
-
-> "The executor is the adapter between the A2A protocol and the ADK agent.
-> It receives an A2A task, runs the seller ADK agent, and returns the result.
-> The ADK agent does all the OpenAI + MCP reasoning — the executor just wires it up."
-
-**Show how the server is assembled:**
-
-```python
-handler = DefaultRequestHandler(
-    agent_executor=SellerADKA2AExecutor(),
-    task_store=InMemoryTaskStore(),
-    queue_manager=InMemoryQueueManager(),
-)
-app_builder = A2ARESTFastAPIApplication(agent_card=card, http_handler=handler)
-app = app_builder.build(agent_card_url="/.well-known/agent-card.json", rpc_url="/")
-uvicorn.run(app, host=args.host, port=args.port)
-```
-
-> "A2ARESTFastAPIApplication wires the handler into a FastAPI app with two routes:
-> GET `/.well-known/agent-card.json` — returns the Agent Card
-> POST `/` — handles `message/send` JSON-RPC calls
-> That's the entire A2A server. Any A2A-compatible client can now talk to it."
-
----
-
-#### Part D: The A2A Buyer Client (3:30–3:40) — 10 min
-
-Open `m3_adk_multiagents/a2a_protocol_buyer_client_demo.py`.
-
-**Walk through the three-step client flow:**
-
-```python
-# Step 1: Buyer ADK agent makes an offer (OpenAI + MCP — same as before)
-async with BuyerAgentADK(session_id=...) as buyer:
-    offer = await buyer.make_initial_offer()
-
-offer_text = f"Buyer offer: ${offer.payload.price:,.0f}. Message={offer.payload.message}"
-
-async with httpx.AsyncClient() as http_client:
-    # Step 2: Discover the seller — fetch Agent Card from well-known URL
-    resolver = A2ACardResolver(httpx_client=http_client, base_url=args.seller_url)
-    card = await resolver.get_agent_card()     # GET /.well-known/agent-card.json
-    client = A2AClient(httpx_client=http_client, agent_card=card)
-
-    # Step 3: Send the offer over A2A JSON-RPC
-    request = SendMessageRequest(
-        params=MessageSendParams(
-            message=Message(parts=[TextPart(text=offer_text)])
-        )
-    )
-    response = await client.send_message(request)   # POST / (message/send)
-```
-
-> "Three lines of actual business logic — the rest is standard protocol plumbing.
-> Step 1: buyer ADK makes the offer exactly as before.
-> Step 2: discover the seller's capabilities from its well-known URL — no hardcoding.
-> Step 3: send the offer as an A2A message. The seller could be on any machine."
-
-**ASK:**
-> "In a naive in-process design, the buyer and seller would share a single Python state dict.
-> In Module 3, what does the buyer know about the seller's internal state?"
+> "This script does three things:
+> 1. Fetches the Agent Card (discovery)
+> 2. Sends a valid JSON-RPC `message/send` request (hand-crafted, no SDK)
+> 3. Sends a broken envelope to show the failure path
 >
-> Answer: Nothing. The buyer only knows what's in the Agent Card and the response message.
-> The seller's floor price, MCP calls, model reasoning — all hidden behind the A2A interface.
-> This is true information encapsulation. Even stronger than the MCP access control from Module 2.
+> Watch the task state transitions: submitted → working → completed (valid) or failed (broken)."
 
----
-
-#### Part E: Run the Full A2A Demo (3:40–3:50) — 10 min
-
-**Prerequisites:**
-```bash
-pip install a2a-sdk uvicorn httpx litellm   # if not already in requirements.txt
-export OPENAI_API_KEY=sk-...
-```
-
-**Terminal 1 — start the seller A2A server:**
-```bash
-python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
-# Output: A2A seller server listening at http://127.0.0.1:9102
-#         Agent card: http://127.0.0.1:9102/.well-known/agent-card.json
-```
-
-**Instructor live demo (do this before Terminal 2): open Agent Card in browser**
-
-After starting the server, open:
-
-`http://127.0.0.1:9102/.well-known/agent-card.json`
-
-Explain that this is the seller agent's self-description (A2A discovery document) that any A2A client can fetch before sending a message.
-
-Expected response shape:
-
-```json
-{
-  "capabilities": {
-    "pushNotifications": false,
-    "streaming": false
-  },
-  "defaultInputModes": [
-    "text/plain"
-  ],
-  "defaultOutputModes": [
-    "text/plain"
-  ],
-  "description": "ADK-backed seller agent exposed via A2A protocol",
-  "name": "adk_seller_a2a_server",
-  "preferredTransport": "JSONRPC",
-  "protocolVersion": "0.3.0",
-  "provider": {
-    "organization": "Negotiation Workshop",
-    "url": "https://example.local/negotiation-workshop"
-  },
-  "skills": [
-    {
-      "description": "Responds to buyer offers with ADK-generated counter-offers or acceptance",
-      "examples": [
-        "Buyer offers $438,000 with 45-day close"
-      ],
-      "id": "real_estate_seller_negotiation",
-      "inputModes": [
-        "text/plain"
-      ],
-      "name": "Real Estate Seller Negotiation",
-      "outputModes": [
-        "text/plain"
-      ],
-      "tags": [
-        "real_estate",
-        "negotiation",
-        "seller",
-        "adk",
-        "a2a"
-      ]
-    }
-  ],
-  "url": "http://127.0.0.1:9102",
-  "version": "1.0.0"
+**Show the raw JSON-RPC body from the script:**
+```python
+body = {
+    "jsonrpc": "2.0",
+    "id": "req_1",
+    "method": "message/send",
+    "params": {
+        "message": {
+            "messageId": "msg_1",
+            "role": "user",
+            "parts": [{"kind": "text", "text": offer_json}],
+        }
+    },
 }
 ```
 
-**Terminal 2 — run the HTTP orchestrator loop:**
+> "That's the entire A2A request. JSON-RPC wrapping around a message with text parts.
+> The offer is just a JSON string inside `parts[0].text`. Simple."
+
+---
+
+#### Part C: Context Threading Demo (3:35–3:45) — 10 min
+
+**Terminal 2 — run the context threading demo:**
 ```bash
-python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
+python m3_adk_multiagents/adk_demos/a2a_10_context_threading.py --seller-url http://127.0.0.1:8000/seller_agent
 ```
 
-**Optional single-turn demo:**
+> "This demo sends 3 rounds ($432K → $440K → $446K) and threads them via `contextId`.
+> Round 1 gets a `contextId` from the server response. Rounds 2 and 3 reuse it.
+> Without contextId, each message starts a new conversation — the agent forgets everything.
+> With it, the seller remembers prior offers and adjusts accordingly."
+
+**ASK:**
+> "In a naive in-process design, the buyer and seller would share a single Python state dict.
+> In Module 3 with A2A, what does the buyer know about the seller's internal state?"
+>
+> Answer: Nothing. The buyer only knows what's in the Agent Card and the response message.
+> The seller's floor price, MCP calls, model reasoning — all hidden behind the A2A interface.
+
+---
+
+#### Part D: The Negotiation Orchestrator (3:45–3:50) — 5 min
+
+**Show the negotiation agent in `adk web`:**
+
+> "We also have `negotiation_agents/negotiation/agent.py` — a LoopAgent wrapping a
+> SequentialAgent(buyer → seller). The buyer writes to `buyer_offer`, the seller reads
+> `{buyer_offer}` and responds. An `after_agent_callback` checks for ACCEPT and escalates
+> to break the loop. Same FSM termination guarantee from Module 1, now as ADK workflow agents."
+
 ```bash
-python m3_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
+# Still running from Terminal 1:
+# adk web --a2a m3_adk_multiagents/negotiation_agents/
+# Open browser → pick "negotiation" from dropdown → send any message → watch multi-round negotiation
 ```
 
-**Live deep-dive demos against the same running seller server (any subset — each prints the raw A2A wire shape):**
-
-```bash
-python m3_adk_multiagents/demos/01_handcraft_message_send.py --seller-url http://127.0.0.1:9102   # JSON-RPC body by hand, no A2A SDK
-python m3_adk_multiagents/demos/02_task_lifecycle.py        --seller-url http://127.0.0.1:9102   # submitted → working → completed/failed
-python m3_adk_multiagents/demos/03_parts_and_artifacts.py   --seller-url http://127.0.0.1:9102   # multi-part Message + negotiation-summary Artifact
-python m3_adk_multiagents/demos/04_streaming_negotiation.py --seller-url http://127.0.0.1:9102   # message/stream incremental updates
-python m3_adk_multiagents/demos/05_context_threading.py     --seller-url http://127.0.0.1:9102   # contextId reuse across rounds
-```
-
-> "Use these to make A2A concrete after the orchestrator runs — demo 01 strips away the A2A SDK so
-> learners see the raw JSON-RPC body, demo 02 forces a `failed` task on purpose, and demo 04 shows
-> the streaming variant the seller's Agent Card now advertises."
-
-**Watch specifically for:**
-- Buyer runs multi-round offers via ADK (you see OpenAI + MCP tool calls in terminal 2)
-- Client fetches the Agent Card from the seller server (in terminal 1 logs)
-- `message/send` JSON-RPC request fires each round — visible in both terminals
-- Seller runs its ADK agent (OpenAI + 3 MCP tool calls visible in terminal 1)
-- Orchestrator stops on terminal state or max rounds and prints ADK session state
-
-**AFTER IT RUNS — the key insight:**
-> "The buyer had no import of seller_adk.py. No shared state object. No shared process.
-> It sent an HTTP request to a URL. The seller could be deployed on AWS, written in Java,
-> maintained by a completely different team — as long as it speaks A2A, the buyer works.
-> That's the point of a protocol standard."
+> "The key insight: no custom server code. No manual Agent Card creation. No HTTP routing.
+> `adk web --a2a` turns a 30-line `agent.py` file into a production-grade A2A endpoint.
+> The seller could be deployed on AWS, the buyer on Azure — as long as both speak A2A, they interoperate."
 
 ---
 
@@ -1080,21 +896,21 @@ Exercises use difficulty labels: `[Starter]` (15 min), `[Core]` (30–45 min), `
 
 **If 15–20 min remaining (pick one):**
 - M2 Exercise 1 `[Starter]` — Add a new MCP tool to the pricing server
-- M1 Exercise 2 `[Core]` — Compare naive vs FSM failure modes (requires OPENAI_API_KEY to run naive demo; analysis/table-fill exercise)
+- M3 Exercise 1 `[Starter]` — Build a tool agent with two cooperating tools (estimate + mortgage calc)
 
 **If 30–45 min remaining (pick two):**
 - M1 Exercise 1 `[Core]` — Add a TIMEOUT terminal state to the FSM (no API keys, teaches transition tables)
-- M2 Exercise 2 `[Core]` — Wire the new MCP tool into the ADK buyer agent (builds on M2 ex01)
-- M3 Exercise 1 `[Core]` — Fetch and inspect the A2A Agent Card (teaches A2A discovery)
+- M3 Exercise 2 `[Core]` — Add stateful offer tracking with regression warnings (ToolContext + state)
+- M3 Exercise 3 `[Core]` — Build a three-stage SequentialAgent pipeline with optional ParallelAgent nesting
 
 **If 45–60 min remaining (core + challenge):**
-- M3 Exercise 1 `[Core]` — Fetch and inspect the A2A Agent Card (teaches A2A discovery)
-- M3 Exercise 2 `[Core]` — Add a negotiation history endpoint (FastAPI + A2A server extension)
+- M3 Exercise 4 `[Core]` — Add argument validation + logging to the buyer's before_tool_callback
+- M3 Exercise 5 `[Core]` — Fetch and compare Agent Cards from `adk web --a2a`
+- M2 Exercise 2 `[Core]` — Wire the new MCP tool into an ADK agent
 
-**For take-home / self-paced learners (Stretch exercises):**
-- M1 Exercise 3 `[Stretch]` — Reimplement the FSM in TypeScript
-- M2 Exercise 3 `[Stretch]` — Build an appraisal MCP server from scratch
-- M3 Exercise 3 `[Stretch]` — Deploy seller to Docker, run networked negotiation
+**For take-home / self-paced learners:**
+- All 5 M3 exercises are designed to be completable with `adk web` — no terminal juggling
+- Each exercise has a reflection question for deeper thinking
 
 **Solution lookup:**
 - Match each exercise with its paired file in the module's `solution/` folder.
@@ -1119,7 +935,7 @@ source .env
 ```bash
 # Must run from negotiation_workshop/ directory
 cd path/to/negotiation_workshop
-python m3_adk_multiagents/a2a_protocol_seller_server.py
+adk web m3_adk_multiagents/negotiation_agents/
 ```
 
 ### "OPENAI_API_KEY not set"
@@ -1150,7 +966,7 @@ This usually means provider quota is exhausted for the active project or API key
 ```bash
 # Retry later, or use a key/project with available quota.
 # Example affected command:
-python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 1
+adk web m3_adk_multiagents/negotiation_agents/
 ```
 
 ### Windows Unicode errors in baseline
@@ -1172,16 +988,16 @@ pytest tests/ -v
 | Concept | One-line Definition | Where in Code |
 |---------|-------------------|---------------|
 | MCP | Standard protocol for agent ↔ external tool (3 operations: list, schema, call) | `m2_mcp/` |
-| A2A (workshop) | Structured JSON envelopes exchanged over HTTP JSON-RPC between buyer and seller agents | `m3_adk_multiagents/a2a_protocol_http_orchestrator.py`, `m3_adk_multiagents/a2a_protocol_seller_server.py` |
-| A2A (bonus demo) | True networked A2A protocol server (Agent Card + JSON-RPC via a2a-sdk) | `m3_adk_multiagents/a2a_protocol_seller_server.py` + `a2a_protocol_buyer_client_demo.py` |
+| A2A | Agent-to-Agent protocol: Agent Card discovery + JSON-RPC messaging | `adk web --a2a m3_adk_multiagents/negotiation_agents/` |
 | FSM | Termination guaranteed by empty transition sets on terminal states | `m1_baseline/state_machine.py` |
-| LlmAgent | ADK's agent object: model + instruction + tools (not a running process) | `m3_adk_multiagents/buyer_adk.py` |
-| MCPToolset | Connects to MCP server, discovers tools, converts to model function schemas | `m3_adk_multiagents/buyer_adk.py` |
-| Runner | Executes ADK agent turns, returns async event stream | `m3_adk_multiagents/buyer_adk.py` |
-| InMemorySessionService | ADK's per-agent conversation memory | `m3_adk_multiagents/buyer_adk.py` |
-| Workflow agents | `SequentialAgent`, `ParallelAgent`, `LoopAgent` for bounded multi-agent orchestration | `m3_adk_multiagents/notes/google_adk_overview.md` |
+| LlmAgent | ADK's agent object: model + instruction + tools (declarative, `root_agent = LlmAgent(...)`) | `m3_adk_multiagents/negotiation_agents/buyer_agent/agent.py` |
+| MCPToolset | Connects to MCP server, discovers tools, auto-manages subprocess lifecycle | `m3_adk_multiagents/negotiation_agents/buyer_agent/agent.py` |
+| `adk web` | CLI command that discovers agent packages and serves them with a chat UI | `adk web m3_adk_multiagents/adk_demos/` |
+| `adk web --a2a` | Same as `adk web` but also serves A2A endpoints + Agent Cards | `adk web --a2a m3_adk_multiagents/negotiation_agents/` |
+| Workflow agents | `SequentialAgent`, `ParallelAgent`, `LoopAgent` for bounded multi-agent orchestration | `m3_adk_multiagents/adk_demos/d04–d06` |
+| Callbacks | `before_model`, `before_tool`, `after_tool` — policy hooks (PII, allowlists, logging) | `m3_adk_multiagents/adk_demos/d08_callbacks/` |
 | Information Asymmetry | Seller knows its floor via inventory server; buyer infers from market data | `m2_mcp/inventory_server.py` |
-| Context manager | Ensures MCP subprocess cleanup even on error | `m3_adk_multiagents/buyer_adk.py` `__aenter__`/`__aexit__` |
+| Agent Card | Auto-generated A2A discovery document at `/.well-known/agent-card.json` | Browse via `adk web --a2a` |
 
 ---
 
@@ -1191,38 +1007,46 @@ pytest tests/ -v
                     WORKSHOP ARCHITECTURE
                     =====================
 
-MODULE 2: MCP                MODULE 3: AGENTS + ORCHESTRATION (ADK + A2A)
+MODULE 2: MCP                MODULE 3: AGENTS + A2A (ADK)
 ───────────────────────       ───────────────────────────────────────────
 
-External Data                Buyer Agent (BuyerAgentADK)
-┌─────────────┐                ┌────────────────────────┐      A2A JSON-RPC
-│  pricing    │ tools          │ LlmAgent + MCPToolset      │   ───────────────────────────
-│  server     ◄───────────────│ (model: openai/gpt-4o)     │   ───────────────────────────
-└─────────────┘                │ Runner + SessionService    │
-                                └────────────────────────┘
-External Data                                                       v
-┌─────────────┐                Seller Agent (SellerAgentADK)
-│  pricing +  │ tools          ┌────────────────────────┐
-│  inventory  ◄───────────────│ LlmAgent + MCPToolset      │
-│  server     │                │ (model: openai/gpt-4o)     │
-└─────────────┘                │ Workflow agent + Runner    │
-                                └────────────────────────┘
+External Data                Buyer Agent (negotiation_agents/buyer_agent/)
+┌─────────────┐                ┌────────────────────────┐
+│  pricing    │ tools          │ root_agent = LlmAgent(     │
+│  server     ◄───────────────│   model="openai/gpt-4o",   │
+└─────────────┘                │   tools=[MCPToolset(...)], │
+                                │ )                          │
+External Data                └────────────────────────┘
+┌─────────────┐
+│  pricing +  │ tools        Seller Agent (negotiation_agents/seller_agent/)
+│  inventory  ◄──────────── ┌────────────────────────┐
+│  server     │              │ root_agent = LlmAgent(     │
+└─────────────┘              │   tools=[MCPToolset(...),   │
+                              │          MCPToolset(...)],  │
+                              │ )                          │
+                              └────────────────────────┘
 
-MODULE 3: TRUE A2A PROTOCOL — NETWORKED AGENTS
-──────────────────────────────────────────────
-Terminal 1: a2a_protocol_seller_server.py   (HTTP server, port 9102)
-  [Agent Card at /.well-known/agent-card.json]
-  [SellerAgentADK: OpenAI + MCPToolset (pricing + inventory)]
+                              Orchestrator (negotiation_agents/negotiation/)
+                              ┌────────────────────────┐
+                              │ root_agent = LoopAgent(    │
+                              │   sub_agents=[             │
+                              │     SequentialAgent(        │
+                              │       sub_agents=[buyer,    │
+                              │                  seller])]) │
+                              └────────────────────────┘
 
-Terminal 2: a2a_protocol_buyer_client_demo.py / a2a_protocol_http_orchestrator.py
-  [BuyerAgentADK: OpenAI + MCPToolset (pricing only)]
-       |
-       | 1. make offer via ADK (OpenAI + MCP)
-       | 2. A2ACardResolver.get_agent_card()  -> GET /.well-known/agent-card.json
-       | 3. A2AClient.send_message()          -> POST / (message/send JSON-RPC)
-       | 4. receive counter-offer in response <-
+HOW TO RUN:
+  adk web negotiation_agents/           → chat UI (dropdown)
+  adk web --a2a negotiation_agents/     → same + A2A endpoints
+  adk web adk_demos/                    → 8 concept demos
 
-MODULE 1: BASELINE (shows what breaks WITHOUT modules 2 and 4)
+A2A ENDPOINTS (auto-generated by adk web --a2a):
+  GET /buyer_agent/.well-known/agent-card.json   → discovery
+  POST /buyer_agent                               → message/send
+  GET /seller_agent/.well-known/agent-card.json
+  POST /seller_agent
+
+MODULE 1: BASELINE (shows what breaks WITHOUT modules 2 and 3)
 ```
 
 ---
