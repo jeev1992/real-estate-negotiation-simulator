@@ -34,11 +34,10 @@ root_agent = LlmAgent(
     description="Real estate pricing agent with MCP-discovered tools.",
     instruction=(
         "You are a real estate pricing analyst for Austin, TX.\n\n"
-        "You have MCP tools that were auto-discovered from a pricing server:\n"
-        "  - get_market_price: current market value for an address\n"
-        "  - calculate_discount: percentage discount from listing price\n"
-        "  - get_property_tax_estimate: annual tax estimate\n\n"
-        "Always call your tools before giving any estimates. "
+        "You have MCP tools that were auto-discovered from a pricing server. "
+        "You don't need to know their names in advance — ADK discovered them "
+        "for you at startup via the MCP protocol.\n\n"
+        "Always call your available tools before giving any estimates. "
         "Reference the tool results in your response."
     ),
     tools=[

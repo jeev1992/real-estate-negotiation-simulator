@@ -267,6 +267,8 @@ agent = LlmAgent(
 
 ### Component 2: Runner
 
+The execution engine — processes one turn at a time.
+
 ```python
 from google.adk.runners import Runner
 
@@ -293,6 +295,24 @@ async def run_agent(message: str, session_id: str, user_id: str):
 ```
 
 ### Component 3: Session Service
+
+The memory store — persists conversation history and state across turns.
+
+**Runner vs Session — the key distinction:**
+
+| | Runner | Session |
+|---|---|---|
+| What it is | Execution engine — runs one turn | Memory store — persists across all turns |
+| Lifespan | Transient (one message in, events out) | Persistent (survives across entire conversation) |
+| State | Reads state at start, writes back at end | Holds the state dict |
+| Stored in session.db? | No | Yes (`sessions` + `events` tables) |
+
+The Runner is stateless — it processes one message and is done. The Session
+is what gives an agent memory. You could run the same Runner against different
+sessions (different users, different conversations).
+
+In `adk web`, both are created automatically. You only manage them manually
+when writing standalone scripts.
 
 ```python
 from google.adk.sessions import InMemorySessionService
@@ -1228,6 +1248,12 @@ Through `tool_context` a tool can:
 | `user:`    | Bound to the `user_id`; survives across sessions.             |
 | `app:`     | Bound to the `app_name`; shared across users and sessions.    |
 | `temp:`    | Lives only for the current invocation; not persisted.         |
+
+**`user:` vs `app:` in practice:** If Alice and Bob both use the app,
+`user:total_offers` has a different value for each (per-buyer). But
+`app:negotiations_run` is global — both see the same counter. In `adk web`,
+`user_id` defaults to `"user"` so both behave the same in a workshop.
+The distinction matters in production with multiple users.
 
 In our agents, `negotiation_agents/buyer_agent/agent.py` uses
 `before_tool_callback=_enforce_buyer_allowlist` to scope the buyer's
