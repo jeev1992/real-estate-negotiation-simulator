@@ -54,6 +54,50 @@ m3_adk_multiagents/
 
 ---
 
+## The ADK Web UI
+
+When you run `adk web`, a browser UI opens at `http://localhost:8000`. Here's what each element does:
+
+### Top bar
+
+| Element | What it does |
+|---------|-------------|
+| **Agent dropdown** (top-left) | Pick which agent to chat with. Each subfolder with `__init__.py` + `agent.py` appears here |
+| **Session dropdown** | Shows current session ID. Each session has its own conversation history and state |
+| **New Session** button | Start a fresh conversation (clears history and state) |
+| **Streaming** toggle (top-right) | When on, responses stream token by token. When off, you get the full response at once |
+
+### Tab bar (below top bar)
+
+| Tab | What it shows |
+|-----|---------------|
+| **Events** | The conversation flow: user messages, agent responses, tool call badges (⚡ = called, ✓ = completed). This is the main view |
+| **Traces** | OpenTelemetry-style trace spans for each turn — useful for debugging latency |
+| **Info** | The agent's resolved config: model, system instruction, discovered tools with full JSON schemas |
+| **State** | Current session state dict — shows all keys written by `output_key` or `ToolContext.state` |
+| **Artifacts** | Any artifacts saved during the session (binary blobs, generated files) |
+| **Evals** | Agent evaluation runs (not used in this workshop) |
+
+### Left panel (event inspector)
+
+Click any event number in the conversation to see its raw details:
+- **Event N of M** — navigate through all internal events (includes MCP handshake, tool calls, LLM requests, state deltas)
+- Shows the full event payload: `author`, `content.parts`, `actions.stateDelta`
+- The high event count (100+) is normal — it includes MCP protocol frames, not just conversation turns
+
+### Right panel (conversation)
+
+The chat view showing:
+- **User messages** (right, blue) — what you typed
+- **Agent responses** (left, dark) — the LLM's final text
+- **Tool call badges** — ⚡ `tool_name` (request) → ✓ `tool_name` (result) — shows which tools the LLM called and in what order
+
+### Teaching tip
+
+> Tell students to focus on the **right panel** for understanding agent behavior, and use the **Info tab** to see what tools the agent has access to. The left panel event inspector is for deep debugging (demo d09 teaches this explicitly).
+
+---
+
 ## How to run
 
 ### ADK demos (01–08) — interactive web UI
