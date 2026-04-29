@@ -1419,45 +1419,48 @@ Same offer in two formats — human-readable text AND structured JSON. The agent
 **File:** `adk_demos/a2a_13_streaming.py` (terminal script)
 
 ### What it teaches
-The `message/stream` method and why checking `capabilities.streaming` in the Agent Card matters before attempting streaming.
+The `message/stream` method — receiving incremental SSE events as the agent processes a request, seeing the Task lifecycle in real time.
 
 ### What happened
 
-```
-Server streaming capability: False
-WARN: Server does not advertise streaming.
-Error: Expected Content-Type 'text/event-stream', got 'application/json'
-```
+7 SSE events received:
 
-The demo:
-1. Fetched the Agent Card → `capabilities.streaming = false`
-2. Printed a warning
-3. Tried `message/stream` anyway → server returned JSON (not SSE) → client errored
+| Event | Kind | State | What it shows |
+|-------|------|-------|---------------|
+| 1 | status-update | **submitted** | Task created, original offer echoed back |
+| 2 | status-update | **working** | Agent started (session/user IDs in metadata) |
+| 3 | status-update | **working** | LLM tool call completed (token usage visible) |
+| 4 | status-update | **working** | Tool results returned (stateDelta in metadata) |
+| 5 | status-update | **working** | Second LLM call (final reasoning, token counts) |
+| 6 | **artifact-update** | — | Counter-offer text as durable artifact |
+| 7 | status-update | **completed** | `final: true` — task done |
 
-### Why streaming failed
+### What you see that `message/send` doesn't show
 
-Our `agent.json` declares `"streaming": false`. The ADK A2A server respects this — it doesn't serve SSE streams for agents that don't advertise the capability. The A2A SDK correctly rejects the non-SSE response.
-
-This is **correct protocol behavior**, not a bug:
-- The Agent Card TELLS you streaming isn't supported
-- The client WARNED you
-- Attempting it anyway fails with a clear error
+- **Real-time state transitions**: submitted → working (repeated) → completed
+- **Token usage per LLM call**: `promptTokenCount`, `candidatesTokenCount` in metadata
+- **Tool call intermediate events**: each MCP tool call appears as a `working` event
+- **Artifact delivery before completion**: event 6 delivers the artifact before event 7 marks completion
+- **`final: true`**: the client knows when to stop listening
 
 ### Concepts introduced
 
 | Concept | Detail |
 |---------|--------|
-| **`message/stream`** | A2A's streaming method. Instead of waiting for full response, receives SSE events as the task progresses |
-| **`capabilities.streaming`** | Agent Card field. Clients MUST check this before attempting streaming |
-| **SSE (Server-Sent Events)** | The transport for streaming. Server sends `text/event-stream` content type with incremental events |
-| **Graceful capability checking** | Good A2A clients check the Agent Card's capabilities before calling methods the agent doesn't support |
+| **`message/stream`** | A2A streaming method. Returns an async SSE iterator instead of a single response |
+| **`status-update` events** | Task lifecycle transitions. State: `submitted`, `working`, `completed`, `failed` |
+| **`artifact-update` events** | Durable outputs delivered mid-stream (before task completes) |
+| **`final: true`** | Marks the last event. Client stops listening after this |
+| **`capabilities.streaming: true`** | Must be set in `agent.json` for streaming to work. Server returns 400 if false |
+| **SSE (Server-Sent Events)** | HTTP streaming format. Server sends `text/event-stream` content type |
 
 ### Key teaching points for class
 
-1. **"Check capabilities before calling."** The Agent Card declares what the agent supports. Don't assume streaming is available — check `capabilities.streaming` first.
-2. **"This is why Agent Cards exist."** Without the card, you'd try streaming and get a cryptic error. With it, you know upfront.
-3. **"To enable streaming, set `streaming: true` in agent.json."** Then restart `adk web --a2a` and the demo would receive SSE events.
-4. **"Streaming is for UX, not correctness."** `message/send` gives the same result — you just wait longer. Streaming lets you show "seller is thinking..." progress.
+1. **"Streaming is for UX, not correctness."** `message/send` gives the same result — you just wait longer. Streaming lets you show "seller is thinking..." progress bars.
+2. **"7 events for one request."** Each MCP tool call, each LLM call, and the final artifact each produce an event. In `message/send` you'd see only the final result.
+3. **"Token usage is in the metadata."** Events 3 and 5 include `promptTokenCount` and `candidatesTokenCount` — useful for cost tracking in production.
+4. **"Artifact arrives before completion."** Event 6 (artifact) comes before event 7 (completed). The client gets the counter-offer text before the task is officially done.
+5. **"Check capabilities.streaming first."** Setting `streaming: true` in `agent.json` is what enables this. Without it, the server returns JSON instead of SSE.
 
 ---
 

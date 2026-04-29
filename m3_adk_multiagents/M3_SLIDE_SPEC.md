@@ -785,7 +785,7 @@ Every A2A agent publishes a JSON document at `/.well-known/agent-card.json`:
   "name": "seller_agent",
   "description": "Real estate seller agent for 742 Evergreen Terrace",
   "url": "http://localhost:8000/a2a/seller_agent",
-  "capabilities": {"streaming": false},
+  "capabilities": {"streaming": true},
   "skills": [{
     "id": "negotiation_response",
     "name": "Real Estate Seller Negotiation",
@@ -927,12 +927,20 @@ Response: MCP tool calls as DataParts (3 tools called)
 
 Parts = conversational (in Messages). Artifacts = deliverables (on Tasks).
 
-**Demo 13 — Streaming:**
-- `message/stream` instead of `message/send`
-- Requires `capabilities.streaming: true` in Agent Card
-- Our agents declare `streaming: false` → demo shows the capability check + warning
-- When enabled: SSE events arrive in real time (submitted → working → completed)
-- Streaming is for UX ("seller is thinking..."), not for correctness — `message/send` gives the same result
+**Demo 13 — Streaming (actual results):**
+
+`message/stream` shows the Task lifecycle in real time via SSE events:
+
+| Event | Kind | State |
+|-------|------|-------|
+| 1 | status-update | submitted |
+| 2–5 | status-update | working (tool calls + LLM reasoning) |
+| 6 | artifact-update | counter-offer delivered |
+| 7 | status-update | **completed** (`final: true`) |
+
+7 events for one request — each MCP tool call and LLM call produces an event. With `message/send` you'd only see the final result.
+
+Streaming is for UX ("seller is thinking..."), not correctness. Requires `capabilities.streaming: true` in `agent.json`.
 
 ---
 
