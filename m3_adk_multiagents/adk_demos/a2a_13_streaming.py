@@ -1,18 +1,42 @@
 """
-Demo 12 — A2A Streaming via `message/stream`
+Demo 13 — A2A Streaming via `message/stream`
 ===============================================
 Uses the A2A `message/stream` JSON-RPC method to receive incremental
-TaskStatusUpdate and TaskArtifactUpdate events from the seller agent.
+SSE (Server-Sent Events) from the seller agent in real time.
 
-Instead of waiting for the full response (message/send), streaming lets
-the client see state transitions (submitted → working → completed) and
-partial results as they happen.
+WHY STREAMING?
+  Demo 10 used `message/send` — you POST a request, wait for the full
+  response, and get everything at once. Fine for simple cases.
 
-Demonstrates:
-  - message/stream vs message/send
-  - SSE (Server-Sent Events) streaming
-  - TaskStatusUpdateEvent and TaskArtifactUpdateEvent event types
-  - The `final: true` marker on the last event
+  `message/stream` opens an SSE connection instead. The server pushes
+  events as the task progresses:
+
+    Event 1: status-update → state: "submitted"   (task created)
+    Event 2: status-update → state: "working"     (agent started)
+    Event 3: status-update → state: "working"     (tool call completed)
+    Event 4: status-update → state: "working"     (tool result returned)
+    Event 5: status-update → state: "working"     (LLM reasoning)
+    Event 6: artifact-update                      (counter-offer text)
+    Event 7: status-update → state: "completed"   (final: true)
+
+  This lets the client show progress ("seller is thinking...") and
+  deliver artifacts before the task officially completes.
+
+STREAMING vs SEND — SAME RESULT, DIFFERENT DELIVERY:
+  message/send:    POST → wait → one JSON response with everything
+  message/stream:  POST → SSE connection → events arrive incrementally
+
+  The seller's Agent Card must declare `capabilities.streaming: true`
+  in agent.json for this to work. If false, the server returns JSON
+  instead of SSE and the client errors.
+
+TWO EVENT TYPES:
+  - status-update:   Task state transitions (submitted/working/completed)
+                     Metadata includes token usage, session IDs, state deltas
+  - artifact-update: Durable output delivered mid-stream
+                     Contains the counter-offer text as an Artifact
+
+  The last event always has `final: true` — the client stops listening.
 
 Prereq:
     adk web --a2a m3_adk_multiagents/negotiation_agents/ --port 8000
@@ -64,7 +88,11 @@ async def main() -> None:
         )
         card = await resolver.get_agent_card()
 
-        # Check if the server advertises streaming support
+        # ── Step 1: Check streaming capability ────────────────────────
+        # The Agent Card declares whether the agent supports streaming.
+        # Good clients check this BEFORE attempting message/stream.
+        # If false and you try anyway → server returns JSON (not SSE)
+        # → client gets a 400 error.
         streaming_supported = (
             card.capabilities and card.capabilities.streaming
         )
@@ -77,6 +105,10 @@ async def main() -> None:
 
         client = A2AClient(httpx_client=http, agent_card=card)
 
+        # ── Step 2: Build a streaming request ─────────────────────────
+        # SendStreamingMessageRequest (not SendMessageRequest) tells
+        # the SDK to use message/stream instead of message/send.
+        # Same message format — different delivery method.
         request = SendStreamingMessageRequest(
             id=f"req_{uuid.uuid4().hex[:8]}",
             params=MessageSendParams(
@@ -88,7 +120,14 @@ async def main() -> None:
             ),
         )
 
-        # ── Stream events ─────────────────────────────────────────────
+        # ── Step 3: Stream events ─────────────────────────────────────
+        # client.send_message_streaming() returns an async iterator.
+        # Each iteration yields one SSE event — either a status-update
+        # (task state change) or an artifact-update (durable output).
+        #
+        # Expected sequence:
+        #   submitted → working (×N) → artifact-update → completed (final=True)
+        #
         print("\n--- streaming events ---")
         event_count = 0
         async for event in client.send_message_streaming(request):
