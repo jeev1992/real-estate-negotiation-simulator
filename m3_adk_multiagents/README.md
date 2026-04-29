@@ -96,6 +96,10 @@ The chat view showing:
 
 > Tell students to focus on the **right panel** for understanding agent behavior, and use the **Info tab** to see what tools the agent has access to. The left panel event inspector is for deep debugging (demo d09 teaches this explicitly).
 
+### Runtime files (`.adk/`)
+
+When `adk web` runs, it creates a `.adk/` directory inside the agents folder containing `session.db` (a SQLite database for session persistence). This is a **runtime artifact** — not source code. It's in `.gitignore` and gets recreated automatically on each run. You can delete it safely, or click "New Session" in the UI to start fresh.
+
 ---
 
 ## How to run
