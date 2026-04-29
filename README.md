@@ -209,10 +209,10 @@ adk web m3_adk_multiagents/adk_demos/               # 9 concept demos in dropdow
 adk web m3_adk_multiagents/negotiation_agents/       # buyer, seller, negotiation in dropdown
 adk web --a2a m3_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Agent Cards
 # A2A protocol demos (run against adk web --a2a):
-python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/seller_agent
-python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/seller_agent
-python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/seller_agent
-python m3_adk_multiagents/adk_demos/a2a_13_streaming.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_13_streaming.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 ```
 
 ### 10. Module Exercises

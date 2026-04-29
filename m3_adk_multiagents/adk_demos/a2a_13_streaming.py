@@ -19,7 +19,7 @@ Prereq:
 
 Run:
     python m3_adk_multiagents/adk_demos/a2a_13_streaming.py \\
-        --seller-url http://127.0.0.1:8000/seller_agent
+        --seller-url http://127.0.0.1:8000/a2a/seller_agent
 """
 
 import argparse
@@ -44,7 +44,7 @@ async def main() -> None:
     )
     parser.add_argument(
         "--seller-url",
-        default="http://127.0.0.1:8000/seller_agent",
+        default="http://127.0.0.1:8000/a2a/seller_agent",
     )
     args = parser.parse_args()
 

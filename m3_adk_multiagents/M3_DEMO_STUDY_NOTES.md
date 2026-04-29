@@ -1115,7 +1115,7 @@ offer_count: 1
 
 1. **LLM called both tools in parallel**: Event 2 shows two tool calls in one event. ADK executed both and returned both results in Event 3. Same parallel pattern as d03.
 
-2. **LLM used wrong comp_avg**: The LLM passed `comp_avg: 300000` to `estimate_offer`, but `lookup_comps` returned `avg_comp_price: 465000`. The LLM made up a number instead of using the tool result. This is a real-world issue — parallel tool calls mean the LLM decides arguments BEFORE seeing results.
+2. **LLM used wrong comp_avg**: The LLM passed `comp_avg: 300000` to `estimate_offer`, but `lookup_comps` returned `avg_comp_price: 465000`. The LLM made up a number instead of using the tool result. This is a real-world issue — parallel tool calls mean the LLM decides arguments BEFORE seeing results. **Nobody told the LLM to parallelize** — the instruction says "1. Call lookup_comps, 2. Call estimate_offer" (implying sequential). But GPT-4o's function-calling feature can emit multiple tool calls in one response when it thinks they're independent. ADK just executes whatever the model returns.
 
 3. **State visible in State tab**: After query 1, `last_comp_lookup`, `latest_offer`, and `offer_count` all appeared. This is ToolContext state persistence — same mechanism as d03 but now visible as the demo's primary focus.
 
@@ -1137,7 +1137,7 @@ offer_count: 1
 
 1. **"State tab = live view of session state."** Every key written by `tool_context.state[...]` appears here immediately after the turn completes.
 2. **"State deltas are per-event."** Click an event in the left panel — each one shows what state changed during that step. This is how you debug state flow.
-3. **"Parallel tool calls can cause stale arguments."** The LLM decided both tool arguments BEFORE seeing either result. That's why `estimate_offer` got `comp_avg: 300K` instead of the actual `465K`. In production, you'd make the second call depend on the first (use SequentialAgent or a single tool that does both).
+3. **"Parallel tool calls can cause stale arguments."** The LLM decided both tool arguments BEFORE seeing either result. That's why `estimate_offer` got `comp_avg: 300K` instead of the actual `465K`. Nobody defined parallel execution — the LLM chose to emit both calls in one response. The fix: use a SequentialAgent (d04) when tool B depends on tool A's output, or make the instruction more explicit ("call lookup_comps FIRST, wait for the result, THEN call estimate_offer with that result").
 4. **"This is what the negotiation agents look like internally."** `output_key` writes happen as state deltas too — every SequentialAgent step is a state write event.
 
 ---

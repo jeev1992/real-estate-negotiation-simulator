@@ -1392,9 +1392,11 @@ my_agents/                    # ← pass this directory to adk web
     agent_one/                # each subfolder = one agent
         __init__.py           # must contain: from . import agent
         agent.py              # must define: root_agent = LlmAgent(...)
+        agent.json            # OPTIONAL: required only for --a2a (Agent Card definition)
     agent_two/
         __init__.py
         agent.py
+        agent.json
 ```
 
 ### Discovery rules
@@ -1415,12 +1417,16 @@ For each discovered agent, `adk web` creates:
 
 ### With `--a2a`: additional A2A infrastructure
 
-Adding the `--a2a` flag also creates for each agent:
-- An **Agent Card** at `/<agent_name>/.well-known/agent-card.json`
-  (auto-generated from `name`, `description`, and tools)
-- A **JSON-RPC endpoint** at `POST /<agent_name>/`
+Adding the `--a2a` flag also creates for each agent **that has an `agent.json` file**:
+- An **Agent Card** at `/a2a/<agent_name>/.well-known/agent-card.json`
+  (loaded from `agent.json` in the agent folder)
+- A **JSON-RPC endpoint** at `POST /a2a/<agent_name>/`
   (handles `message/send` and `message/stream`)
 - A **Task store** for managing task lifecycle
+
+**`agent.json` is required for `--a2a`**. Without it, the agent will appear
+in the `adk web` chat UI but will NOT get A2A endpoints. The file defines
+the Agent Card: name, description, capabilities, skills, URL.
 
 ```bash
 # Interactive only

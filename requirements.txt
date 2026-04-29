@@ -36,7 +36,7 @@ google-adk>=1.0.0
 litellm>=1.75.5
 
 # Google Agent2Agent protocol SDK (true networked A2A)
-a2a-sdk>=0.3.24
+a2a-sdk>=0.3.24,<1.0.0              # A2A protocol SDK (v1.x is incompatible with google-adk <2.0)
 
 
 # ── Data Validation ───────────────────────────────────────────────────────────

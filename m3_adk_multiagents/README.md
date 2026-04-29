@@ -124,9 +124,9 @@ adk web --a2a m3_adk_multiagents/negotiation_agents/
 ```
 
 With `--a2a`, each agent gets an Agent Card at:
-- `http://localhost:8000/buyer_agent/.well-known/agent-card.json`
-- `http://localhost:8000/seller_agent/.well-known/agent-card.json`
-- `http://localhost:8000/negotiation/.well-known/agent-card.json`
+- `http://localhost:8000/a2a/buyer_agent/.well-known/agent-card.json`
+- `http://localhost:8000/a2a/seller_agent/.well-known/agent-card.json`
+- `http://localhost:8000/a2a/negotiation/.well-known/agent-card.json`
 
 ### A2A protocol demos (09–12) — terminal scripts
 
@@ -135,10 +135,10 @@ With `--a2a`, each agent gets an Agent Card at:
 adk web --a2a m3_adk_multiagents/negotiation_agents/
 
 # Terminal 2 — run the A2A demos
-python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/seller_agent
-python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/seller_agent
-python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/seller_agent
-python m3_adk_multiagents/adk_demos/a2a_13_streaming.py --seller-url http://127.0.0.1:8000/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+python m3_adk_multiagents/adk_demos/a2a_13_streaming.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 ```
 
 ---

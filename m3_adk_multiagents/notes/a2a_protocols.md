@@ -793,19 +793,19 @@ adk web --a2a m3_adk_multiagents/negotiation_agents/
 
 # Terminal 2 — see the wire format and task lifecycle
 python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py \
-    --seller-url http://127.0.0.1:8000/seller_agent
+    --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 # Terminal 2 — see context threading across rounds
 python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py \
-    --seller-url http://127.0.0.1:8000/seller_agent
+    --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 # Terminal 2 — see multi-part messages and artifacts
 python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py \
-    --seller-url http://127.0.0.1:8000/seller_agent
+    --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 # Terminal 2 — see streaming (message/stream SSE events)
 python m3_adk_multiagents/adk_demos/a2a_13_streaming.py \
-    --seller-url http://127.0.0.1:8000/seller_agent
+    --seller-url http://127.0.0.1:8000/a2a/seller_agent
 ```
 
 Key files:

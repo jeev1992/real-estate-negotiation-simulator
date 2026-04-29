@@ -16,7 +16,7 @@ adk web --a2a m3_adk_multiagents/negotiation_agents/ --port 8000
 ### Step 2 — Browse the Agent Card
 Open in your browser:
 ```
-http://127.0.0.1:8000/seller_agent/.well-known/agent-card.json
+http://127.0.0.1:8000/a2a/seller_agent/.well-known/agent-card.json
 ```
 Study the JSON. Note the structure: `name`, `description`, `url`, `capabilities`, `skills`.
 
