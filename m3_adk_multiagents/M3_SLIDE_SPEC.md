@@ -1285,23 +1285,3 @@ Step 2: Multi-round negotiation
 - **4 total A2A messages** for a complete negotiation
 
 This is the production pattern: agents as network services, discovered via Agent Cards, communicating via JSON-RPC.
-
----
-
-## Slide 39: Exercises
-
-**Title:** Hands-On Exercises
-
-**Body:**
-
-| # | Exercise | Difficulty | What you build |
-|---|----------|-----------|---------------|
-| 1 | Tool Agent | Starter | Two cooperating tools (estimate + mortgage) |
-| 2 | Stateful Offers | Core | Offer tracking with regression warnings |
-| 3 | Research Pipeline | Core | SequentialAgent + optional ParallelAgent |
-| 4 | Callback Guard | Core | Argument validation on buyer agent |
-| 5 | Fetch Agent Card | Core | Programmatic A2A discovery |
-
-Each exercise has: step-by-step instructions, verify checklist, reflection question, and a matching solution.
-
-Exercise 3 is the most interesting — it combines d04 + d05 patterns. Exercise 5 bridges to the A2A section.
