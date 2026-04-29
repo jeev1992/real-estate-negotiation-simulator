@@ -1140,6 +1140,62 @@ if __name__ == "__main__":
 
 When in doubt: hosts open + close sessions; servers expose primitives.
 
+---
+
+## 20. MCP Server Design Principles
+
+Patterns from production MCP deployments (source: [Anthropic — Building agents that reach production systems with MCP](https://claude.com/blog/building-agents-that-reach-production-systems-with-mcp)):
+
+### Principle 1: Group tools around intent, not endpoints
+
+Fewer, well-described tools consistently outperform exhaustive API mirrors.
+Don't wrap your API 1:1 — group operations around what the agent is trying
+to accomplish.
+
+```
+❌  BAD:  list_comps() + get_sqft_price() + calculate_value() + get_market_condition()
+✅  GOOD: get_market_price(address) → returns comps, value, $/sqft, condition in one call
+```
+
+Our `pricing_server.py` already follows this: `get_market_price` returns a
+rich object with comps, estimated value, price analysis, and market context.
+One tool call gives the LLM everything it needs.
+
+### Principle 2: Design for context efficiency
+
+20+ tool schemas consume significant LLM context. At scale:
+- **Defer loading**: only surface tools the agent actually needs for the current task
+- **Process in code**: filter and aggregate tool results in code before returning to the LLM, rather than dumping raw data into context
+
+Our servers expose 2–3 tools each — small enough that context isn't an issue.
+But if you built a full MLS integration with 50+ operations, you'd want to
+split into multiple focused servers or use tool search.
+
+### Principle 3: Start stdio, ship HTTP
+
+stdio is the right transport for local development (simple, no network).
+HTTP (Streamable HTTP) is the right transport for production (remote, multi-client, behind auth).
+The protocol is identical — only the wire changes.
+
+```bash
+# Development
+python pricing_server.py                          # stdio (default)
+
+# Production
+python pricing_server.py --sse --port 8001        # HTTP (same tools, same code)
+```
+
+### Principle 4: Code orchestration for large surfaces
+
+If your service has hundreds of operations (AWS, Kubernetes, Cloudflare),
+intent-grouping won't cover it. Instead, expose a thin tool surface that
+accepts code: the agent writes a script, your server runs it in a sandbox.
+Cloudflare's MCP server covers ~2,500 endpoints with just 2 tools (`search`
+and `execute`) in ~1K tokens.
+
+This pattern is beyond our workshop scope but worth mentioning to advanced
+students.
+
 
 
 | Concept | Key Takeaway |

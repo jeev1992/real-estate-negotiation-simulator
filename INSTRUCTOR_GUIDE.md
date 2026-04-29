@@ -503,6 +503,30 @@ def get_market_price(address: str, property_type: str = "single_family") -> dict
 > "Returns JSON with: estimated_value, comparable_sales, market_condition, days_on_market.
 > The buyer uses this to justify every offer. No hallucination — it's grounded in data."
 
+**MCP SERVER DESIGN PRINCIPLES (3 min talking point):**
+
+> "Notice how `get_market_price` returns a RICH object — comps, value, $/sqft, condition —
+> all in one call. This is intentional. The best MCP servers group tools around INTENT,
+> not endpoints.
+>
+> Bad: `list_comps()` + `get_sqft_price()` + `calculate_value()` — the LLM needs 3 calls.
+> Good: `get_market_price(address)` — one call, everything the agent needs.
+>
+> Three principles from production MCP deployments:
+> 1. **Group tools around intent** — fewer rich tools > many thin ones
+> 2. **Watch context size** — 20+ tool schemas eat the LLM's context window
+> 3. **Start stdio, ship HTTP** — same protocol, different deployment target
+>
+> For really large surfaces (AWS, Kubernetes with 2,500+ endpoints), the pattern
+> is code orchestration: 2 tools (search + execute), the agent writes a script,
+> the server sandboxes it. Cloudflare does this."
+
+**ASK:**
+> "Our pricing server has 3 tools. What would happen if it had 50? What breaks first —
+> the protocol, the LLM, or the user experience?"
+> (Answer: the LLM — 50 tool schemas consume ~5K tokens of context. The protocol handles
+> any number fine. The fix: split into focused servers, or use deferred tool loading.)
+
 **Show SSE mode:**
 ```bash
 python m2_mcp/pricing_server.py --sse --port 8001   # start in terminal 1
