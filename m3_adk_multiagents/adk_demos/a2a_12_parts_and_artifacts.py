@@ -1,13 +1,33 @@
 """
-Demo 11 — A2A Parts and Artifacts
+Demo 12 — A2A Parts and Artifacts
 ====================================
 Sends a Message with multiple parts (TextPart + DataPart) and inspects
 any artifacts the server attaches to the Task response.
 
-Demonstrates:
-  - Multi-part Messages: TextPart (human-readable) + DataPart (structured)
-  - Artifacts: durable outputs attached to a completed Task
-  - The difference between Message parts (conversation) and Artifacts (outputs)
+WHY MULTI-PART MESSAGES?
+  Demo 10 sent a single TextPart — just a JSON string. But A2A Messages
+  can carry MULTIPLE Parts of different types:
+
+  - TextPart: plain text (what the LLM reads)
+  - DataPart: structured JSON (what code parses)
+  - FilePart: binary data with MIME type (PDFs, images)
+
+  This demo sends BOTH a TextPart and a DataPart in the same Message —
+  the offer in human-readable AND machine-readable form. The agent can
+  use whichever format is more convenient.
+
+WHAT ARE ARTIFACTS?
+  Artifacts are DURABLE OUTPUTS attached to a completed Task.
+  They're separate from the Message history.
+
+  Think of it this way:
+    Messages = the email thread (conversational, ordered)
+    Artifacts = the attached report (the deliverable)
+
+  In this demo, the seller's acceptance text appears in BOTH
+  the history (as a Message) and as an Artifact. You'd use
+  Artifacts when a downstream system needs to fetch the result
+  without replaying the entire conversation.
 
 Prereq:
     adk web --a2a m3_adk_multiagents/negotiation_agents/ --port 8000
@@ -55,8 +75,16 @@ async def main() -> None:
     }
 
     # ── Two parts in one message ──────────────────────────────────────
-    # TextPart: the human-readable offer (what the LLM reads)
-    # DataPart: the same offer as structured data (machine-readable)
+    #
+    # This is the key concept: we send the SAME offer in TWO formats
+    # inside a single Message. The agent can use whichever is easier:
+    #
+    #   parts[0] = TextPart  → JSON string (the LLM reads this)
+    #   parts[1] = DataPart  → structured dict (code can parse this directly)
+    #
+    # In production, you'd use DataPart for machine-to-machine fields
+    # (prices, IDs, timestamps) and TextPart for human context.
+    #
     parts = [
         TextPart(text=json.dumps(buyer_envelope)),
         DataPart(
@@ -68,6 +96,7 @@ async def main() -> None:
     ]
 
     async with httpx.AsyncClient(timeout=60.0) as http:
+        # ── Discover the agent and create client ──────────────────────
         resolver = A2ACardResolver(
             httpx_client=http, base_url=args.seller_url
         )

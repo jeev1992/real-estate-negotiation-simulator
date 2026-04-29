@@ -1147,10 +1147,169 @@ offer_count: 1
 **File:** `adk_demos/a2a_10_wire_lifecycle.py` (terminal script)
 
 ### What it teaches
+The raw A2A protocol on the wire — hand-crafted JSON-RPC, Agent Card discovery, and task lifecycle states. No SDK helpers for the request — you see the exact HTTP calls.
+
+### A2A Protocol Objects (the building blocks)
+
+Before reading the output, understand these 4 objects:
+
+**1. Task** — the unit of work in A2A. Created when you POST `message/send`.
+
+```
+Task
+├── id: "03ca4e87-..."           ← unique identifier
+├── contextId: "4f0fff3e-..."    ← ties multiple tasks into one conversation
+├── status: "completed"          ← lifecycle: submitted → working → completed/failed
+├── history: [Message, ...]      ← all messages exchanged in this task
+└── artifacts: [Artifact, ...]   ← durable outputs (the "deliverable")
+```
+
+Think of a Task like a support ticket — you submit it, it gets worked on, it completes with a result.
+
+**2. Message** — one turn in the conversation.
+
+```
+Message
+├── messageId: "msg_4a6c..."
+├── role: "user" or "agent"      ← who sent it
+├── parts: [Part, ...]           ← the actual content (one or more Parts)
+├── contextId                    ← which conversation thread
+└── taskId                       ← which task this belongs to
+```
+
+**3. Part** — the atomic unit of content inside a Message. Three kinds:
+
+| Kind | What it carries | JSON shape |
+|------|----------------|------------|
+| **TextPart** | Plain text | `{"kind": "text", "text": "I offer $440K"}` |
+| **DataPart** | Structured JSON | `{"kind": "data", "data": {"price": 440000}}` |
+| **FilePart** | Binary file | `{"kind": "file", "file": {"uri": "...", "mimeType": "..."}}` |
+
+In demo 10, we used TextPart only. Demo 12 shows TextPart + DataPart together.
+
+**4. Artifact** — a durable output attached to the Task (not the Message).
+
+```
+Artifact
+├── artifactId: "dd72d5b4-..."
+└── parts: [Part, ...]           ← same Part types as Messages
+```
+
+Messages are conversational (the back-and-forth). Artifacts are the result — what the Task produced. Think: Messages = email thread, Artifact = the attached report.
+
+**How they relate to what you already know:**
+
+| A2A concept | ADK equivalent | MCP equivalent |
+|-------------|---------------|----------------|
+| Task | One `runner.run_async()` call | One `tools/call` request |
+| Message | User/agent turn in conversation | Request/response |
+| Part (TextPart) | `Content.parts[0].text` | `CallToolResult.content[0].text` |
+| Artifact | No direct equivalent | No direct equivalent |
+| contextId | Session ID | No equivalent (MCP is stateless) |
+| Task status | Event stream (`is_final_response()`) | Synchronous (returns when done) |
+
+### What happens in demo 10
+
+**Step 1 — Agent Card Discovery:**
+```
+GET /a2a/seller_agent/.well-known/agent-card.json → 200 OK
+
+Response:
+{
+  "name": "seller_agent",
+  "description": "Real estate seller agent for 742 Evergreen Terrace...",
+  "url": "http://localhost:8000/a2a/seller_agent",
+  "protocolVersion": "0.3.0",
+  "capabilities": {"streaming": false, "pushNotifications": false},
+  "skills": [{
+    "id": "negotiation_response",
+    "name": "Real Estate Seller Negotiation",
+    "description": "Responds to buyer offers with counter-offers or acceptance",
+    "tags": ["real_estate", "seller", "negotiation", "mcp"],
+    "examples": ["Buyer offers $438,000 with 45-day close"]
+  }]
+}
+```
+
+This is how an external client learns what the agent does, where to send messages, and what features are supported — before sending a single message. Like MCP's `tools/list` but for entire agents.
+
+**Step 2 — Valid Offer → Task Completed:**
+```
+POST /a2a/seller_agent  (JSON-RPC message/send)
+
+Request body:
+{
+  "jsonrpc": "2.0",
+  "id": "req_46866028",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "messageId": "msg_4a6c666c",
+      "role": "user",
+      "parts": [{"kind": "text", "text": "{...offer JSON...}"}]
+    }
+  }
+}
+
+Response (truncated):
+{
+  "result": {
+    "status": "completed",                          ← task finished successfully
+    "contextId": "4f0fff3e-...",                    ← use this for round 2 (demo 11)
+    "history": [Message(user), Message(agent)],     ← full conversation
+    "artifacts": [{
+      "artifactId": "dd72d5b4-...",
+      "parts": [{"kind": "text", "text": "Counter-offer at $477,000..."}]
+    }]
+  }
+}
+```
+
+The seller agent:
+- Spawned MCP tools (pricing + inventory servers)
+- Got market price: $462K estimated value
+- Got minimum acceptable price: $445K (seller-only tool)
+- Counter-offered at $477K with justification from $75K in upgrades
+- **Task status: `completed`** — the agent processed the request successfully
+
+**Step 3 — Broken Envelope → Still Completed (not failed):**
+```
+Request: {"from_agent": "buyer", "message": "broken"}  ← garbage, no session_id, no price
+
+Response:
+{
+  "result": {
+    "status": "completed",
+    "artifacts": [{"parts": [{"kind": "text",
+      "text": "Could you please resend your offer or question?"}]}]
+  }
+}
+```
+
+**Key insight:** The task didn't `fail` because the A2A protocol layer worked fine — valid JSON-RPC, valid message structure. The CONTENT was bad, but the LLM handled it gracefully. A task fails only on protocol errors or server crashes, not bad business logic input.
+
+**`completed` means "the agent processed the request" — not "the negotiation succeeded."**
 
 ### Concepts introduced
 
-### Key teaching points
+| Concept | Detail |
+|---------|--------|
+| **Agent Card** | JSON discovery document at `/.well-known/agent-card.json`. Contains name, description, skills, capabilities, URL |
+| **JSON-RPC `message/send`** | The A2A invocation method. Wraps a Message in a JSON-RPC envelope |
+| **Task lifecycle** | submitted → working → completed (or failed). `completed` = agent responded, not necessarily agreement |
+| **contextId** | Returned in the response. Reuse it in subsequent requests to thread a multi-turn conversation (demo 11) |
+| **Artifacts** | Durable outputs of the task. The counter-offer text lives here, not just in the message history |
+| **Parts** | Atomic content units: TextPart, DataPart, FilePart. Demo 10 uses TextPart only |
+| **Task vs Message vs Artifact** | Task = the work request. Messages = the conversation. Artifacts = the deliverables |
+| **Graceful degradation** | Bad input → LLM says "please try again" (completed), not a protocol crash (failed) |
+
+### Key teaching points for class
+
+1. **"MCP and A2A use the same pattern."** MCP: list_tools → tool schema → tools/call. A2A: Agent Card → skills → message/send. Same three operations, different level (tools vs agents).
+2. **"completed ≠ agreement."** Task status is about the PROTOCOL, not the BUSINESS LOGIC. The agent ran, it produced a response — that's `completed`. Whether the negotiation succeeded is in the response content.
+3. **"contextId is the threading key."** Without it, each message starts a new conversation. With it (demo 11), the seller remembers prior offers. It's A2A's equivalent of `session_id`.
+4. **"Artifacts are separate from messages."** The counter-offer text appears in BOTH the history (as a Message) and as an Artifact. Artifacts are for things you want to fetch later — like saving the final deal summary.
+5. **"No custom server code."** The Agent Card came from `agent.json`. The JSON-RPC endpoint was created by `adk web --a2a`. The seller agent is just a `root_agent = LlmAgent(...)` — ADK did the rest.
 
 ---
 
@@ -1159,10 +1318,48 @@ offer_count: 1
 **File:** `adk_demos/a2a_11_context_threading.py` (terminal script)
 
 ### What it teaches
+How `contextId` threads multiple A2A requests into one conversation. Without it, each message starts a new conversation and the agent forgets everything.
+
+### What happens
+
+The script sends 3 rounds of offers ($432K → $440K → $446K) to the seller agent, reusing the `contextId` from round 1:
+
+```
+Round 1: POST /a2a/seller_agent  (no contextId — server assigns one)
+         → Response includes contextId: "4498d50f-..."
+
+Round 2: POST /a2a/seller_agent  (+ contextId: "4498d50f-...")
+         → Seller sees round 1 history + round 2 message
+
+Round 3: POST /a2a/seller_agent  (+ contextId: "4498d50f-...")
+         → Seller sees rounds 1-2 history + round 3 message
+```
+
+### Actual results
+
+| Round | Offer | Seller's Response | Why |
+|-------|-------|------------------|-----|
+| 1 | $432K | "Below floor ($445K). Counter at $477K." | MCP tools returned min price = $445K |
+| 2 | $440K | "Still below $445K. Consider $477K." | Remembered round 1, still below floor |
+| 3 | $446K | **"Above $445K. We ACCEPT! Congratulations!"** | $446K > $445K floor → accepted immediately |
+
+**Same contextId across all 3 rounds:** `4498d50f-a61e-4a17-8c84-0ea13d49a283`
 
 ### Concepts introduced
 
-### Key teaching points
+| Concept | Detail |
+|---------|--------|
+| **`contextId`** | A string that ties multiple Tasks into one conversation. Assigned by the server on round 1, reused by the client on rounds 2+ |
+| **Conversation memory via protocol** | Without contextId, the seller would counter at $477K every time (no memory). With it, the seller adjusts based on prior offers |
+| **A2A threading vs ADK sessions** | `contextId` in A2A = `session_id` in ADK. Same concept (conversation continuity), different level (HTTP vs in-process) |
+| **Acceptance logic** | The seller instruction says "if offer >= minimum, ACCEPT immediately." Round 3 ($446K > $445K) triggered this — the seller remembered the floor from MCP tools |
+
+### Key teaching points for class
+
+1. **"contextId = session_id for HTTP."** In d03, session state persisted across turns within `adk web`. Here, `contextId` does the same across HTTP requests. Without it, every POST is a brand new conversation.
+2. **"The seller's response changed across rounds."** Round 1: "$432K is below floor." Round 2: "STILL below." Round 3: "ACCEPT." The seller remembered the negotiation history because all 3 rounds shared the same contextId.
+3. **"$446K crossed the $445K floor."** The acceptance was immediate — the seller didn't try to counter higher. This is the MCP-driven floor enforcement from `get_minimum_acceptable_price` combined with conversation context.
+4. **"This is what a real multi-round negotiation looks like over A2A."** Each round is an independent HTTP request, but contextId ties them together into one coherent negotiation.
 
 ---
 
@@ -1171,10 +1368,49 @@ offer_count: 1
 **File:** `adk_demos/a2a_12_parts_and_artifacts.py` (terminal script)
 
 ### What it teaches
+How to send multi-part Messages (TextPart + DataPart in one message) and inspect Artifacts on the response. Demonstrates the difference between conversational content (Parts in Messages) and durable outputs (Artifacts on Tasks).
+
+### What happened
+
+**Request sent with 2 Parts:**
+```
+parts[0]: TextPart  → {"price": 445000, "message": "Final-and-best at $445k."}
+parts[1]: DataPart  → {"hint": "machine-readable copy", "offer": {...}}
+```
+Same offer in two formats — human-readable text AND structured JSON. The agent can parse either.
+
+**Response message history showed 5 messages:**
+1. `role=user, 2 parts` — the multi-part offer we sent
+2. `role=agent, 3 DataParts` — MCP tool CALLS (get_market_price, get_minimum_acceptable_price, calculate_discount)
+3. `role=agent, 3 DataParts` — MCP tool RESULTS (structured responses from each tool)
+4. `role=agent, 1 TextPart` — the final acceptance text
+
+**Artifact:** The acceptance text was also attached as an Artifact:
+```json
+{
+  "artifactId": "f7ae8903-...",
+  "parts": [{"kind": "text", "text": "Thank you for your offer of $445,000... we accept!"}]
+}
+```
+
+**The seller ACCEPTED at $445K** — exactly at the floor price.
 
 ### Concepts introduced
 
-### Key teaching points
+| Concept | Detail |
+|---------|--------|
+| **Multi-part Messages** | One Message can carry multiple Parts of different types. TextPart for humans, DataPart for machines |
+| **DataPart** | Structured JSON content: `{"kind": "data", "data": {...}}`. Unlike TextPart (free text), DataPart is machine-parseable without LLM inference |
+| **Parts vs Artifacts** | Parts flow in Messages (conversational). Artifacts are attached to the completed Task (durable outputs). The same text can appear in both |
+| **Tool calls as DataParts** | MCP tool calls and results appear as DataParts in the message history — structured, not text |
+| **Artifact = deliverable** | Think of it as the final report. Messages = the email thread. Artifact = the attached PDF |
+
+### Key teaching points for class
+
+1. **"Use DataPart when you need both human and machine representations."** The offer was sent as TextPart (LLM reads it) AND DataPart (code parses it). Both travel in the same Message.
+2. **"Tool calls show up as DataParts in history."** The MCP tool calls and results are structured data, not text — you can programmatically inspect what tools were called without parsing text.
+3. **"Artifacts are separate from messages."** The acceptance text appears in BOTH the history (as a Message) and as an Artifact. Artifacts are for things you want to fetch later.
+4. **"$445K = exact floor = immediate acceptance."** The seller instruction says "if offer >= minimum, ACCEPT immediately." $445K = $445K floor → accepted.
 
 ---
 
@@ -1183,10 +1419,45 @@ offer_count: 1
 **File:** `adk_demos/a2a_13_streaming.py` (terminal script)
 
 ### What it teaches
+The `message/stream` method and why checking `capabilities.streaming` in the Agent Card matters before attempting streaming.
+
+### What happened
+
+```
+Server streaming capability: False
+WARN: Server does not advertise streaming.
+Error: Expected Content-Type 'text/event-stream', got 'application/json'
+```
+
+The demo:
+1. Fetched the Agent Card → `capabilities.streaming = false`
+2. Printed a warning
+3. Tried `message/stream` anyway → server returned JSON (not SSE) → client errored
+
+### Why streaming failed
+
+Our `agent.json` declares `"streaming": false`. The ADK A2A server respects this — it doesn't serve SSE streams for agents that don't advertise the capability. The A2A SDK correctly rejects the non-SSE response.
+
+This is **correct protocol behavior**, not a bug:
+- The Agent Card TELLS you streaming isn't supported
+- The client WARNED you
+- Attempting it anyway fails with a clear error
 
 ### Concepts introduced
 
-### Key teaching points
+| Concept | Detail |
+|---------|--------|
+| **`message/stream`** | A2A's streaming method. Instead of waiting for full response, receives SSE events as the task progresses |
+| **`capabilities.streaming`** | Agent Card field. Clients MUST check this before attempting streaming |
+| **SSE (Server-Sent Events)** | The transport for streaming. Server sends `text/event-stream` content type with incremental events |
+| **Graceful capability checking** | Good A2A clients check the Agent Card's capabilities before calling methods the agent doesn't support |
+
+### Key teaching points for class
+
+1. **"Check capabilities before calling."** The Agent Card declares what the agent supports. Don't assume streaming is available — check `capabilities.streaming` first.
+2. **"This is why Agent Cards exist."** Without the card, you'd try streaming and get a cryptic error. With it, you know upfront.
+3. **"To enable streaming, set `streaming: true` in agent.json."** Then restart `adk web --a2a` and the demo would receive SSE events.
+4. **"Streaming is for UX, not correctness."** `message/send` gives the same result — you just wait longer. Streaming lets you show "seller is thinking..." progress.
 
 ---
 

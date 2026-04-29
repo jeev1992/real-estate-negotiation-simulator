@@ -816,10 +816,10 @@ In our workshop, `agent.json` in each agent folder defines this card. `adk web -
 adk web --a2a m3_adk_multiagents/negotiation_agents/
 
 # Terminal 2: Run protocol demos
-python adk_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
-python adk_demos/a2a_11_context_threading.py ...
-python adk_demos/a2a_12_parts_and_artifacts.py ...
-python adk_demos/a2a_13_streaming.py ...
+python adk_demos/a2a_10_wire_lifecycle.py
+python adk_demos/a2a_11_context_threading.py
+python adk_demos/a2a_12_parts_and_artifacts.py
+python adk_demos/a2a_13_streaming.py
 ```
 
 **What `--a2a` adds:**
@@ -854,35 +854,49 @@ These demos are terminal scripts, not adk web dropdown agents. They talk to the 
 **Body:**
 
 **Three steps:**
-1. `GET /seller_agent/.well-known/agent-card.json` — discover
-2. `POST /seller_agent` (valid offer) — task: submitted → working → completed
-3. `POST /seller_agent` (broken envelope) — task: failed
+1. `GET /a2a/seller_agent/.well-known/agent-card.json` — discover the agent
+2. `POST /a2a/seller_agent` (valid offer $440K) — task: `completed`, counter-offer at $477K
+3. `POST /a2a/seller_agent` (broken envelope) — task: still `completed` (LLM handled it gracefully)
 
 **The JSON-RPC body:**
 ```json
 {"jsonrpc": "2.0", "method": "message/send",
- "params": {"message": {"parts": [{"kind": "text", "text": "..."}]}}}
+ "params": {"message": {"parts": [{"kind": "text", "text": "...offer JSON..."}]}}}
 ```
 
-**Key takeaway:** MCP = agent ↔ tool. A2A = agent ↔ agent. Same JSON-RPC pattern, different level.
+**Response contains:**
+- `status: "completed"` — the agent processed the request
+- `contextId` — reuse for round 2 (demo 11)
+- `artifacts` — the counter-offer text as a durable output
+- `history` — full message exchange
+
+**Key insight:** `completed` means the PROTOCOL worked — not that the negotiation succeeded. Bad data → LLM says "please try again" (completed). Protocol error → `failed`. Business logic is in the content, not the status.
 
 ---
 
 ## Slide 27: Demo 11 — Context Threading
 
-**Title:** Demo 11 — Multi-Turn Conversations via contextId
+**Title:** Demo 11 — Multi-Turn Negotiations via contextId
 
 **Body:**
 
+Three rounds, same `contextId`, the seller remembers everything:
+
+| Round | Offer | Seller's Response |
+|-------|-------|------------------|
+| 1 | $432K | "Below floor ($445K). Counter at $477K." |
+| 2 | $440K | "STILL below $445K. Consider $477K." |
+| 3 | $446K | **"Above $445K. We ACCEPT! Congratulations!"** |
+
 ```
-Round 1: POST → get contextId from response
+Round 1: POST → server assigns contextId
 Round 2: POST + contextId → seller remembers round 1
-Round 3: POST + contextId → seller sees full history
+Round 3: POST + contextId → seller sees full history → ACCEPTS
 ```
 
-Without `contextId`, each message starts a NEW conversation — the seller forgets everything.
+Without `contextId`, the seller would counter at $477K every time — no memory of prior offers.
 
-**Key takeaway:** `contextId` is A2A's equivalent of session state. It ties multiple requests into one conversation.
+**Key takeaway:** `contextId` = A2A's session_id. It ties HTTP requests into one conversation. The seller accepted in round 3 because it remembered the floor price from round 1's MCP tool call.
 
 ---
 
@@ -892,16 +906,33 @@ Without `contextId`, each message starts a NEW conversation — the seller forge
 
 **Body:**
 
-**Demo 12 — Parts & Artifacts:**
-- TextPart (human-readable) + DataPart (machine-readable) in one message
-- Artifacts = durable outputs attached to a Task (reports, summaries)
-- Parts are conversational; Artifacts are persistent
+**Demo 12 — Parts & Artifacts (actual results):**
+
+Sent a multi-part message: TextPart (human-readable) + DataPart (machine-readable) in one Message.
+
+```
+Request:  parts[0] = TextPart("Final-and-best at $445k")
+          parts[1] = DataPart({hint: "machine copy", offer: {...}})
+
+Response: MCP tool calls as DataParts (3 tools called)
+          Final text: "We accept your offer of $445,000!"
+          Artifact: same acceptance text as durable output
+```
+
+| Part type | Purpose | Example |
+|-----------|---------|--------|
+| TextPart | Human-readable text | Offer message |
+| DataPart | Structured JSON | Machine-parseable offer |
+| Artifact | Durable output on Task | The final acceptance |
+
+Parts = conversational (in Messages). Artifacts = deliverables (on Tasks).
 
 **Demo 13 — Streaming:**
 - `message/stream` instead of `message/send`
-- SSE events: TaskStatusUpdate, TaskArtifactUpdate
-- See submitted → working → completed in real time
-- `final: true` marker on the last event
+- Requires `capabilities.streaming: true` in Agent Card
+- Our agents declare `streaming: false` → demo shows the capability check + warning
+- When enabled: SSE events arrive in real time (submitted → working → completed)
+- Streaming is for UX ("seller is thinking..."), not for correctness — `message/send` gives the same result
 
 ---
 
