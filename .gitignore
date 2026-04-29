@@ -4,6 +4,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.adk/
 create_slides.py
 real-estate-negotiation-simulator.pptx
 run_all.ps1
