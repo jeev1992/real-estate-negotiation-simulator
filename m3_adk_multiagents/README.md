@@ -21,6 +21,7 @@ This module teaches Google's Agent Development Kit (ADK) from first principles, 
 | A2A context threading | Demo 11 (terminal script) |
 | A2A parts & artifacts | Demo 12 (terminal script) |
 | A2A streaming (`message/stream`) | Demo 13 (terminal script) |
+| A2A orchestrated negotiation | Demo 14 / `a2a_14_orchestrated_negotiation.py` |
 | Full negotiation orchestration | `negotiation_agents/negotiation` |
 
 ---
@@ -32,7 +33,7 @@ m3_adk_multiagents/
   negotiation_agents/              ← adk web negotiation_agents/  (3 agents in dropdown)
     buyer_agent/agent.py           LlmAgent + MCPToolset (pricing)
     seller_agent/agent.py          LlmAgent + MCPToolset (pricing + inventory)
-    negotiation/agent.py           LoopAgent ↔ SequentialAgent orchestration
+    negotiation/agent.py           LoopAgent ↔ SequentialAgent + MCP tools + submit_decision
   adk_demos/                       ← adk web adk_demos/  (9 agents in dropdown)
     d01_basic_agent/agent.py       Bare LlmAgent + function tool
     d02_mcp_tools/agent.py         LlmAgent + MCPToolset (pricing server)
@@ -47,6 +48,7 @@ m3_adk_multiagents/
     a2a_11_context_threading.py    Terminal script: contextId across rounds
     a2a_12_parts_and_artifacts.py  Terminal script: multi-part messages + artifacts
     a2a_13_streaming.py            Terminal script: message/stream SSE events
+  a2a_14_orchestrated_negotiation.py  Terminal script: full buyer↔seller negotiation over A2A
   exercises/
   solution/
   notes/
@@ -139,6 +141,9 @@ python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http:/
 python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m3_adk_multiagents/adk_demos/a2a_13_streaming.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+
+# A2A orchestrated negotiation (buyer ↔ seller via Agent Cards)
+python m3_adk_multiagents/a2a_14_orchestrated_negotiation.py
 ```
 
 ---
@@ -153,9 +158,9 @@ Declarative `LlmAgent` with `MCPToolset` connecting to the pricing MCP server. A
 
 Same pattern, but connects to **two** MCP servers (pricing + inventory). The seller has access to `get_minimum_acceptable_price` — the buyer does not. This is the same information asymmetry from Module 2, now declarative.
 
-### `negotiation_agents/negotiation/` — Orchestrator (LoopAgent + SequentialAgent)
+### `negotiation_agents/negotiation/` — Orchestrator (LoopAgent + SequentialAgent + MCP)
 
-A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)`. Each round, the buyer proposes via `output_key="buyer_offer"` and the seller reads `{buyer_offer}` and responds. An `after_agent_callback` checks for "ACCEPT" and escalates (breaks the loop) when agreement is reached.
+A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents have real MCP tools. The buyer calls `get_market_price` and `calculate_discount` before each offer. The seller calls `get_minimum_acceptable_price` and `get_inventory_level`, then calls a `submit_decision` tool to write `{"action": "ACCEPT", "price": 445000}` to state. The `after_agent_callback` reads this structured dict — not free text — to detect agreement.
 
 ---
 
@@ -176,6 +181,7 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)`. Each round, the bu
 | 11 | A2A context threading | `contextId` ties multiple rounds into one conversation |
 | 12 | A2A parts & artifacts | Multi-part Messages (TextPart + DataPart), inspect Artifacts |
 | 13 | A2A streaming | `message/stream` SSE events — see status transitions in real time |
+| 14 | A2A orchestration | Full buyer↔seller negotiation — Agent Card discovery + multi-round A2A messages |
 
 ---
 

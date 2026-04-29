@@ -1468,11 +1468,310 @@ The `message/stream` method — receiving incremental SSE events as the agent pr
 
 ### buyer_agent
 
+**File:** `negotiation_agents/buyer_agent/agent.py` (~70 lines)
+
+**What it is:** A standalone `LlmAgent` with `MCPToolset(pricing_server)` and a `before_tool_callback` allowlist. Represents the buyer's perspective — can see market prices and discount analysis but NOT the seller's floor price.
+
+**Key code elements:**
+
+```python
+_BUYER_ALLOWED_TOOLS = {
+    "get_market_price",
+    "calculate_discount",
+    "get_property_tax_estimate",
+}
+
+def _enforce_buyer_allowlist(tool, args, tool_context):
+    if tool.name not in _BUYER_ALLOWED_TOOLS:
+        return {"error": f"tool '{tool.name}' is not authorized for the buyer"}
+    return None
+
+root_agent = LlmAgent(
+    name="buyer_agent",
+    model="openai/gpt-4o",
+    instruction="... budget $460K max, target $445K–$455K ...",
+    tools=[MCPToolset(pricing_server)],
+    before_tool_callback=_enforce_buyer_allowlist,
+)
+```
+
+**Concepts used:** LlmAgent (d01), MCPToolset (d02), before_tool_callback (d08)
+
+**session.db after running (2 queries):**
+
+| Table | Contents |
+|-------|----------|
+| **sessions** | 2 rows (1 used session, 1 empty) |
+| **events** | 8 events across 2 queries |
+| **app_states** | Empty |
+| **user_states** | Empty |
+
+**Full event flow (8 events):**
+
+```
+Query 1: "What's 742 Evergreen Terrace worth?"
+
+  Event 1 | user:        "What's 742 Evergreen Terrace worth?"
+  Event 2 | buyer_agent: tool_call: get_market_price({"address": "742 Evergreen Terrace, Austin, TX 78701"})
+  Event 3 | buyer_agent: tool_result: {address, property_details, estimated_value: 462000, ...}
+  Event 4 | buyer_agent: "The estimated market value is $462,000..."
+
+Query 2: "I want to make an offer. What do you recommend?"
+
+  Event 5 | user:        "I want to make an offer. What do you recommend?"
+  Event 6 | buyer_agent: tool_call: calculate_discount(base=485000, balanced, 18 DOM, good)
+  Event 7 | buyer_agent: tool_result: {suggested_offer_prices, negotiation_tips, ...}
+  Event 8 | buyer_agent: "I recommend an initial offer of ~$425,000 (12% below asking)"
+```
+
+**Key observations:**
+
+1. **LLM inferred extra parameters**: User just said "make an offer" — the LLM supplied `base_price: 485000`, `market_condition: "balanced"`, `days_on_market: 18`, `property_condition: "good"` from context (listing price from instruction + reasonable defaults from the tool schema).
+
+2. **Matched the instruction's strategy**: The instruction says "Round 1: offer ~12% below asking (~$425,000)" and the LLM did exactly that.
+
+3. **Only pricing tools available**: The allowlist blocks anything not in `_BUYER_ALLOWED_TOOLS`. If the LLM tried to call `get_minimum_acceptable_price`, it would get `{"error": "not authorized"}`.
+
 ### seller_agent
+
+**File:** `negotiation_agents/seller_agent/agent.py` (~85 lines)
+
+**What it is:** A standalone `LlmAgent` with TWO `MCPToolset`s (pricing + inventory) and a `before_tool_callback` allowlist. Has access to `get_minimum_acceptable_price` — the seller's secret floor.
+
+**Key code elements:**
+
+```python
+_SELLER_ALLOWED_TOOLS = {
+    "get_market_price",
+    "calculate_discount",
+    "get_inventory_level",
+    "get_minimum_acceptable_price",  # seller-only secret
+}
+
+root_agent = LlmAgent(
+    name="seller_agent",
+    model="openai/gpt-4o",
+    instruction="... never go below minimum from get_minimum_acceptable_price ...",
+    tools=[
+        MCPToolset(pricing_server),
+        MCPToolset(inventory_server),    # ← second MCP server
+    ],
+    before_tool_callback=_enforce_seller_allowlist,
+)
+```
+
+**Concepts used:** LlmAgent (d01), MCPToolset ×2 (d02), before_tool_callback (d08), information asymmetry
+
+**Buyer vs Seller — the tool gap:**
+
+| Tool | Buyer | Seller |
+|------|-------|--------|
+| `get_market_price` | Yes | Yes |
+| `calculate_discount` | Yes | Yes |
+| `get_property_tax_estimate` | Yes | No |
+| `get_inventory_level` | No | Yes |
+| `get_minimum_acceptable_price` | **No** | **Yes** |
+
+**session.db after running (2 queries):**
+
+| Table | Contents |
+|-------|----------|
+| **sessions** | 2 rows |
+| **events** | 6 events across 2 queries |
+| **app_states** | Empty |
+| **user_states** | Empty |
+
+**Full event flow (6 events):**
+
+```
+Query 1: "Buyer offers $440,000 with 30-day close"
+
+  Event 1 | user:         "Buyer offers $440,000 with 30-day close"
+  Event 2 | seller_agent: tool_call: get_market_price(...)
+                          tool_call: get_inventory_level(...)
+                          tool_call: get_minimum_acceptable_price(...)   ← ALL 3 IN PARALLEL
+  Event 3 | seller_agent: tool_results: [market=$462K, inventory=hot, floor=$445K]
+  Event 4 | seller_agent: "$440,000 is below our minimum of $445,000. COUNTER at $477,000."
+
+Query 2: "Buyer increases to $446,000"
+
+  Event 5 | user:         "Buyer increases to $446,000"
+  Event 6 | seller_agent: "$446,000 is above $445,000. ACCEPT."   ← NO tool calls (remembered)
+```
+
+**Key observations:**
+
+1. **3 tools in ONE turn (parallel)**: The LLM called `get_market_price`, `get_inventory_level`, and `get_minimum_acceptable_price` simultaneously. Unlike d09's parallel pitfall, these are truly independent — no data dependencies, so parallel is correct here.
+
+2. **No tool calls on query 2**: The seller remembered the floor price ($445K) from query 1's session history. It didn't need to re-call the tool. This shows session memory working correctly.
+
+3. **Immediate acceptance at $446K**: The instruction says "if offer >= minimum, ACCEPT immediately." $446K > $445K → accepted, no counter-offer.
+
+4. **Two MCPToolset instances**: The seller connects to two separate MCP servers — `pricing_server.py` and `inventory_server.py`. ADK merges their tools into one unified set for the LLM.
 
 ### negotiation orchestrator
 
+**File:** `negotiation_agents/negotiation/agent.py` (~100 lines)
+
+**What it is:** A `LoopAgent` wrapping a `SequentialAgent(buyer, seller)` where both agents have real MCP tools. The seller calls a `submit_decision` tool to write a structured signal to state — the `after_agent_callback` reads that dict, not free text.
+
+**Key code elements:**
+
+```python
+def submit_decision(action: str, price: int, tool_context: ToolContext) -> dict:
+    """Structured decision signal — writes to state, not prose."""
+    action_upper = action.strip().upper()
+    if action_upper not in ("ACCEPT", "COUNTER"):
+        return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
+    tool_context.state["seller_decision"] = {"action": action_upper, "price": price}
+    return {"recorded": action_upper, "price": price}
+
+def _check_agreement(callback_context):
+    """Reads structured state — NOT free text."""
+    decision = callback_context.state.get("seller_decision")
+    if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        callback_context.actions.escalate = True
+    return None
+
+buyer = LlmAgent(output_key="buyer_offer",
+    tools=[MCPToolset(pricing_server)],
+    before_tool_callback=_enforce_buyer_allowlist,
+    before_agent_callback=_init_round_state, ...)
+seller = LlmAgent(output_key="seller_response",
+    tools=[MCPToolset(pricing), MCPToolset(inventory), submit_decision],
+    before_tool_callback=_enforce_seller_allowlist,
+    after_agent_callback=_check_agreement, ...)
+
+negotiation_round = SequentialAgent(sub_agents=[buyer, seller])
+root_agent = LoopAgent(sub_agents=[negotiation_round], max_iterations=5)
+```
+
+**Concepts used:** LoopAgent (d06), SequentialAgent (d04), MCPToolset (d02), output_key + {placeholder} (d04), after_agent_callback escalation (d06), before_tool_callback allowlists (d08), submit_decision tool (structured signal)
+
+**Why `submit_decision` instead of text parsing?**
+
+The seller's MCP tool `get_minimum_acceptable_price` returns data containing the word "acceptable." If the callback did `"ACCEPT" in response.upper()`, it would match "ACCEPTABLE" and false-trigger on every counter-offer that mentions the floor price. This is exactly the fragile parsing problem M1's FSM avoids.
+
+The `submit_decision` tool writes a structured dict: `{"action": "ACCEPT", "price": 445000}`. The callback reads `state["seller_decision"]["action"]` — a dict field, not prose. No substring matching, no regex, no false positives.
+
+**The `{seller_response}` pitfall and fix:**
+
+On round 1, the buyer's instruction contains `{seller_response}` but the seller hasn't responded yet — the key doesn't exist in session state. ADK throws: `Context variable not found: 'seller_response'`.
+
+Fix: `before_agent_callback=_init_round_state` on the buyer. It checks if the key exists; if not, writes a default string.
+
+**session.db after running (1 query, "Start negotiation"):**
+
+| Table | Contents |
+|-------|----------|
+| **sessions** | 1 row — state has `buyer_offer`, `seller_response`, and `seller_decision` |
+| **events** | 20 events: MCP tool calls + LLM responses + submit_decision calls |
+| **app_states** | Empty |
+| **user_states** | Empty |
+
+**Full event flow (20 events, 2 negotiation rounds + post-acceptance):**
+
+```
+  Event 1  | user:   "Start negotiation for 742 Evergreen Terrace"
+
+Round 1 (buyer calls MCP tools, seller calls MCP tools + submit_decision):
+  Event 3  | buyer:  tool_call: get_market_price + calculate_discount
+  Event 4  | buyer:  tool_results (market data: $462K estimated, $485K list)
+  Event 5  | buyer:  "Offer: $425,800. Based on market data..."
+  Event 6  | seller: tool_call: get_minimum_acceptable_price + get_inventory_level
+  Event 7  | seller: tool_results (floor=$445K, hot market)
+  Event 8  | seller: "COUNTER $477,000" + tool_call: submit_decision(COUNTER, 477000)
+  Event 9  | seller: tool_result: {recorded: COUNTER, price: 477000}
+  Event 10 | seller: "I've recorded the counter-offer at $477,000."
+
+Round 2 (buyer jumps to target, seller accepts):
+  Event 11 | buyer:  "Offer: $445,000..."
+  Event 12 | seller: "Accepted" + tool_call: submit_decision(ACCEPT, 445000)
+  Event 13 | seller: tool_result: {recorded: ACCEPT, price: 445000}  ← ESCALATE fires!
+  Event 14 | seller: "The offer of $445,000 has been accepted."
+
+Post-acceptance (current iteration completes):
+  Event 15-20 | buyer/seller congratulatory messages
+```
+
+**State tab after completion:**
+```json
+{
+  "seller_decision": {"action": "ACCEPT", "price": 445000},
+  "buyer_offer": "...(last congratulatory message)...",
+  "seller_response": "...(last congratulatory message)..."
+}
+```
+
+**Key observations:**
+
+1. **MCP tools grounded every decision**: The buyer used `get_market_price` ($462K estimated) to justify $425K. The seller used `get_minimum_acceptable_price` ($445K floor) and `get_inventory_level` (hot market) to justify $477K counter.
+
+2. **`submit_decision` is the structured signal**: Events 8–9 show `submit_decision(COUNTER, 477000)` → `{recorded: COUNTER}`. Events 12–13 show `submit_decision(ACCEPT, 445000)` → `{recorded: ACCEPT}` → escalation fires. No text parsing.
+
+3. **Buyer jumped from $425K to $445K in round 2**: With MCP data, the buyer had enough market context to skip incremental increases and go straight to the target range.
+
+4. **Post-acceptance chatter still occurs**: Escalation stops the NEXT iteration, not the current one — the remaining sub-agents in the SequentialAgent complete.
+
+5. **`seller_decision` dict survives in state**: Unlike `seller_response` (overwritten by chatter), the `seller_decision` dict retains the final structured answer: `{"action": "ACCEPT", "price": 445000}`.
+
+### A2A Orchestrated Negotiation (Demo 14)
+
+**File:** `m3_adk_multiagents/a2a_14_orchestrated_negotiation.py`
+
+**What it teaches:** How to orchestrate a full buyer ↔ seller negotiation using Agent Card discovery and A2A message/send — two separate agents communicating over HTTP with a script as matchmaker.
+
+**How to run:**
+```bash
+# Terminal 1:
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+
+# Terminal 2:
+python m3_adk_multiagents/a2a_14_orchestrated_negotiation.py
+```
+
+**What the script does:**
+1. Discovers both agents via `GET /.well-known/agent-card.json`
+2. Sends "make an offer" to buyer_agent → gets offer text
+3. Forwards buyer's offer to seller_agent → gets COUNTER or ACCEPT
+4. If COUNTER: sends counter back to buyer for next round
+5. Repeats until ACCEPT or max rounds
+
+**Actual output (2 rounds):**
+```
+STEP 1: Agent Card Discovery
+  Buyer:  name=buyer_agent, skills=[Property Valuation]
+  Seller: name=seller_agent, skills=[Real Estate Seller Negotiation]
+
+STEP 2: Multi-Round Negotiation
+  Round 1: Buyer → $425K (MCP tools) | Seller → COUNTER $477K (MCP tools)
+  Round 2: Buyer → $445K            | Seller → ACCEPT $445K
+  DEAL REACHED in round 2!
+
+  Buyer  contextId: e4c33941-...
+  Seller contextId: 41036068-...
+  Total A2A messages: 4
+```
+
+**Key details:**
+- **Separate contextIds**: Each agent has its own conversation thread. The script bridges them.
+- **Neither agent knows about the other**: They only see messages from the script.
+- **Each agent calls its own MCP tools**: Buyer calls pricing, seller calls pricing + inventory.
+- **4 A2A messages total**: 2 to buyer, 2 to seller.
+
 ### Key teaching points
+
+1. **"Information asymmetry is the design."** Buyer sees pricing tools. Seller sees pricing + inventory + floor price. The allowlist callbacks enforce this at runtime — it's not just prompt-level trust.
+
+2. **"The orchestrator composes everything."** LoopAgent (d06) + SequentialAgent (d04) + MCPToolset (d02) + output_key (d04) + callbacks (d08) + submit_decision tool. Students can identify every piece from the demos.
+
+3. **"Use structured signals, not text parsing."** `submit_decision` writes `{"action": "ACCEPT", "price": 445000}` to state. The callback reads a dict field. The seller's MCP tool returns "minimum acceptable price" — text parsing would match "ACCEPT" in "acceptable" and false-trigger.
+
+4. **"Watch for `{placeholder}` initialization."** If agent B reads `{key}` from agent A's output, but A hasn't run yet (round 1), ADK throws. Fix: `before_agent_callback` to initialize the key.
+
+5. **"Escalation stops the NEXT iteration, not the current one."** After ACCEPT, the current SequentialAgent's remaining sub-agents still complete. This produces congratulatory chatter.
+
+6. **"The A2A demo shows the production pattern."** Agents discovered via Agent Cards, communicating via JSON-RPC, each with separate contextIds. The script is just a matchmaker — swap it for another agent, and you have agent-to-agent negotiation over HTTP.
 
 ---
 
@@ -1483,19 +1782,21 @@ The `message/stream` method — receiving incremental SSE events as the agent pr
 | `LlmAgent` | d01 | Every demo |
 | `root_agent` convention | d01 | Every adk web demo |
 | Function tools | d01 | d03, d08, d09 |
-| `MCPToolset` | d02 | buyer_agent, seller_agent |
+| `MCPToolset` | d02 | buyer_agent, seller_agent, negotiation orchestrator |
 | `ToolContext` + state | d03 | d09 |
 | `output_key` + `{placeholder}` | d04 | d05, negotiation |
 | `SequentialAgent` | d04 | negotiation |
 | `ParallelAgent` | d05 | — |
 | `LoopAgent` + escalation | d06 | negotiation |
 | `AgentTool` | d07 | — |
-| Callbacks (before/after) | d08 | buyer_agent, seller_agent |
+| Callbacks (before/after) | d08 | buyer_agent, seller_agent, negotiation |
 | Event stream | d09 | — |
-| Agent Card | a2a_10 | a2a_11, a2a_12, a2a_13 |
-| `contextId` threading | a2a_11 | — |
+| Agent Card | a2a_10 | a2a_11, a2a_12, a2a_13, a2a_14 |
+| `contextId` threading | a2a_11 | a2a_14 |
 | Parts (Text/Data/File) | a2a_12 | — |
 | Artifacts | a2a_12 | — |
 | `message/stream` SSE | a2a_13 | — |
-| Information asymmetry | buyer vs seller | — |
-| `before_tool_callback` allowlist | d08 | buyer_agent, seller_agent |
+| Information asymmetry | buyer vs seller | negotiation orchestrator |
+| `before_tool_callback` allowlist | d08 | buyer_agent, seller_agent, negotiation |
+| Structured decision tool | negotiation | a2a_14 (detection) |
+| A2A orchestration | a2a_14 | — |

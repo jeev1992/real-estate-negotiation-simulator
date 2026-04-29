@@ -1041,17 +1041,124 @@ With `message/send` you'd see only the final result. Streaming shows every step:
 
 ---
 
-## Slide 34: Negotiation Agents
+## Slide 34: Buyer vs Seller — Information Asymmetry
 
-**Title:** Putting It All Together — The Negotiation System
+**Title:** Information Asymmetry — The Design Point
 
 **Body:**
 
+The buyer and seller see DIFFERENT tools — that's the key architectural decision:
+
 ```
-negotiation_agents/
-  buyer_agent/    → LlmAgent + MCPToolset(pricing) + allowlist callback
-  seller_agent/   → LlmAgent + MCPToolset(pricing + inventory) + allowlist
-  negotiation/    → LoopAgent(SequentialAgent(buyer, seller))
+buyer_agent/agent.py                    seller_agent/agent.py
+─────────────────────                   ─────────────────────
+MCPToolset(pricing_server)              MCPToolset(pricing_server)
+                                        MCPToolset(inventory_server)  ← EXTRA
+
+_BUYER_ALLOWED_TOOLS = {                _SELLER_ALLOWED_TOOLS = {
+  "get_market_price",                     "get_market_price",
+  "calculate_discount",                   "calculate_discount",
+  "get_property_tax_estimate",            "get_inventory_level",
+}                                         "get_minimum_acceptable_price",  ← SECRET
+                                        }
+```
+
+**What each side knows:**
+
+| Data | Buyer | Seller |
+|------|-------|--------|
+| Market price ($462K) | Yes | Yes |
+| Discount analysis | Yes | Yes |
+| Inventory levels | No | Yes |
+| **Floor price ($445K)** | **No** | **Yes** |
+
+The seller knows the minimum acceptable price. The buyer has to guess. This mirrors real-world negotiations where each party has private information.
+
+**How it's enforced:**
+- `before_tool_callback` = allowlist (d08 pattern). Even if the LLM tries to call `get_minimum_acceptable_price`, the callback blocks it and returns `{"error": "not authorized"}`.
+- The LLM can't bypass a callback — it's deterministic, not suggestive.
+
+```bash
+# Run both standalone agents:
+adk web m3_adk_multiagents/negotiation_agents/
+# Select buyer_agent or seller_agent from the dropdown
+```
+
+**Try these:**
+
+| Agent | Question | Expected |
+|-------|----------|----------|
+| buyer_agent | "What's 742 Evergreen Terrace worth?" | Calls `get_market_price` → $462K |
+| buyer_agent | "I want to make an offer. What do you recommend?" | Calls `calculate_discount` → ~$425K |
+| seller_agent | "Buyer offers $440,000 with 30-day close" | Calls 3 tools in parallel, counters at $477K |
+| seller_agent | "Buyer increases to $446,000" | Accepts (above $445K floor) |
+
+---
+
+## Slide 35: Buyer & Seller — Results
+
+**Title:** Buyer & Seller — What We Observed
+
+**Body:**
+
+**Buyer agent (8 events, 2 queries):**
+```
+Query 1: "What's 742 Evergreen Terrace worth?"
+  → get_market_price → $462K estimated value, $485K list price
+  → "The estimated market value is $462,000..."
+
+Query 2: "I want to make an offer. What do you recommend?"
+  → calculate_discount(base=485K, balanced, 18 DOM, good condition)
+  → "I recommend an initial offer of ~$425,000 (12% below asking)"
+```
+
+**Seller agent (6 events, 2 queries):**
+```
+Query 1: "Buyer offers $440,000 with 30-day close"
+  → 3 tools called IN PARALLEL:
+    get_market_price + get_inventory_level + get_minimum_acceptable_price
+  → "The offer of $440,000 is below our minimum of $445,000.
+     COUNTER at $477,000."
+
+Query 2: "Buyer increases to $446,000"
+  → NO tool calls (remembered floor from query 1)
+  → "The offer of $446,000 is above $445,000. ACCEPT."
+```
+
+**Key observations:**
+1. **Seller called 3 tools in ONE turn** — GPT-4o parallelized the independent lookups. Unlike d09 (where parallel was dangerous), here all 3 tools are truly independent.
+2. **Seller remembered the floor on query 2** — session state kept the conversation history, so it didn't need to re-call `get_minimum_acceptable_price`.
+3. **Buyer never saw the floor** — its allowlist only permits pricing tools, not inventory tools.
+
+---
+
+## Slide 36: Negotiation Orchestrator — Composition
+
+**Title:** The Orchestrator — Every Demo in One File
+
+**Body:**
+
+```python
+# negotiation/agent.py — the complete composition
+
+# Structured decision tool — no text parsing
+def submit_decision(action: str, price: int, tool_context: ToolContext) -> dict:
+    tool_context.state["seller_decision"] = {"action": action.upper(), "price": price}
+    return {"recorded": action.upper(), "price": price}
+
+def _check_agreement(callback_context):
+    decision = callback_context.state.get("seller_decision")
+    if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        callback_context.actions.escalate = True
+
+buyer = LlmAgent(output_key="buyer_offer",
+    tools=[MCPToolset(pricing_server)], ...)     # ← real MCP tools
+seller = LlmAgent(output_key="seller_response",
+    tools=[MCPToolset(pricing), MCPToolset(inventory), submit_decision],
+    after_agent_callback=_check_agreement, ...)  # ← reads structured state
+
+root_agent = LoopAgent(sub_agents=[SequentialAgent([buyer, seller])],
+    max_iterations=5)
 ```
 
 **Every demo concept appears here:**
@@ -1059,40 +1166,129 @@ negotiation_agents/
 | Concept | Where |
 |---------|-------|
 | LlmAgent (d01) | buyer, seller |
-| MCPToolset (d02) | both agents |
-| State (d03) | output_key passing |
+| MCPToolset (d02) | buyer: pricing. seller: pricing + inventory |
+| `output_key` + `{placeholder}` (d04) | buyer writes → seller reads |
 | SequentialAgent (d04) | buyer → seller per round |
-| LoopAgent (d06) | negotiation rounds |
-| Callbacks (d08) | tool allowlists |
-| A2A (d10) | `adk web --a2a` |
-
-This is the payoff. Every primitive from d01–d09 is composed in the negotiation. Students can read this code and recognize every piece.
+| LoopAgent + escalation (d06) | negotiation rounds |
+| Callbacks (d08) | tool allowlists + agreement check |
+| `submit_decision` tool | Structured signal — not text parsing |
 
 **Diagram: How It All Connects**
 ```
          LoopAgent (d06)  max_iterations=5
-         ┌─────────────────────────────────────┐
-         │  SequentialAgent (d04)               │
-         │  ┌───────────────┐  ┌─────────────┐ │
-    ┌───▶│  │ buyer (d01)   │─▶│ seller (d01)│ │
-    │    │  │ +MCPToolset   │  │ +MCPToolset │ │
-    │    │  │  (d02)        │  │  ×2 (d02)   │ │
-    │    │  │ +allowlist    │  │ +allowlist  │ │
-    │    │  │  (d08)        │  │  (d08)      │ │
-    │    │  └───────────────┘  └──────┬──────┘ │
-    │    │                            │        │
-    │    │              after_agent_callback    │
-    │    │              ACCEPT? → escalate      │
-    │    └─────────────────────────────────────┘
+         ┌───────────────────────────────────────────┐
+         │  SequentialAgent (d04)                     │
+         │  ┌───────────────┐  ┌───────────────────┐ │
+    ┌───▶│  │ buyer (d01)   │─▶│ seller (d01)      │ │
+    │    │  │ +MCPToolset   │  │ +MCPToolset ×2    │ │
+    │    │  │  (d02)        │  │  (d02)            │ │
+    │    │  │ +allowlist    │  │ +allowlist (d08)  │ │
+    │    │  │  (d08)        │  │ +submit_decision  │ │
+    │    │  └───────────────┘  └────────┬──────────┘ │
+    │    │                              │            │
+    │    │           after_agent_callback             │
+    │    │           state["seller_decision"]         │
+    │    │           == {"action": "ACCEPT"}?         │
+    │    └───────────────────────────────────────────┘
     │                       │
     │                  escalate?
     │                  NO │  YES
     └─────────────────────┘    → STOP
 ```
 
+**Why `submit_decision` instead of text parsing?** The seller's MCP tool returns "minimum acceptable price" — which contains "ACCEPT" as a substring. Text parsing (`"ACCEPT" in response`) would false-trigger on every counter-offer that mentions the floor. The `submit_decision` tool writes a structured dict to state — the callback reads `state["seller_decision"]["action"]`, not prose.
+
+**The `{seller_response}` pitfall:** On round 1, the buyer's instruction has `{seller_response}` but no seller has responded yet. ADK throws `Context variable not found`. Fix: `before_agent_callback` initializes the key with a default value.
+
+**Try:** Select `negotiation` from dropdown → type "Start negotiation for 742 Evergreen Terrace"
+
+Watch Events for MCP tool calls + `submit_decision` calls. Check State tab for `seller_decision` dict.
+
 ---
 
-## Slide 35: Exercises
+## Slide 37: Negotiation — Live Run Results
+
+**Title:** Negotiation — What Actually Happened
+
+**Body:**
+
+**2 negotiation rounds → agreement at $445,000 (with MCP tools + structured decisions):**
+
+| Round | Buyer (MCP tools called) | Seller (MCP tools called) | Decision |
+|-------|--------------------------|---------------------------|----------|
+| 1 | $425,800 (`get_market_price` + `calculate_discount`) | `get_minimum_acceptable_price` + `get_inventory_level` → `submit_decision(COUNTER, 477000)` | COUNTER $477K |
+| 2 | $445,000 (no tools — jumped to target) | `submit_decision(ACCEPT, 445000)` | **ACCEPT $445K** |
+
+**Event flow (20 events):**
+```
+Event 1     | user   → "Start negotiation"
+Event 3     | buyer  → tool_call: get_market_price + calculate_discount
+Event 4     | buyer  → tool_results (market data)
+Event 5     | buyer  → "Offer: $425,800..."             → state["buyer_offer"]
+Event 6     | seller → tool_call: get_minimum_acceptable_price + get_inventory_level
+Event 7     | seller → tool_results (floor=$445K, hot market)
+Event 8     | seller → "COUNTER $477,000" + tool_call: submit_decision(COUNTER, 477000)
+Event 9     | seller → tool_result: {recorded: COUNTER}  → callback: no escalation
+Event 10    | seller → confirms counter
+Event 11    | buyer  → "Offer: $445,000..."             → overwrites buyer_offer
+Event 12    | seller → "Accepted" + tool_call: submit_decision(ACCEPT, 445000)
+Event 13    | seller → tool_result: {recorded: ACCEPT}  → callback: ESCALATE!
+Event 14    | seller → confirms acceptance
+Event 15-20 | buyer/seller → post-acceptance chatter (current iteration completes)
+```
+
+**State tab after completion:**
+```json
+{"seller_decision": {"action": "ACCEPT", "price": 445000}}
+```
+
+**Observations:**
+1. **MCP tools grounded every decision.** The buyer used `get_market_price` ($462K estimated) to justify $425K. The seller used `get_minimum_acceptable_price` ($445K floor) to set the COUNTER.
+2. **`submit_decision` is the structured signal.** The callback reads `state["seller_decision"]["action"]` — a dict, not free text. No risk of "minimum acceptable price" false-triggering.
+3. **Buyer jumped from $425K to $445K in round 2.** With MCP data, it had enough confidence to skip incremental increases.
+4. **Post-acceptance chatter still occurs.** Escalation stops the NEXT iteration, not the current one — the remaining sub-agents in the SequentialAgent complete.
+
+---
+
+## Slide 38: A2A Orchestrated Negotiation
+
+**Title:** Demo 14 — Full Negotiation Over A2A
+
+**Body:**
+
+```bash
+# Terminal 1:
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+
+# Terminal 2:
+python m3_adk_multiagents/a2a_14_orchestrated_negotiation.py
+```
+
+The script discovers BOTH agents via Agent Cards, then orchestrates multi-round negotiation over HTTP:
+
+```
+Step 1: Discover agents
+  GET buyer_agent/.well-known/agent-card.json   → skills: [Property Valuation]
+  GET seller_agent/.well-known/agent-card.json  → skills: [Seller Negotiation]
+
+Step 2: Multi-round negotiation
+  Round 1: POST buyer_agent  → "Offer $425K"    (buyer calls MCP tools)
+           POST seller_agent → "COUNTER $477K"  (seller calls MCP tools)
+  Round 2: POST buyer_agent  → "Offer $445K"
+           POST seller_agent → "ACCEPT $445K"   → DEAL REACHED
+```
+
+**Key A2A details:**
+- **Separate contextIds** — buyer thread: `e4c33941...`, seller thread: `41036068...`
+- **The script acts as matchmaker** — neither agent knows about the other
+- **Each agent calls its own MCP tools** — buyer: pricing, seller: pricing + inventory
+- **4 total A2A messages** for a complete negotiation
+
+This is the production pattern: agents as network services, discovered via Agent Cards, communicating via JSON-RPC.
+
+---
+
+## Slide 39: Exercises
 
 **Title:** Hands-On Exercises
 

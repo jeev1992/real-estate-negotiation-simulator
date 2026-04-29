@@ -62,8 +62,9 @@ real-estate-negotiation-simulator/
 │   ├── negotiation_agents/            # adk web-launchable agent packages
 │   │   ├── buyer_agent/agent.py         # Buyer LlmAgent + MCPToolset (pricing)
 │   │   ├── seller_agent/agent.py        # Seller LlmAgent + MCPToolset (pricing + inventory)
-│   │   └── negotiation/agent.py         # LoopAgent + SequentialAgent orchestration
-│   ├── adk_demos/                      # adk web-launchable demos (d01–d08) + A2A scripts (09–10)
+│   │   └── negotiation/agent.py         # LoopAgent + SequentialAgent + MCP tools + submit_decision
+│   ├── adk_demos/                      # adk web-launchable demos (d01–d09) + A2A scripts (10–13)
+│   ├── a2a_14_orchestrated_negotiation.py  # A2A multi-round buyer↔seller negotiation
 │   ├── exercises/                      # Hands-on coding exercises for Module 3
 │   ├── solution/                       # Worked solutions for Module 3 exercises
 │   └── notes/
@@ -213,6 +214,8 @@ python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http:/
 python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m3_adk_multiagents/adk_demos/a2a_13_streaming.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+# A2A orchestrated negotiation (buyer ↔ seller via Agent Cards):
+python m3_adk_multiagents/a2a_14_orchestrated_negotiation.py
 ```
 
 ### 10. Module Exercises
@@ -407,7 +410,7 @@ Use ADK's workflow agents — wrap buyer, mediator, and seller as `sub_agents` o
 | `m2_mcp/inventory_server.py` | `get_inventory_level`, `get_minimum_acceptable_price` | MCP inventory tools |
 | `m3_adk_multiagents/negotiation_agents/buyer_agent/agent.py` | `root_agent = LlmAgent(...)` | Buyer agent with MCPToolset |
 | `m3_adk_multiagents/negotiation_agents/seller_agent/agent.py` | `root_agent = LlmAgent(...)` | Seller agent with dual MCPToolsets |
-| `m3_adk_multiagents/negotiation_agents/negotiation/agent.py` | `root_agent = LoopAgent(...)` | LoopAgent + SequentialAgent orchestration |
+| `m3_adk_multiagents/negotiation_agents/negotiation/agent.py` | `root_agent = LoopAgent(...)` | LoopAgent + SequentialAgent + MCP tools + submit_decision |
 
 ---
 
