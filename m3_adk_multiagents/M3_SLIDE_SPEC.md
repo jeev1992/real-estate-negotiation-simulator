@@ -874,7 +874,40 @@ These demos are terminal scripts, not adk web dropdown agents. They talk to the 
 
 ---
 
-## Slide 27: Demo 11 — Context Threading
+## Slide 27: Demo 10 — Results
+
+**Title:** Demo 10 — What the Wire Looks Like
+
+**Body:**
+
+**Valid offer response:**
+```
+status: "completed"
+contextId: "4f0fff3e-..."     ← reuse for round 2
+artifacts: [{text: "Counter-offer at $477,000..."}]
+history: [Message(user), Message(agent)]
+```
+
+**Broken envelope response:**
+```
+status: "completed" (NOT failed!)
+artifacts: [{text: "Could you please resend your offer?"}]
+```
+
+**Why still completed?** The A2A protocol layer worked correctly — valid JSON-RPC, valid Message. The content was garbage, but the LLM coped. Tasks only `fail` on protocol errors or server crashes.
+
+**The response structure:**
+
+| Field | What it contains |
+|-------|-----------------|
+| `status` | Task state: completed/failed |
+| `contextId` | Thread ID for multi-turn (demo 11) |
+| `history` | All Messages exchanged |
+| `artifacts` | Durable outputs (the counter-offer) |
+
+---
+
+## Slide 28: Demo 11 — Context Threading (Concept)
 
 **Title:** Demo 11 — Multi-Turn Negotiations via contextId
 
@@ -896,55 +929,119 @@ Round 3: POST + contextId → seller sees full history → ACCEPTS
 
 Without `contextId`, the seller would counter at $477K every time — no memory of prior offers.
 
-**Key takeaway:** `contextId` = A2A's session_id. It ties HTTP requests into one conversation. The seller accepted in round 3 because it remembered the floor price from round 1's MCP tool call.
-
 ---
 
-## Slide 28: Demos 12 & 13 — Parts, Artifacts, Streaming
+## Slide 29: Demo 11 — Results
 
-**Title:** Demos 12–13 — Advanced A2A Features
+**Title:** Demo 11 — Why Memory Matters
 
 **Body:**
 
-**Demo 12 — Parts & Artifacts (actual results):**
+**Same contextId across all 3 rounds:** `4498d50f-a61e-4a17-8c84-0ea13d49a283`
 
-Sent a multi-part message: TextPart (human-readable) + DataPart (machine-readable) in one Message.
+The seller accepted in round 3 because it remembered:
+- Round 1: MCP tool returned floor price = $445K
+- Round 2: buyer came up from $432K to $440K (still below)
+- Round 3: $446K > $445K → ACCEPT immediately
 
-```
-Request:  parts[0] = TextPart("Final-and-best at $445k")
-          parts[1] = DataPart({hint: "machine copy", offer: {...}})
-
-Response: MCP tool calls as DataParts (3 tools called)
-          Final text: "We accept your offer of $445,000!"
-          Artifact: same acceptance text as durable output
-```
-
-| Part type | Purpose | Example |
-|-----------|---------|--------|
-| TextPart | Human-readable text | Offer message |
-| DataPart | Structured JSON | Machine-parseable offer |
-| Artifact | Durable output on Task | The final acceptance |
-
-Parts = conversational (in Messages). Artifacts = deliverables (on Tasks).
-
-**Demo 13 — Streaming (actual results):**
-
-`message/stream` shows the Task lifecycle in real time via SSE events:
-
-| Event | Kind | State |
-|-------|------|-------|
-| 1 | status-update | submitted |
-| 2–5 | status-update | working (tool calls + LLM reasoning) |
-| 6 | artifact-update | counter-offer delivered |
-| 7 | status-update | **completed** (`final: true`) |
-
-7 events for one request — each MCP tool call and LLM call produces an event. With `message/send` you'd only see the final result.
-
-Streaming is for UX ("seller is thinking..."), not correctness. Requires `capabilities.streaming: true` in `agent.json`.
+**contextId = A2A's session_id.** It ties independent HTTP requests into one coherent conversation. The same concept as ADK's session state (d03), but across network boundaries.
 
 ---
 
-## Slide 29: Negotiation Agents
+## Slide 30: Demo 12 — Parts & Artifacts (Concept)
+
+**Title:** Demo 12 — Multi-Part Messages + Durable Outputs
+
+**Body:**
+
+Sent a message with TWO Parts — same offer in two formats:
+
+```
+parts[0] = TextPart("Final-and-best at $445k")     ← human-readable
+parts[1] = DataPart({hint: "machine copy", offer: {...}})  ← structured JSON
+```
+
+| Part type | Purpose | Who reads it |
+|-----------|---------|-------------|
+| TextPart | Human-readable text | The LLM |
+| DataPart | Structured JSON | Code / downstream systems |
+| FilePart | Binary (PDF, image) | Not used in this demo |
+| Artifact | Durable output on Task | Anyone who fetches the Task later |
+
+Parts = conversational (in Messages). Artifacts = deliverables (on Tasks).
+
+---
+
+## Slide 31: Demo 12 — Results
+
+**Title:** Demo 12 — Acceptance at $445K
+
+**Body:**
+
+**Response history showed the full agent processing:**
+1. User message: 2 parts (TextPart + DataPart)
+2. Agent MCP tool calls: 3 DataParts (get_market_price, get_minimum_acceptable_price, calculate_discount)
+3. Agent tool results: 3 DataParts (structured responses)
+4. Agent final text: "We accept your offer of $445,000!"
+
+**Artifact:** Same acceptance text attached as durable output:
+```json
+{"artifactId": "f7ae8903-...", "parts": [{"kind": "text", "text": "We accept..."}]}
+```
+
+**$445K = exact floor → immediate acceptance.** MCP tool confirms min = $445K. Offer matches. Seller accepts.
+
+Tool calls appear as DataParts in history — you can programmatically inspect what tools were called.
+
+---
+
+## Slide 32: Demo 13 — Streaming (Concept)
+
+**Title:** Demo 13 — Real-Time Task Lifecycle via SSE
+
+**Body:**
+
+`message/stream` vs `message/send`:
+- **send**: POST → wait → one JSON response
+- **stream**: POST → SSE connection → events arrive incrementally
+
+Requires `capabilities.streaming: true` in `agent.json`.
+
+**What you get in real time:**
+- Task state transitions (submitted → working → completed)
+- Tool call intermediate results
+- Token usage per LLM call
+- Artifact delivery BEFORE task completes
+- `final: true` marker on the last event
+
+Streaming is for UX ("seller is thinking..."), not correctness — `message/send` gives the same result.
+
+---
+
+## Slide 33: Demo 13 — Results
+
+**Title:** Demo 13 — 7 Events for One Request
+
+**Body:**
+
+| Event | Kind | State |
+|-------|------|-------|
+| 1 | status-update | **submitted** (task created) |
+| 2 | status-update | **working** (agent started) |
+| 3 | status-update | **working** (tool call + token usage) |
+| 4 | status-update | **working** (tool results) |
+| 5 | status-update | **working** (LLM reasoning) |
+| 6 | **artifact-update** | counter-offer text delivered |
+| 7 | status-update | **completed** (`final: true`) |
+
+With `message/send` you'd see only the final result. Streaming shows every step:
+- Each MCP tool call = one event
+- Each LLM call = one event (with `promptTokenCount` in metadata)
+- Artifact arrives BEFORE completion (event 6 before event 7)
+
+---
+
+## Slide 34: Negotiation Agents
 
 **Title:** Putting It All Together — The Negotiation System
 
@@ -995,7 +1092,7 @@ This is the payoff. Every primitive from d01–d09 is composed in the negotiatio
 
 ---
 
-## Slide 30: Exercises
+## Slide 35: Exercises
 
 **Title:** Hands-On Exercises
 
