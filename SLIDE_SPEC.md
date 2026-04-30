@@ -1,8 +1,905 @@
-# Module 3 — Slide Deck Specification
+# Combined Slide Deck Specification
+
+**Workshop: Building Multi-Agent Systems with MCP, ADK & A2A**
+
+A 4-hour hands-on workshop taught through one concrete project: an autonomous real estate negotiation between a Buyer Agent and a Seller Agent.
+
+**Total slides:** 69 (Introduction: 5, Module 1: 8, Module 2: 15, Module 3: 38, Summary: 3)
 
 ---
 
-## Slide 1: Module 3 Title
+# PART 0 — INTRODUCTION (Slides 1–5)
+
+---
+
+## Slide 1: Workshop Title
+
+**Title:** Building Multi-Agent Systems — MCP · ADK · A2A
+
+**Body:**
+
+**One project. Three protocols. Four hours.**
+
+You'll build a complete multi-agent real estate negotiation system — from an intentionally broken baseline to production-ready agents communicating over standardized protocols.
+
+```
+Module 1: Why Naive AI Agents Break          (45 min)
+Module 2: MCP — External Data for Agents     (60 min)
+Module 3: Google ADK + A2A Protocol          (90 min)
+Wrap-up                                      (15 min)
+```
+
+**What you'll have built by the end:**
+- A buyer agent and a seller agent, each with real market data from MCP servers
+- A negotiation orchestrator that runs multi-round buyer ↔ seller negotiation
+- All exposed as A2A network services discoverable via Agent Cards
+
+---
+
+## Slide 2: The Scenario
+
+**Title:** 742 Evergreen Terrace — The Property
+
+**Body:**
+
+**Property:** 742 Evergreen Terrace, Austin, TX 78701
+4 BR / 3 BA / 2,400 sqft / Single Family / Built 2005 / Listed at $485,000
+
+| Party | Goal | Starting Position | Walk-Away |
+|---|---|---|---|
+| **Buyer Agent** (GPT-4o) | Buy at lowest price | Offer ~$425,000 | Over $460,000 |
+| **Seller Agent** (GPT-4o) | Sell at highest price | Counter $477,000 | Below $445,000 |
+
+**The Zone of Possible Agreement (ZOPA):** $445K–$460K
+
+The negotiation runs for a maximum of **5 rounds**. Agents use real market data (via MCP) to justify every offer. The same property, the same constraints — across all three modules.
+
+---
+
+## Slide 3: Three Protocols, One System
+
+**Title:** MCP + ADK + A2A — How They Fit Together
+
+**Body:**
+
+| Protocol | What it connects | Analogy |
+|----------|-----------------|---------|
+| **MCP** (Model Context Protocol) | Agent ↔ Tool | "What tools do you have? Call this one." |
+| **ADK** (Agent Development Kit) | Agent framework | "Build agents with tools, state, and orchestration." |
+| **A2A** (Agent-to-Agent) | Agent ↔ Agent | "Who are you? Handle this task." |
+
+**Diagram:**
+```
+                    A2A Protocol
+        ┌──────────────────────────────┐
+        │                              │
+   ┌────▼─────┐                  ┌─────▼────┐
+   │  Buyer    │                  │  Seller   │
+   │  Agent    │                  │  Agent    │
+   │  (ADK)    │                  │  (ADK)    │
+   └────┬──────┘                  └─────┬────┘
+        │ MCP                           │ MCP
+        ▼                               ▼
+   ┌──────────┐                  ┌──────────────┐
+   │ Pricing  │                  │ Pricing +    │
+   │ Server   │                  │ Inventory    │
+   └──────────┘                  └──────────────┘
+```
+
+**Module 1** shows why you need all of this — by building a version that has NONE of it.
+
+---
+
+## Slide 4: Architecture Overview
+
+**Title:** What We're Building — Layer by Layer
+
+**Body:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Module 3: Orchestration (ADK + A2A)                            │
+│                                                                  │
+│  LoopAgent(SequentialAgent(buyer, seller), max_iterations=5)    │
+│  + submit_decision tool + _check_agreement callback             │
+│  + A2A Agent Cards + JSON-RPC message/send                      │
+├─────────────────────────────────────────────────────────────────┤
+│  Module 2: External Data (MCP)                                   │
+│                                                                  │
+│  pricing_server.py: get_market_price, calculate_discount        │
+│  inventory_server.py: get_inventory_level,                      │
+│                       get_minimum_acceptable_price (seller only) │
+├─────────────────────────────────────────────────────────────────┤
+│  Module 1: Baseline (The Intentionally Broken Version)           │
+│                                                                  │
+│  naive_negotiation.py: while True + regex + string matching     │
+│  state_machine.py: FSM with guaranteed termination              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Each module builds ON TOP of the previous one. M2's MCP servers are consumed by M3's agents. M1's FSM concepts become M3's LoopAgent.
+
+---
+
+## Slide 5: How to Follow Along
+
+**Title:** Setup & Running the Demos
+
+**Body:**
+
+```bash
+# Clone and set up
+git clone <repo> && cd real-estate-negotiation-simulator
+python -m venv .venv && .venv\Scripts\activate     # Windows
+pip install -r requirements.txt
+cp .env.example .env   # add your OPENAI_API_KEY
+
+# Module 1 — no API key needed for state_machine.py
+python m1_baseline/naive_negotiation.py
+python m1_baseline/state_machine.py
+
+# Module 2 — MCP demos
+python m2_mcp/demos/01_initialize_handshake.py
+python m2_mcp/github_agent_client.py "Find MCP servers"
+
+# Module 3 — ADK interactive
+adk web m3_adk_multiagents/adk_demos/d01_basic_agent/
+adk web m3_adk_multiagents/negotiation_agents/
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+```
+
+**Prerequisites:** Python 3.11+, `OPENAI_API_KEY`, Node.js (for GitHub MCP server only)
+
+Each module has a `README.md` with per-demo instructions.
+
+---
+
+# PART 1 — MODULE 1: WHY NAIVE AI AGENTS BREAK (Slides 6–13)
+
+---
+
+## Slide 6: Module 1 Title
+
+**Title:** Module 1 — Why Naive AI Agents Break
+
+**Body:**
+
+**The goal:** See exactly how a "simple" LLM negotiation fails — then fix it
+
+By the end of this module you'll have:
+- Watched a naive negotiation **work by luck** (Demo 1)
+- Watched it **fail catastrophically** (Demo 2)
+- Seen **5 concrete failure modes** with code examples
+- Built a **finite state machine** that guarantees termination
+
+Every problem in this module maps to a solution in Modules 2 and 3.
+
+```bash
+python m1_baseline/naive_negotiation.py   # requires OPENAI_API_KEY
+python m1_baseline/state_machine.py       # no API key needed
+```
+
+---
+
+## Slide 7: The 10 Problems
+
+**Title:** 10 Ways Naive Agent Systems Fail
+
+**Body:**
+
+```python
+# naive_negotiation.py — the "obvious" implementation
+while True:                           # Problem #3: no state machine
+    message = _call_llm(prompt)       # Problem #1: raw strings
+    price = re.search(r'\$?(\d[\d,]*)', message)  # Problem #5: fragile regex
+    if "DEAL" in message.upper():     # Problem #6: unreliable termination
+        break
+```
+
+| # | Problem | What goes wrong | Fixed by |
+|---|---------|----------------|----------|
+| 1 | Raw strings | LLM returns anything | A2A structured messages (M3) |
+| 2 | No schema | Can't validate response | Pydantic / A2A DataPart (M3) |
+| 3 | No state machine | `while True` loop | FSM (this module) → LoopAgent (M3) |
+| 4 | No turn limits | Can loop forever | `max_turns` → `max_iterations` (M3) |
+| 5 | Fragile regex | Extracts wrong price | `price: float` field (M3) |
+| 6 | No termination guarantee | "DEAL-breaker" matches "DEAL" | Terminal states / `submit_decision` (M3) |
+| 7 | Silent failures | Bad parse → keeps going | Pydantic validation (M3) |
+| 8 | Hardcoded prices | No market data | MCP servers (M2) |
+| 9 | No observability | Can't audit what happened | ADK events / A2A lifecycle (M3) |
+| 10 | No evaluation | Can't measure quality | Session analytics (M3) |
+
+These aren't hypothetical — we'll see #5 and #6 happen live in the demo.
+
+---
+
+## Slide 8: Demo 1 — When It Works (By Luck)
+
+**Title:** Demo 1 — "It Works!" (Fragile)
+
+**Body:**
+
+```bash
+python m1_baseline/naive_negotiation.py
+```
+
+**Setup:** Buyer max $460K vs Seller min $445K — there IS overlap (ZOPA exists).
+
+**What happened:**
+```
+[Turn 0] Buyer:  "I offer $424,580"
+[Turn 1] Seller: "Counter-offer of $453,150"
+[Turn 2] Buyer:  "ACCEPT at $453,150"
+[Turn 3] Seller: "DEAL! Sale at $453,150"
+```
+
+**Looks great!** Deal in 3 turns, buyer saved $31,850. But notice:
+- The buyer happened to say "ACCEPT" — what if it said "I agree"? No termination.
+- The seller happened to say "DEAL!" — what if it said "Sold!"? Loop continues.
+- The regex happened to grab the right price — what if the seller mentioned renovation costs first?
+
+**This worked by luck, not by design.** The LLM's phrasing determined whether the code terminated correctly.
+
+---
+
+## Slide 9: Demo 2 — The Infinite Loop
+
+**Title:** Demo 2 — When It Breaks (No ZOPA)
+
+**Body:**
+
+**Setup:** Buyer max $420K vs Seller min $450K — NO overlap. Agreement is **mathematically impossible**.
+
+**What happened:**
+```
+[Turn 0] Buyer:  "$387,660"
+[Turn 1] Seller: "Counter at $453,150"
+[Turn 2] Buyer:  "Final offer $420,000"          ← hit max budget
+[Turn 3] Seller: "Counter at $450,000"           ← hit floor
+[Turn 4] Buyer:  "Final offer $420,000"           ← stuck
+[Turn 5] Seller: "Counter at $450,000"            ← stuck
+[Turn 6] Buyer:  "Final offer $420,000"           ← stuck
+[Turn 7] Seller: "DEAL! Sale at $420,000"         ← WAIT WHAT?!
+```
+
+**The seller accepted $420,000 — which is BELOW its own minimum of $450,000.**
+
+The LLM got tired of repeating itself and said "DEAL!" The string match `"DEAL" in message.upper()` triggered, and the negotiation "succeeded" at an impossible price.
+
+**This is Failure Mode #6:** The LLM decides termination, not the code. The system has no way to enforce business rules. In production with `max_turns=100`, this would burn 100 LLM API calls for a negotiation that was doomed from turn 1.
+
+---
+
+## Slide 10: 5 Concrete Failure Modes
+
+**Title:** Failure Modes — What Goes Wrong and What Fixes It
+
+**Body:**
+
+**Failure 1 — Wrong price extracted:**
+```
+LLM: "I spent $350,000 on renovations, my counter is $477,000"
+Regex: $350,000  ← WRONG! Got renovation cost, not the offer
+Fix:  submit_decision(action="COUNTER", price=477000) — typed field (M3)
+```
+
+**Failure 2 — Silent parse failure:**
+```
+LLM: "I'd like to offer four hundred and thirty thousand dollars"
+Regex: None  ← negotiation continues on corrupted data, no error raised
+Fix:  Pydantic validation / structured tool parameters (M3)
+```
+
+**Failure 3 — Hardcoded prices:**
+```python
+SELLER_MIN_PRICE = 445_000  # visible in source code, stale
+Fix:  get_minimum_acceptable_price() from MCP server (M2)
+```
+
+**Failure 4 — Infinite loop (no ZOPA):**
+```
+Buyer max: $430K | Seller min: $450K → can NEVER agree. while True runs forever.
+Fix:  FSM max_turns (M1) → LoopAgent max_iterations (M3)
+```
+
+**Failure 5 — String matching is unreliable:**
+```
+"DEAL-breaker — I won't go lower"  →  matches "DEAL"  ← FALSE POSITIVE
+"I think we're close, let's finalize"  →  no match    ← MISSED AGREEMENT
+Fix:  submit_decision tool — structured signal, not text parsing (M3)
+```
+
+---
+
+## Slide 11: The FSM Fix
+
+**Title:** Finite State Machine — Guaranteed Termination
+
+**Body:**
+
+```python
+class NegotiationState(Enum):
+    IDLE        = auto()
+    NEGOTIATING = auto()
+    AGREED      = auto()   # Terminal ✓
+    FAILED      = auto()   # Terminal ✗
+
+TRANSITIONS = {
+    IDLE:        {NEGOTIATING, FAILED},
+    NEGOTIATING: {NEGOTIATING, AGREED, FAILED},
+    AGREED:      set(),    # ← EMPTY = no way out
+    FAILED:      set(),    # ← EMPTY = no way out
+}
+```
+
+**Diagram:**
+```
+         IDLE
+          │
+    start()
+          │
+          ▼
+    ┌──────────┐
+    │NEGOTIATING│◄─── process_turn() loops here
+    └────┬─────┘      (turn_count increments each time)
+         │
+    ┌────┼────┐
+    │         │
+accept()  reject() / max_turns
+    │         │
+    ▼         ▼
+ AGREED    FAILED
+ set()     set()     ← EMPTY = terminal, locked forever
+```
+
+**Why it MUST stop:**
+1. Terminal states have **empty transition sets** — once entered, can't leave
+2. Every turn increments `turn_count`, capped at `max_turns`
+3. Either an agent reaches AGREED/FAILED, or the cap forces FAILED
+
+---
+
+## Slide 12: FSM Demo Results
+
+**Title:** FSM — What Actually Happened
+
+**Body:**
+
+```bash
+python m1_baseline/state_machine.py   # no API key needed
+```
+
+**Scenario 1 — Deal reached (round 3 of 5):**
+```
+IDLE → NEGOTIATING → round 1 → round 2 → round 3 → AGREED ($449,000)
+is_terminal(): True  |  Invariants: PASS
+```
+
+**Scenario 2 — Buyer walks away (round 2):**
+```
+IDLE → NEGOTIATING → round 1 → round 2 → reject() → FAILED
+accept() after reject: returned False  ← state is LOCKED
+```
+
+**Scenario 3 — Max turns exceeded:**
+```
+Round 1: True → Round 2: True → ... → Round 5: False → FAILED
+failure_reason: MAX_TURNS_EXCEEDED
+```
+
+**The key guarantee:** In Demo 2 (no ZOPA, $420K vs $450K), the naive version ran 7+ turns and "agreed" at an impossible price. The FSM would hit `max_turns=5` → FAILED. Zero wasted API calls after that.
+
+---
+
+## Slide 13: M1 → What's Next
+
+**Title:** From FSM to Production — What's Still Missing
+
+**Body:**
+
+| M1 FSM | M3 ADK |
+|--------|--------|
+| `NegotiationState` enum | `LoopAgent` + `SequentialAgent` |
+| `max_turns = 5` | `max_iterations = 5` |
+| `is_terminal()` | `escalate = True` |
+| `TRANSITIONS[AGREED] = set()` | `_check_agreement` callback |
+| `process_turn()` increments counter | LoopAgent tracks iteration count |
+| No LLM, pure logic | Real LLM + MCP tools |
+
+**The FSM is the conceptual foundation.** ADK's LoopAgent is the same idea — bounded iteration with explicit terminal conditions — but at the scale of real agents with tools, state, and network communication.
+
+**What the FSM doesn't solve** (and M2/M3 do):
+- Problem #8: Hardcoded prices → **MCP servers** (M2)
+- Problem #1: Raw strings → **A2A structured messages** (M3)
+- Problem #5: Fragile regex → **`submit_decision` tool** (M3)
+- Problem #9: No observability → **ADK event stream** (M3)
+
+---
+
+# PART 2 — MODULE 2: MCP — EXTERNAL DATA FOR AGENTS (Slides 14–28)
+
+---
+
+## Slide 14: Module 2 Title
+
+**Title:** Module 2 — MCP: External Data for Agents
+
+**Body:**
+
+**The problem from M1:** Prices were hardcoded (`SELLER_MIN_PRICE = 445_000`). Agents had no real market data — they made up numbers.
+
+**MCP fixes this.** Model Context Protocol is a standard that lets agents call external tools without knowing where the data comes from.
+
+```
+Agent: "What tools do you have?"    → list_tools
+Server: "get_market_price, ..."     → tool schemas (JSON Schema)
+Agent: "Call get_market_price(...)" → call_tool
+Server: {estimated_value: 462000}   → structured result
+```
+
+By the end of this module:
+- You'll understand the MCP protocol (handshake, tools, resources, prompts)
+- You'll have seen a live agent use GitHub MCP tools
+- You'll have built and inspected custom MCP servers
+- You'll understand stdio vs SSE vs Streamable HTTP transports
+
+---
+
+## Slide 15: API vs CLI vs MCP
+
+**Title:** Three Paths to External Systems
+
+**Body:**
+
+> "Agents are only as useful as the systems they can reach."
+> — Anthropic
+
+| Path | How it works | Limitation |
+|------|-------------|------------|
+| **Direct API** | Agent calls HTTP endpoints directly | M×N integration problem — each agent-service pair is bespoke |
+| **CLI** | Agent runs shell commands | No reach to web/mobile/cloud — needs a filesystem |
+| **MCP** | Standard protocol — discovery + invocation + auth | Upfront investment, but portable across all clients |
+
+**Why MCP wins for production:**
+- One remote server reaches **any compatible client** (Claude, ChatGPT, Cursor, VS Code, ADK)
+- Auth, discovery, and rich semantics are standardized
+- 300M+ SDK downloads/month
+- Build once, use everywhere
+
+In our workshop: M1 used hardcoded prices. M2 introduces MCP. M3 consumes MCP servers from ADK agents.
+
+---
+
+## Slide 16: What is MCP?
+
+**Title:** MCP — Model Context Protocol
+
+**Body:**
+
+**Three operations (like a REST API for AI tools):**
+1. **Discovery:** `list_tools` — "What can you do?" → returns JSON Schema for each tool
+2. **Invocation:** `call_tool(name, args)` — "Do this" → returns structured result
+3. **Protocol handshake:** `initialize` — capability negotiation (versions, features)
+
+**Diagram:**
+```
+  AGENT (Host)                 MCP Protocol              SERVER
+  ────────────────             ──────────────            ──────────────
+  "What tools exist?"
+  session.list_tools() ──────────────────────────────►  Returns schemas
+                                                        [{name, description,
+                                                          inputSchema}]
+
+  "Call this tool"
+  session.call_tool(   ──────────────────────────────►  Executes Python fn
+    "get_market_price",
+    {"address": "742..."}
+  )                    ◄──────────────────────────────  Returns result dict
+
+  LLM reasons about result → calls more tools or answers
+```
+
+**The key insight:** The agent never imports your Python functions. It talks to the server over a protocol. The server could be local, remote, in another language — the agent doesn't care.
+
+---
+
+## Slide 17: MCP Primitives & Content Types
+
+**Title:** Four Primitives, Three Content Types
+
+**Body:**
+
+**Primitives — what a server can expose:**
+
+| Primitive | Direction | Our workshop example |
+|-----------|-----------|---------------------|
+| **Tools** | Client → Server | `get_market_price`, `calculate_discount` |
+| **Resources** | Client → Server | `inventory://floor-prices` catalog |
+| **Prompts** | Client → Server | `negotiation-tactics` template |
+| **Sampling** | Server → Client | Not used (requires sampling-capable host) |
+
+Tools are 90% of MCP usage. Resources and prompts are bonus capabilities.
+
+**Content types — what a tool can return:**
+
+| Type | JSON shape | When to use |
+|------|-----------|-------------|
+| **TextContent** | `{"type": "text", "text": "..."}` | Most common — tool results |
+| **ImageContent** | `{"type": "image", "data": "base64..."}` | Charts, screenshots |
+| **EmbeddedResource** | `{"type": "resource", "resource": {...}}` | References to stored data |
+
+`@mcp.tool()` returning a string or dict → TextContent automatically. In our workshop, all tools return TextContent.
+
+---
+
+## Slide 18: Three Transports
+
+**Title:** Same Protocol, Different Wire
+
+**Body:**
+
+| Transport | How it works | When to use |
+|-----------|-------------|-------------|
+| **stdio** | Server is a subprocess, pipes stdin/stdout | Single client, local dev |
+| **SSE** | HTTP server, Server-Sent Events | Multiple clients, remote |
+| **Streamable HTTP** | HTTP POST + streaming (spec's recommended) | Production |
+
+**The protocol is the same.** Only the delivery mechanism changes.
+
+```
+stdio:            Agent spawns server → pipes stdin/stdout → JSON-RPC
+SSE:              Agent connects to http://host:port/sse → JSON-RPC over SSE
+Streamable HTTP:  Agent POSTs to http://host:port/mcp → JSON-RPC over HTTP
+```
+
+**Diagram:**
+```
+stdio (1:1):                        SSE / HTTP (1:many):
+┌────────┐  stdin/stdout  ┌──────┐  ┌────────┐  HTTP   ┌──────┐
+│ Agent  │──────pipe──────│Server│  │ Agent1 │───GET──►│Server│
+└────────┘                └──────┘  │ Agent2 │───GET──►│:8001 │
+  spawns subprocess                 └────────┘         └──────┘
+  dies when agent dies              server lives independently
+```
+
+> "Build remote servers for maximum reach." — Anthropic. stdio for dev, HTTP for production.
+
+---
+
+## Slide 19: Demo 01 — The MCP Handshake
+
+**Title:** Demo 01 — What Happens on the Wire
+
+**Body:**
+
+```bash
+python m2_mcp/demos/01_initialize_handshake.py   # no API key needed
+```
+
+Raw JSON-RPC frames — no SDK, no abstraction:
+
+```
+>>> client → server: initialize
+    {"jsonrpc": "2.0", "method": "initialize",
+     "params": {"protocolVersion": "2024-11-05", "capabilities": {},
+                "clientInfo": {"name": "demo-client", "version": "0.1"}}}
+
+<<< server → client: initialize result
+    {"result": {"protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}, "prompts": {}, "resources": {}},
+                "serverInfo": {"name": "real-estate-pricing", "version": "1.27.0"}}}
+
+>>> notifications/initialized
+>>> tools/list
+<<< tools/list result → 2 tools with full JSON schemas
+```
+
+**5 frames total.** After this handshake, the client knows what tools exist and can call them. JSON Schema is generated from Python type hints — no manual schema writing.
+
+---
+
+## Slide 20: Demo 02 — The Tool Loop
+
+**Title:** Demo 02 — Model ↔ Host ↔ Server
+
+**Body:**
+
+```bash
+python m2_mcp/demos/02_tool_loop_trace.py   # requires OPENAI_API_KEY
+```
+
+```
+[t= 0.00s] HOST    connecting to MCP server (stdio subprocess)
+[t= 3.18s] HOST    tools/list → 2 tools discovered
+[t= 3.67s] MODEL   receiving prompt + tool catalog
+[t= 6.77s] MODEL   emitted tool_use(get_market_price)
+[t= 6.77s] HOST    translating tool_use → tools/call
+[t= 6.77s] SERVER  returned CallToolResult
+[t= 6.77s] HOST    injecting tool_result into model context
+[t=10.42s] MODEL   emitted final assistant text
+```
+
+**Three actors, clear roles:**
+
+| Actor | What it does |
+|-------|-------------|
+| **Model** (GPT-4o) | Decides WHICH tools to call based on query + schemas |
+| **Host** (your Python code) | Translates between OpenAI format and MCP format |
+| **Server** (pricing_server.py) | Executes the tool and returns structured data |
+
+The host is the **bridge**. In M3, ADK's `MCPToolset` IS the host — it does the translation automatically.
+
+---
+
+## Slide 21: Custom MCP Servers
+
+**Title:** Building Your Own MCP Server
+
+**Body:**
+
+```python
+# pricing_server.py — 5 lines to expose a tool
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("real-estate-pricing")
+
+@mcp.tool()
+def get_market_price(address: str, property_type: str = "single_family") -> dict:
+    """Get market price analysis for a property."""
+    return {"estimated_value": 462_000, "comparable_sales": [...], ...}
+```
+
+**What `@mcp.tool()` does:**
+- Reads the function signature → JSON Schema (`inputSchema`)
+- Reads the docstring → tool `description`
+- Registers as a callable MCP tool
+
+> "Group tools around intent, not endpoints." A single `get_market_price` beats `get_comps` + `get_sqft` + `get_days_on_market` + `calculate_value`. — Anthropic
+
+**Two servers in this workshop:**
+
+| Server | Tools | Who uses it (M3) |
+|--------|-------|-------------------|
+| `pricing_server.py` | `get_market_price`, `calculate_discount` | Both buyer and seller |
+| `inventory_server.py` | `get_inventory_level`, `get_minimum_acceptable_price` | **Seller only** |
+
+---
+
+## Slide 22: Information Asymmetry via MCP
+
+**Title:** Different Agents, Different Tools
+
+**Body:**
+
+```
+BUYER sees:                         SELLER sees:
+┌─────────────────────┐            ┌─────────────────────┐
+│ pricing_server      │            │ pricing_server      │
+│  get_market_price   │            │  get_market_price   │
+│  calculate_discount │            │  calculate_discount │
+└─────────────────────┘            ├─────────────────────┤
+                                   │ inventory_server    │
+                                   │  get_inventory_level│
+                                   │  get_minimum_       │
+                                   │   acceptable_price  │ ← SECRET
+                                   └─────────────────────┘
+```
+
+**The floor price ($445K) lives in the server, not the code.**
+- M1: `SELLER_MIN_PRICE = 445_000` — hardcoded, visible to everyone
+- M2: `get_minimum_acceptable_price()` — returned by MCP at runtime, only accessible to seller (enforced in M3)
+
+This is how real production systems work. Different agents get different tool access. The protocol is the same — the authorization is different.
+
+---
+
+## Slide 23: GitHub MCP Agent (Live Demo)
+
+**Title:** Live Demo — An LLM Agent Using GitHub via MCP
+
+**Body:**
+
+```bash
+python m2_mcp/github_agent_client.py "Find popular MCP server implementations"
+```
+
+**What happens:**
+1. Agent spawns GitHub's MCP server via `npx @modelcontextprotocol/server-github`
+2. Discovers 20+ tools (search repos, read files, list issues, etc.)
+3. GPT-4o reads your query, picks tools, calls them via MCP
+4. Feeds results back, calls more tools or produces final answer
+
+**The agentic loop:**
+```python
+for iteration in range(max_iterations):
+    response = await openai.create(messages=messages, tools=openai_tools)
+    if response.tool_calls:
+        for call in response.tool_calls:
+            result = await session.call_tool(call.name, call.args)  # MCP
+            messages.append({"role": "tool", "content": result})
+    else:
+        return response.content  # final answer
+```
+
+**This is the pattern ADK automates.** In M3, `MCPToolset` + `LlmAgent` replaces this entire loop with one declaration: `tools=[MCPToolset(...)]`.
+
+---
+
+## Slide 24: SSE MCP Agent (Live Demo)
+
+**Title:** SSE Agent — Same Loop, HTTP Transport
+
+**Body:**
+
+```bash
+# Terminal 1: start MCP servers in SSE mode
+python m2_mcp/pricing_server.py --sse --port 8001
+python m2_mcp/inventory_server.py --sse --port 8002
+
+# Terminal 2: run the agent
+python m2_mcp/sse_agent_client.py "What is 742 Evergreen Terrace worth?"
+
+# With both servers:
+python m2_mcp/sse_agent_client.py --both "What's the seller's minimum price?"
+```
+
+**What happens:**
+1. Agent connects to pricing server (and optionally inventory server) via SSE
+2. Discovers tools from each server, merges into one unified tool list
+3. GPT-4o reads query, picks tools, calls them via MCP-over-SSE
+4. Feeds results back, produces final answer
+
+**github_agent_client.py vs sse_agent_client.py:**
+
+| | github_agent_client | sse_agent_client |
+|---|---|---|
+| Transport | stdio (subprocess) | SSE (HTTP) |
+| Server | GitHub's MCP server (TypeScript) | Our `pricing_server.py` + `inventory_server.py` |
+| Multi-server | No | Yes (`--both` merges 4 tools from 2 servers) |
+| Tool loop | Identical | Identical |
+
+**The agent loop is identical.** Only the connection setup changes. This proves transport is pluggable — the agent doesn't care how it connects to the server.
+
+**`--both` reveals the information asymmetry:** With both servers, the agent can see the seller's floor price ($445K) via `get_minimum_acceptable_price`. In M3, the buyer's allowlist blocks this tool.
+
+---
+
+## Slide 25: SSE vs stdio vs Streamable HTTP
+
+**Title:** Three Transports Side by Side
+
+**Body:**
+
+**stdio (Demos 01–04):**
+```python
+server_params = StdioServerParameters(command="python", args=["pricing_server.py"])
+async with stdio_client(server_params) as (read, write):
+    # server is a subprocess — dies when you disconnect
+```
+
+**SSE (sse_agent_client.py):**
+```bash
+# Terminal 1: start server
+python m2_mcp/pricing_server.py --sse --port 8001
+
+# Terminal 2: connect agent
+python m2_mcp/sse_agent_client.py "What is 742 Evergreen Terrace worth?"
+```
+
+**Streamable HTTP (Demo 05):**
+```bash
+# Terminal 1: server
+python m2_mcp/demos/05_streamable_http_transport.py --serve --port 8765
+
+# Terminal 2: client
+python m2_mcp/demos/05_streamable_http_transport.py --client --port 8765
+```
+
+**The agent code is identical** — only the connection setup changes. `list_tools()` and `call_tool()` work the same way regardless of transport. This is the whole point of a protocol standard.
+
+---
+
+## Slide 26: Demo 05 — Streamable HTTP Results
+
+**Title:** Demo 05 — HTTP Transport in Action
+
+**Body:**
+
+```bash
+# Terminal 1:
+python m2_mcp/demos/05_streamable_http_transport.py --serve --port 8765
+
+# Terminal 2:
+python m2_mcp/demos/05_streamable_http_transport.py --client --port 8765
+```
+
+**Client output:**
+```
+Connecting client to http://127.0.0.1:8765/mcp
+discovered tools: ['echo']
+response: echo: hello over HTTP
+```
+
+**The server is 5 lines:**
+```python
+mcp = FastMCP("http-transport-demo")
+
+@mcp.tool()
+def echo(text: str) -> str:
+    """Echo back the supplied text."""
+    return f"echo: {text}"
+
+mcp.run(transport="streamable-http")
+```
+
+**Same `session.list_tools()`, same `session.call_tool()`.** Only the import changes. The server is an independent HTTP process — survives client disconnection, multiple clients can connect simultaneously.
+
+---
+
+## Slide 27: M2 Key Concepts Summary
+
+**Title:** Module 2 — What You Learned
+
+**Body:**
+
+| Concept | What it means | Where we saw it |
+|---------|--------------|----------------|
+| **MCP Protocol** | JSON-RPC handshake + tool discovery + invocation | Demo 01 (raw frames) |
+| **Three actors** | Model (decides), Host (bridges), Server (executes) | Demo 02 (timestamped trace) |
+| **Four primitives** | Tools, Resources, Prompts, Sampling | Demo 03 (list all) |
+| **Content types** | TextContent, ImageContent, EmbeddedResource | Demo 04 |
+| **Three transports** | stdio (1:1 local), SSE (1:many HTTP), Streamable HTTP (production) | Demos 01–04 (stdio), SSE agent, Demo 05 (HTTP) |
+| **Tool design** | Group around intent, not endpoints | `get_market_price` (one call, all data) |
+| **Information asymmetry** | Different agents see different tools | Buyer vs seller server access |
+| **Agentic loop** | LLM + tool schemas → decide → call → reason | `github_agent_client.py`, `sse_agent_client.py` |
+
+**What carries forward to M3:**
+- `pricing_server.py` and `inventory_server.py` are used directly by buyer/seller agents
+- The agentic loop pattern is replaced by `MCPToolset` + `LlmAgent`
+- Information asymmetry is enforced by `before_tool_callback` allowlists
+
+---
+
+## Slide 28: From M2 to M3
+
+**Title:** M2 → M3 — What Changes
+
+**Body:**
+
+**In M2, you write the tool loop manually (~60 lines):**
+```python
+tools = await session.list_tools()
+openai_tools = mcp_tools_to_openai_functions(tools)
+for iteration in range(max_iterations):
+    response = await openai.create(messages=messages, tools=openai_tools)
+    if response.tool_calls:
+        for call in response.tool_calls:
+            result = await session.call_tool(call.name, call.args)
+            messages.append({"role": "tool", "content": result})
+    else:
+        return response.content
+```
+
+**In M3, one line replaces all of that:**
+```python
+root_agent = LlmAgent(
+    tools=[MCPToolset(connection_params=StdioConnectionParams(
+        server_params=StdioServerParameters(command="python", args=["pricing_server.py"])
+    ))]
+)
+```
+
+**ADK's `MCPToolset`** spawns the server, runs the handshake, converts schemas, executes tool calls, feeds results back — all automatically.
+
+**M2 teaches you what's happening inside. M3 lets you stop writing it.**
+
+---
+
+# PART 3 — MODULE 3: GOOGLE ADK + A2A (Slides 29–66)
+
+---
+
+## Slide 29: Module 3 Title
 
 **Title:** Module 3 — Google ADK + A2A Protocol
 
@@ -16,37 +913,28 @@ By the end of this module you'll have:
 - A **negotiation orchestrator** that runs multi-round buyer ↔ seller negotiation
 - All exposed as **A2A network services** with auto-generated Agent Cards
 
-Every concept is taught through a demo first, then composed into the final system.
-
-**Diagram: Module 3 Architecture**
+**Architecture:**
 ```
 ┌─────────────────────────────────────────────────────┐
-│              negotiation_agents/                     │
-│                                                      │
 │  ┌──────────┐    ┌──────────┐    ┌──────────────┐   │
 │  │  buyer    │    │  seller   │    │ negotiation   │   │
-│  │  agent    │    │  agent    │    │ orchestrator  │   │
-│  │          │    │          │    │              │   │
-│  │ LlmAgent │    │ LlmAgent │    │  LoopAgent   │   │
-│  │ +MCP     │    │ +MCP×2   │    │  +Sequential │   │
-│  │ pricing  │    │ pricing  │    │  (buyer→     │   │
+│  │  LlmAgent │    │ LlmAgent │    │  LoopAgent   │   │
+│  │  +MCP     │    │ +MCP×2   │    │  +Sequential │   │
+│  │  pricing  │    │ pricing  │    │  (buyer→     │   │
 │  │          │    │ +inventory│    │   seller)    │   │
 │  └──────────┘    └──────────┘    └──────────────┘   │
-│       │               │                             │
-│       │    MCP         │    MCP                      │
-│       ▼               ▼                             │
-│  pricing_server   pricing_server                     │
-│  (M2)             + inventory_server (M2)            │
+│       │ MCP           │ MCP                          │
+│       ▼               ▼                              │
+│  pricing_server   pricing_server + inventory_server  │
+│  (from M2)        (from M2)                          │
 └─────────────────────────────────────────────────────┘
-         │
-         │  adk web --a2a
-         ▼
-   A2A endpoints + Agent Cards (auto-generated)
 ```
+
+Every concept is taught through a demo first, then composed into the final system.
 
 ---
 
-## Slide 2: The Final System (What We're Building Toward)
+## Slide 30: The Final System
 
 **Title:** negotiation_agents/ — The Heart of Module 3
 
@@ -71,7 +959,7 @@ Before we build this, we'll learn each piece through 9 interactive demos.
 
 ---
 
-## Slide 3: Learning Path — Demo by Demo
+## Slide 31: Learning Path
 
 **Title:** 9 Demos → 4 A2A Scripts → 1 Complete System
 
@@ -94,7 +982,7 @@ d01–d09 run in `adk web` (interactive chat). 10–13 are terminal scripts agai
 
 ---
 
-## Slide 4: Demo 01 — Basic LlmAgent (Concept)
+## Slide 32: Demo 01 — Basic LlmAgent (Concept)
 
 **Title:** Demo 01 — The Simplest ADK Agent
 
@@ -152,7 +1040,7 @@ The LLM decides when tools are relevant. Question 3 proves it — the model does
 
 ---
 
-## Slide 5: Demo 01 — Results
+## Slide 33: Demo 01 — Results
 
 **Title:** Demo 01 — What Happened
 
@@ -176,7 +1064,7 @@ The contrast with M2 is the most important point. ADK replaces ~60 lines of manu
 
 ---
 
-## Slide 6: Demo 02 — MCP Tools in ADK (Concept)
+## Slide 34: Demo 02 — MCP Tools in ADK (Concept)
 
 **Title:** Demo 02 — Auto-Discover Tools from MCP Servers
 
@@ -225,7 +1113,7 @@ Question 2 is the key moment. `get_property_tax_estimate` is commented out in th
 
 ---
 
-## Slide 7: Demo 02 — Results
+## Slide 35: Demo 02 — Results
 
 **Title:** Demo 02 — Auto-Discovery Proven
 
@@ -250,7 +1138,7 @@ This is what the buyer/seller agents do. Same MCPToolset pattern — just pointe
 
 ---
 
-## Slide 8: Demo 03 — Sessions & State (Concept)
+## Slide 36: Demo 03 — Sessions & State (Concept)
 
 **Title:** Demo 03 — Tools That Remember
 
@@ -305,7 +1193,7 @@ The last question is the proof. Session state resets (offers=[]), but user:total
 
 ---
 
-## Slide 9: Demo 03 — Results
+## Slide 37: Demo 03 — Results
 
 **Title:** Demo 03 — State Scoping Proven
 
@@ -330,7 +1218,7 @@ In adk web, user_id defaults to "user" so user: and app: behave the same. The di
 
 ---
 
-## Slide 10: Demo 04 — SequentialAgent (Concept)
+## Slide 38: Demo 04 — SequentialAgent (Concept)
 
 **Title:** Demo 04 — Pipeline: A → B → C
 
@@ -375,7 +1263,7 @@ SequentialAgent is NOT an LlmAgent. It doesn't call a model. It just runs childr
 
 ---
 
-## Slide 11: Demo 04 — Results
+## Slide 39: Demo 04 — Results
 
 **Title:** Demo 04 — Three Agents, One Pipeline
 
@@ -400,7 +1288,7 @@ This is half of the negotiation orchestrator. negotiation/agent.py uses Sequenti
 
 ---
 
-## Slide 12: Demo 05 — ParallelAgent (Concept)
+## Slide 40: Demo 05 — ParallelAgent (Concept)
 
 **Title:** Demo 05 — Fan-Out: A, B, C Run Concurrently
 
@@ -436,7 +1324,7 @@ Combine them: Exercise 03 asks students to nest a ParallelAgent inside a Sequent
 
 ---
 
-## Slide 13: Demo 05 — Results
+## Slide 41: Demo 05 — Results
 
 **Title:** Demo 05 — Independent Signals Gathered
 
@@ -457,7 +1345,7 @@ No {placeholder} reading between agents — they're independent. That's why Para
 
 ---
 
-## Slide 14: Demo 06 — LoopAgent (Concept)
+## Slide 42: Demo 06 — LoopAgent (Concept)
 
 **Title:** Demo 06 — Iterate Until Done
 
@@ -485,7 +1373,7 @@ This is the ADK equivalent of M1's FSM termination guarantee. max_iterations = m
 
 ---
 
-## Slide 15: Demo 06 — Results
+## Slide 43: Demo 06 — Results
 
 **Title:** Demo 06 — Bounded Termination
 
@@ -532,7 +1420,7 @@ negotiation/agent.py uses LoopAgent(sub_agents=[SequentialAgent(buyer, seller)],
 
 ---
 
-## Slide 16: Demo 07 — Agent-as-Tool (Concept)
+## Slide 44: Demo 07 — Agent-as-Tool (Concept)
 
 **Title:** Demo 07 — Wrap an Agent as a Callable Tool
 
@@ -557,6 +1445,7 @@ root_agent = LlmAgent(
 | AgentTool | Call agent as function → result returns to caller | Caller keeps control |
 | sub_agents | Transfer to agent → it takes over | Full delegation |
 | SequentialAgent | Fixed order, no runtime choice | No decision |
+
 **Diagram: AgentTool Delegation**
 ```
   ┌─────────────────┐
@@ -582,6 +1471,7 @@ root_agent = LlmAgent(
   │  recommendation  │
   └─────────────────┘
 ```
+
 **Try:**
 
 | Question | Expected |
@@ -593,7 +1483,7 @@ The valuator is a full LlmAgent with its own model call. The coordinator sees it
 
 ---
 
-## Slide 17: Demo 07 — Results
+## Slide 45: Demo 07 — Results
 
 **Title:** Demo 07 — Delegation in Action
 
@@ -615,7 +1505,7 @@ description matters here. The coordinator reads valuator.description to decide w
 
 ---
 
-## Slide 18: Demo 08 — Callbacks (Concept)
+## Slide 46: Demo 08 — Callbacks (Concept)
 
 **Title:** Demo 08 — Policy Without Prompts
 
@@ -644,7 +1534,7 @@ Callbacks are deterministic — a regex WILL strip the SSN. The instruction "don
 
 ---
 
-## Slide 19: Demo 08 — Results
+## Slide 47: Demo 08 — Results
 
 **Title:** Demo 08 — Security Audit Trail
 
@@ -666,7 +1556,7 @@ In production, swap print() for structured logging. The audit trail is the compl
 
 ---
 
-## Slide 20: Demo 09 — Event Stream (Concept)
+## Slide 48: Demo 09 — Event Stream (Concept)
 
 **Title:** Demo 09 — See What the Runner Produces
 
@@ -690,7 +1580,7 @@ This demo is about seeing state writes and event structure, not the chat respons
 
 ---
 
-## Slide 21: Demo 09 — Results
+## Slide 49: Demo 09 — Results
 
 **Title:** Demo 09 — Parallel Tool Pitfall
 
@@ -713,7 +1603,7 @@ This is a known GPT-4o behavior. The instruction said "1. call lookup, 2. call e
 
 ---
 
-## Slide 22: What is A2A?
+## Slide 50: What is A2A?
 
 **Title:** A2A — Agent-to-Agent Protocol
 
@@ -743,7 +1633,7 @@ MCP: agent discovers **tools**. A2A: agent discovers **other agents**.
 
 ---
 
-## Slide 23: Why A2A Matters
+## Slide 51: Why A2A Matters
 
 **Title:** From In-Process to Network Services
 
@@ -772,7 +1662,7 @@ This is what production multi-agent systems look like.
 
 ---
 
-## Slide 24: Agent Card — The A2A Discovery Document
+## Slide 52: Agent Card
 
 **Title:** Agent Card = Agent's Business Card
 
@@ -805,7 +1695,7 @@ In our workshop, `agent.json` in each agent folder defines this card. `adk web -
 
 ---
 
-## Slide 25: A2A Demos Overview
+## Slide 53: A2A Demos Overview
 
 **Title:** Demos 10–13 — A2A Protocol in Action
 
@@ -847,7 +1737,7 @@ These demos are terminal scripts, not adk web dropdown agents. They talk to the 
 
 ---
 
-## Slide 26: Demo 10 — A2A Wire Format
+## Slide 54: Demo 10 — A2A Wire Format (Concept)
 
 **Title:** Demo 10 — Raw JSON-RPC + Task Lifecycle
 
@@ -874,7 +1764,7 @@ These demos are terminal scripts, not adk web dropdown agents. They talk to the 
 
 ---
 
-## Slide 27: Demo 10 — Results
+## Slide 55: Demo 10 — Results
 
 **Title:** Demo 10 — What the Wire Looks Like
 
@@ -907,7 +1797,7 @@ artifacts: [{text: "Could you please resend your offer?"}]
 
 ---
 
-## Slide 28: Demo 11 — Context Threading (Concept)
+## Slide 56: Demo 11 — Context Threading (Concept)
 
 **Title:** Demo 11 — Multi-Turn Negotiations via contextId
 
@@ -931,7 +1821,7 @@ Without `contextId`, the seller would counter at $477K every time — no memory 
 
 ---
 
-## Slide 29: Demo 11 — Results
+## Slide 57: Demo 11 — Results
 
 **Title:** Demo 11 — Why Memory Matters
 
@@ -948,7 +1838,7 @@ The seller accepted in round 3 because it remembered:
 
 ---
 
-## Slide 30: Demo 12 — Parts & Artifacts (Concept)
+## Slide 58: Demo 12 — Parts & Artifacts (Concept)
 
 **Title:** Demo 12 — Multi-Part Messages + Durable Outputs
 
@@ -972,7 +1862,7 @@ Parts = conversational (in Messages). Artifacts = deliverables (on Tasks).
 
 ---
 
-## Slide 31: Demo 12 — Results
+## Slide 59: Demo 12 — Results
 
 **Title:** Demo 12 — Acceptance at $445K
 
@@ -995,7 +1885,7 @@ Tool calls appear as DataParts in history — you can programmatically inspect w
 
 ---
 
-## Slide 32: Demo 13 — Streaming (Concept)
+## Slide 60: Demo 13 — Streaming (Concept)
 
 **Title:** Demo 13 — Real-Time Task Lifecycle via SSE
 
@@ -1018,7 +1908,7 @@ Streaming is for UX ("seller is thinking..."), not correctness — `message/send
 
 ---
 
-## Slide 33: Demo 13 — Results
+## Slide 61: Demo 13 — Results
 
 **Title:** Demo 13 — 7 Events for One Request
 
@@ -1041,7 +1931,7 @@ With `message/send` you'd see only the final result. Streaming shows every step:
 
 ---
 
-## Slide 34: Buyer vs Seller — Information Asymmetry
+## Slide 62: Buyer vs Seller — Information Asymmetry
 
 **Title:** Information Asymmetry — The Design Point
 
@@ -1095,7 +1985,7 @@ adk web m3_adk_multiagents/negotiation_agents/
 
 ---
 
-## Slide 35: Buyer & Seller — Results
+## Slide 63: Buyer & Seller — Results
 
 **Title:** Buyer & Seller — What We Observed
 
@@ -1132,7 +2022,7 @@ Query 2: "Buyer increases to $446,000"
 
 ---
 
-## Slide 36: Negotiation Orchestrator — Composition
+## Slide 64: Negotiation Orchestrator — Composition
 
 **Title:** The Orchestrator — Every Demo in One File
 
@@ -1206,7 +2096,7 @@ Watch Events for MCP tool calls + `submit_decision` calls. Check State tab for `
 
 ---
 
-## Slide 37: Negotiation — Live Run Results
+## Slide 65: Negotiation — Live Run Results
 
 **Title:** Negotiation — What Actually Happened
 
@@ -1250,7 +2140,7 @@ Event 15-20 | buyer/seller → post-acceptance chatter (current iteration comple
 
 ---
 
-## Slide 38: A2A Orchestrated Negotiation
+## Slide 66: A2A Orchestrated Negotiation
 
 **Title:** Demo 14 — Full Negotiation Over A2A
 
@@ -1285,3 +2175,96 @@ Step 2: Multi-round negotiation
 - **4 total A2A messages** for a complete negotiation
 
 This is the production pattern: agents as network services, discovered via Agent Cards, communicating via JSON-RPC.
+
+---
+
+# PART 4 — SUMMARY & WRAP-UP (Slides 67–69)
+
+---
+
+## Slide 67: The Full Journey
+
+**Title:** From `while True` to Production Agents
+
+**Body:**
+
+```
+Module 1                Module 2                Module 3
+─────────               ─────────               ─────────
+while True              MCP servers             ADK + A2A
+  ├ regex parsing         ├ list_tools            ├ LlmAgent
+  ├ "DEAL" in msg         ├ call_tool             ├ MCPToolset
+  └ hardcoded prices      ├ pricing_server        ├ LoopAgent
+                          └ inventory_server      ├ submit_decision
+                                                  ├ callbacks
+                                                  ├ Agent Cards
+                                                  └ message/send
+    ▼                       ▼                       ▼
+  BREAKS                  DATA LAYER              ORCHESTRATION
+  (by design)             (external tools)        (production agents)
+```
+
+**The progression of the floor price:**
+| Module | Where $445K lives | Who can see it |
+|--------|-------------------|----------------|
+| M1 | `SELLER_MIN_PRICE = 445_000` (Python constant) | Everyone reading source |
+| M2 | `get_minimum_acceptable_price()` (MCP server) | Anyone who calls the tool |
+| M3 | Same MCP tool + `before_tool_callback` allowlist | **Seller only** |
+
+Same data. Increasingly better architecture.
+
+---
+
+## Slide 68: Problem → Solution Map
+
+**Title:** Every M1 Problem, Solved
+
+**Body:**
+
+| # | Problem (M1) | Solution (M2/M3) |
+|---|-------------|------------------|
+| 1 | Raw strings | A2A TextPart + DataPart |
+| 2 | No schema | Pydantic / JSON Schema from type hints |
+| 3 | No state machine | LoopAgent + SequentialAgent |
+| 4 | No turn limits | `max_iterations = 5` |
+| 5 | Fragile regex | `submit_decision(price=445000)` typed field |
+| 6 | No termination guarantee | `escalate = True` + `_check_agreement` |
+| 7 | Silent failures | Pydantic validation + tool callbacks |
+| 8 | Hardcoded prices | MCP `get_market_price()` + `get_minimum_acceptable_price()` |
+| 9 | No observability | ADK event stream + A2A task lifecycle |
+| 10 | No evaluation | Session analytics via `session.db` |
+
+**The `submit_decision` origin story:** In M3 development, `"ACCEPT" in response` matched "minimum acceptable price" — the exact same false positive as M1's `"DEAL" in message`. Textbook M1 → M3 connection.
+
+---
+
+## Slide 69: Three Protocols Cheat Sheet
+
+**Title:** MCP · ADK · A2A — Quick Reference
+
+**Body:**
+
+| | MCP | A2A |
+|---|---|---|
+| **Connects** | Agent ↔ Tool | Agent ↔ Agent |
+| **Discovery** | `list_tools` → JSON Schema | Agent Card → skills |
+| **Invocation** | `call_tool(name, args)` | `message/send` (JSON-RPC) |
+| **Wire format** | JSON-RPC 2.0 | JSON-RPC 2.0 |
+| **Transport** | stdio / SSE / Streamable HTTP | HTTP |
+| **State** | Stateless | `contextId` threads |
+| **SDK** | `mcp` Python package | `a2a-sdk` Python package |
+
+**ADK connects them:**
+
+| ADK Component | What it does |
+|---------------|-------------|
+| `LlmAgent` | Model + instruction + tools |
+| `MCPToolset` | Auto-discover + call MCP tools |
+| `SequentialAgent` | Pipeline: A → B → C |
+| `ParallelAgent` | Fan-out: A, B, C concurrent |
+| `LoopAgent` | Iterate until escalation |
+| `AgentTool` | Agent wrapped as function |
+| Callbacks | Deterministic policy enforcement |
+| `adk web --a2a` | Auto-generate A2A endpoints |
+
+
