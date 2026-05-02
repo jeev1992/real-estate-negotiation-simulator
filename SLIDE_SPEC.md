@@ -4,7 +4,7 @@
 
 A 4-hour hands-on workshop taught through one concrete project: an autonomous real estate negotiation between a Buyer Agent and a Seller Agent.
 
-**Total slides:** 69 (Introduction: 5, Module 1: 8, Module 2: 15, Module 3: 38, Summary: 3)
+**Total slides:** 71 (Introduction: 5, Module 1: 8, Module 2: 17, Module 3: 38, Summary: 3)
 
 ---
 
@@ -416,7 +416,7 @@ failure_reason: MAX_TURNS_EXCEEDED
 
 ---
 
-# PART 2 — MODULE 2: MCP — EXTERNAL DATA FOR AGENTS (Slides 14–28)
+# PART 2 — MODULE 2: MCP — EXTERNAL DATA FOR AGENTS (Slides 14–30)
 
 ---
 
@@ -631,7 +631,63 @@ The host is the **bridge**. In M3, ADK's `MCPToolset` IS the host — it does th
 
 ---
 
-## Slide 21: Custom MCP Servers
+## Slide 21: Demo 03 — List All Primitives
+
+**Title:** Demo 03 — Tools, Resources, and Prompts
+
+**Body:**
+
+```bash
+python m2_mcp/demos/03_list_all_primitives.py   # no API key needed
+```
+
+**What it prints:**
+
+```
+=== PRICING SERVER ===
+[tools] 2      [resources] 0      [prompts] 1
+
+=== INVENTORY SERVER ===
+[tools] 2      [resources] 1      [prompts] 0
+```
+
+**What to point out live:**
+- MCP exposes more than tools; resources and prompts are first-class primitives too
+- `inventory://floor-prices` is readable data, not a callable function
+- `negotiation-tactics` is a prompt template the host can expand into the conversation
+
+This slide is the concrete proof for Slide 17's primitives table.
+
+---
+
+## Slide 22: Demo 04 — Content Types
+
+**Title:** Demo 04 — Text, Image, and Embedded Resource
+
+**Body:**
+
+```bash
+python m2_mcp/demos/04_content_types.py   # no API key needed
+```
+
+**Actual output shape:**
+
+```
+=== get_text ===     type=text
+=== get_image ===    type=image
+=== get_resource === type=resource
+```
+
+**Why it matters:**
+- Most workshop tools return `TextContent`, but MCP can also return images and embedded resources
+- The protocol standardizes result blocks, so the host can render them consistently
+- Demo 04 makes the JSON shape visible before students ever need to debug it in M3
+
+This slide is the concrete proof for Slide 17's content-types table.
+
+---
+
+## Slide 23: Custom MCP Servers
 
 **Title:** Building Your Own MCP Server
 
@@ -665,7 +721,7 @@ def get_market_price(address: str, property_type: str = "single_family") -> dict
 
 ---
 
-## Slide 22: Information Asymmetry via MCP
+## Slide 24: Information Asymmetry via MCP
 
 **Title:** Different Agents, Different Tools
 
@@ -693,7 +749,7 @@ This is how real production systems work. Different agents get different tool ac
 
 ---
 
-## Slide 23: GitHub MCP Agent (Live Demo)
+## Slide 25: GitHub MCP Agent (Live Demo)
 
 **Title:** Live Demo — An LLM Agent Using GitHub via MCP
 
@@ -725,7 +781,7 @@ for iteration in range(max_iterations):
 
 ---
 
-## Slide 24: SSE MCP Agent (Live Demo)
+## Slide 26: SSE MCP Agent (Live Demo)
 
 **Title:** SSE Agent — Same Loop, HTTP Transport
 
@@ -764,7 +820,7 @@ python m2_mcp/sse_agent_client.py --both "What's the seller's minimum price?"
 
 ---
 
-## Slide 25: SSE vs stdio vs Streamable HTTP
+## Slide 27: SSE vs stdio vs Streamable HTTP
 
 **Title:** Three Transports Side by Side
 
@@ -799,7 +855,7 @@ python m2_mcp/demos/05_streamable_http_transport.py --client --port 8765
 
 ---
 
-## Slide 26: Demo 05 — Streamable HTTP Results
+## Slide 28: Demo 05 — Streamable HTTP Results
 
 **Title:** Demo 05 — HTTP Transport in Action
 
@@ -836,7 +892,7 @@ mcp.run(transport="streamable-http")
 
 ---
 
-## Slide 27: M2 Key Concepts Summary
+## Slide 29: M2 Key Concepts Summary
 
 **Title:** Module 2 — What You Learned
 
@@ -860,7 +916,7 @@ mcp.run(transport="streamable-http")
 
 ---
 
-## Slide 28: From M2 to M3
+## Slide 30: From M2 to M3
 
 **Title:** M2 → M3 — What Changes
 
@@ -895,11 +951,11 @@ root_agent = LlmAgent(
 
 ---
 
-# PART 3 — MODULE 3: GOOGLE ADK + A2A (Slides 29–66)
+# PART 3 — MODULE 3: GOOGLE ADK + A2A (Slides 31–68)
 
 ---
 
-## Slide 29: Module 3 Title
+## Slide 31: Module 3 Title
 
 **Title:** Module 3 — Google ADK + A2A Protocol
 
@@ -934,7 +990,7 @@ Every concept is taught through a demo first, then composed into the final syste
 
 ---
 
-## Slide 30: The Final System
+## Slide 32: The Final System
 
 **Title:** negotiation_agents/ — The Heart of Module 3
 
@@ -959,7 +1015,7 @@ Before we build this, we'll learn each piece through 9 interactive demos.
 
 ---
 
-## Slide 31: Learning Path
+## Slide 33: Learning Path
 
 **Title:** 9 Demos → 4 A2A Scripts → 1 Complete System
 
@@ -982,7 +1038,7 @@ d01–d09 run in `adk web` (interactive chat). 10–13 are terminal scripts agai
 
 ---
 
-## Slide 32: Demo 01 — Basic LlmAgent (Concept)
+## Slide 34: Demo 01 — Basic LlmAgent (Concept)
 
 **Title:** Demo 01 — The Simplest ADK Agent
 
@@ -1040,7 +1096,7 @@ The LLM decides when tools are relevant. Question 3 proves it — the model does
 
 ---
 
-## Slide 33: Demo 01 — Results
+## Slide 35: Demo 01 — Results
 
 **Title:** Demo 01 — What Happened
 
@@ -1064,7 +1120,7 @@ The contrast with M2 is the most important point. ADK replaces ~60 lines of manu
 
 ---
 
-## Slide 34: Demo 02 — MCP Tools in ADK (Concept)
+## Slide 36: Demo 02 — MCP Tools in ADK (Concept)
 
 **Title:** Demo 02 — Auto-Discover Tools from MCP Servers
 
@@ -1113,7 +1169,7 @@ Question 2 is the key moment. `get_property_tax_estimate` is commented out in th
 
 ---
 
-## Slide 35: Demo 02 — Results
+## Slide 37: Demo 02 — Results
 
 **Title:** Demo 02 — Auto-Discovery Proven
 
@@ -1138,7 +1194,7 @@ This is what the buyer/seller agents do. Same MCPToolset pattern — just pointe
 
 ---
 
-## Slide 36: Demo 03 — Sessions & State (Concept)
+## Slide 38: Demo 03 — Sessions & State (Concept)
 
 **Title:** Demo 03 — Tools That Remember
 
@@ -1193,7 +1249,7 @@ The last question is the proof. Session state resets (offers=[]), but user:total
 
 ---
 
-## Slide 37: Demo 03 — Results
+## Slide 39: Demo 03 — Results
 
 **Title:** Demo 03 — State Scoping Proven
 
@@ -1218,7 +1274,7 @@ In adk web, user_id defaults to "user" so user: and app: behave the same. The di
 
 ---
 
-## Slide 38: Demo 04 — SequentialAgent (Concept)
+## Slide 40: Demo 04 — SequentialAgent (Concept)
 
 **Title:** Demo 04 — Pipeline: A → B → C
 
@@ -1263,7 +1319,7 @@ SequentialAgent is NOT an LlmAgent. It doesn't call a model. It just runs childr
 
 ---
 
-## Slide 39: Demo 04 — Results
+## Slide 41: Demo 04 — Results
 
 **Title:** Demo 04 — Three Agents, One Pipeline
 
@@ -1288,7 +1344,7 @@ This is half of the negotiation orchestrator. negotiation/agent.py uses Sequenti
 
 ---
 
-## Slide 40: Demo 05 — ParallelAgent (Concept)
+## Slide 42: Demo 05 — ParallelAgent (Concept)
 
 **Title:** Demo 05 — Fan-Out: A, B, C Run Concurrently
 
@@ -1324,7 +1380,7 @@ Combine them: Exercise 03 asks students to nest a ParallelAgent inside a Sequent
 
 ---
 
-## Slide 41: Demo 05 — Results
+## Slide 43: Demo 05 — Results
 
 **Title:** Demo 05 — Independent Signals Gathered
 
@@ -1345,7 +1401,7 @@ No {placeholder} reading between agents — they're independent. That's why Para
 
 ---
 
-## Slide 42: Demo 06 — LoopAgent (Concept)
+## Slide 44: Demo 06 — LoopAgent (Concept)
 
 **Title:** Demo 06 — Iterate Until Done
 
@@ -1373,7 +1429,7 @@ This is the ADK equivalent of M1's FSM termination guarantee. max_iterations = m
 
 ---
 
-## Slide 43: Demo 06 — Results
+## Slide 45: Demo 06 — Results
 
 **Title:** Demo 06 — Bounded Termination
 
@@ -1420,7 +1476,7 @@ negotiation/agent.py uses LoopAgent(sub_agents=[SequentialAgent(buyer, seller)],
 
 ---
 
-## Slide 44: Demo 07 — Agent-as-Tool (Concept)
+## Slide 46: Demo 07 — Agent-as-Tool (Concept)
 
 **Title:** Demo 07 — Wrap an Agent as a Callable Tool
 
@@ -1483,7 +1539,7 @@ The valuator is a full LlmAgent with its own model call. The coordinator sees it
 
 ---
 
-## Slide 45: Demo 07 — Results
+## Slide 47: Demo 07 — Results
 
 **Title:** Demo 07 — Delegation in Action
 
@@ -1505,7 +1561,7 @@ description matters here. The coordinator reads valuator.description to decide w
 
 ---
 
-## Slide 46: Demo 08 — Callbacks (Concept)
+## Slide 48: Demo 08 — Callbacks (Concept)
 
 **Title:** Demo 08 — Policy Without Prompts
 
@@ -1534,7 +1590,7 @@ Callbacks are deterministic — a regex WILL strip the SSN. The instruction "don
 
 ---
 
-## Slide 47: Demo 08 — Results
+## Slide 49: Demo 08 — Results
 
 **Title:** Demo 08 — Security Audit Trail
 
@@ -1556,7 +1612,7 @@ In production, swap print() for structured logging. The audit trail is the compl
 
 ---
 
-## Slide 48: Demo 09 — Event Stream (Concept)
+## Slide 50: Demo 09 — Event Stream (Concept)
 
 **Title:** Demo 09 — See What the Runner Produces
 
@@ -1580,7 +1636,7 @@ This demo is about seeing state writes and event structure, not the chat respons
 
 ---
 
-## Slide 49: Demo 09 — Results
+## Slide 51: Demo 09 — Results
 
 **Title:** Demo 09 — Parallel Tool Pitfall
 
@@ -1603,7 +1659,7 @@ This is a known GPT-4o behavior. The instruction said "1. call lookup, 2. call e
 
 ---
 
-## Slide 50: What is A2A?
+## Slide 52: What is A2A?
 
 **Title:** A2A — Agent-to-Agent Protocol
 
@@ -1633,7 +1689,7 @@ MCP: agent discovers **tools**. A2A: agent discovers **other agents**.
 
 ---
 
-## Slide 51: Why A2A Matters
+## Slide 53: Why A2A Matters
 
 **Title:** From In-Process to Network Services
 
@@ -1662,7 +1718,7 @@ This is what production multi-agent systems look like.
 
 ---
 
-## Slide 52: Agent Card
+## Slide 54: Agent Card
 
 **Title:** Agent Card = Agent's Business Card
 
@@ -1695,7 +1751,7 @@ In our workshop, `agent.json` in each agent folder defines this card. `adk web -
 
 ---
 
-## Slide 53: A2A Demos Overview
+## Slide 55: A2A Demos Overview
 
 **Title:** Demos 10–13 — A2A Protocol in Action
 
@@ -1737,7 +1793,7 @@ These demos are terminal scripts, not adk web dropdown agents. They talk to the 
 
 ---
 
-## Slide 54: Demo 10 — A2A Wire Format (Concept)
+## Slide 56: Demo 10 — A2A Wire Format (Concept)
 
 **Title:** Demo 10 — Raw JSON-RPC + Task Lifecycle
 
@@ -1764,7 +1820,7 @@ These demos are terminal scripts, not adk web dropdown agents. They talk to the 
 
 ---
 
-## Slide 55: Demo 10 — Results
+## Slide 57: Demo 10 — Results
 
 **Title:** Demo 10 — What the Wire Looks Like
 
@@ -1797,7 +1853,7 @@ artifacts: [{text: "Could you please resend your offer?"}]
 
 ---
 
-## Slide 56: Demo 11 — Context Threading (Concept)
+## Slide 58: Demo 11 — Context Threading (Concept)
 
 **Title:** Demo 11 — Multi-Turn Negotiations via contextId
 
@@ -1821,7 +1877,7 @@ Without `contextId`, the seller would counter at $477K every time — no memory 
 
 ---
 
-## Slide 57: Demo 11 — Results
+## Slide 59: Demo 11 — Results
 
 **Title:** Demo 11 — Why Memory Matters
 
@@ -1838,7 +1894,7 @@ The seller accepted in round 3 because it remembered:
 
 ---
 
-## Slide 58: Demo 12 — Parts & Artifacts (Concept)
+## Slide 60: Demo 12 — Parts & Artifacts (Concept)
 
 **Title:** Demo 12 — Multi-Part Messages + Durable Outputs
 
@@ -1862,7 +1918,7 @@ Parts = conversational (in Messages). Artifacts = deliverables (on Tasks).
 
 ---
 
-## Slide 59: Demo 12 — Results
+## Slide 61: Demo 12 — Results
 
 **Title:** Demo 12 — Acceptance at $445K
 
@@ -1885,7 +1941,7 @@ Tool calls appear as DataParts in history — you can programmatically inspect w
 
 ---
 
-## Slide 60: Demo 13 — Streaming (Concept)
+## Slide 62: Demo 13 — Streaming (Concept)
 
 **Title:** Demo 13 — Real-Time Task Lifecycle via SSE
 
@@ -1908,7 +1964,7 @@ Streaming is for UX ("seller is thinking..."), not correctness — `message/send
 
 ---
 
-## Slide 61: Demo 13 — Results
+## Slide 63: Demo 13 — Results
 
 **Title:** Demo 13 — 7 Events for One Request
 
@@ -1931,7 +1987,7 @@ With `message/send` you'd see only the final result. Streaming shows every step:
 
 ---
 
-## Slide 62: Buyer vs Seller — Information Asymmetry
+## Slide 64: Buyer vs Seller — Information Asymmetry
 
 **Title:** Information Asymmetry — The Design Point
 
@@ -1985,7 +2041,7 @@ adk web m3_adk_multiagents/negotiation_agents/
 
 ---
 
-## Slide 63: Buyer & Seller — Results
+## Slide 65: Buyer & Seller — Results
 
 **Title:** Buyer & Seller — What We Observed
 
@@ -2022,7 +2078,7 @@ Query 2: "Buyer increases to $446,000"
 
 ---
 
-## Slide 64: Negotiation Orchestrator — Composition
+## Slide 66: Negotiation Orchestrator — Composition
 
 **Title:** The Orchestrator — Every Demo in One File
 
@@ -2096,7 +2152,7 @@ Watch Events for MCP tool calls + `submit_decision` calls. Check State tab for `
 
 ---
 
-## Slide 65: Negotiation — Live Run Results
+## Slide 67: Negotiation — Live Run Results
 
 **Title:** Negotiation — What Actually Happened
 
@@ -2140,7 +2196,7 @@ Event 15-20 | buyer/seller → post-acceptance chatter (current iteration comple
 
 ---
 
-## Slide 66: A2A Orchestrated Negotiation
+## Slide 68: A2A Orchestrated Negotiation
 
 **Title:** Demo 14 — Full Negotiation Over A2A
 
@@ -2178,11 +2234,11 @@ This is the production pattern: agents as network services, discovered via Agent
 
 ---
 
-# PART 4 — SUMMARY & WRAP-UP (Slides 67–69)
+# PART 4 — SUMMARY & WRAP-UP (Slides 69–71)
 
 ---
 
-## Slide 67: The Full Journey
+## Slide 69: The Full Journey
 
 **Title:** From `while True` to Production Agents
 
@@ -2215,7 +2271,7 @@ Same data. Increasingly better architecture.
 
 ---
 
-## Slide 68: Problem → Solution Map
+## Slide 70: Problem → Solution Map
 
 **Title:** Every M1 Problem, Solved
 
@@ -2238,7 +2294,7 @@ Same data. Increasingly better architecture.
 
 ---
 
-## Slide 69: Three Protocols Cheat Sheet
+## Slide 71: Three Protocols Cheat Sheet
 
 **Title:** MCP · ADK · A2A — Quick Reference
 
