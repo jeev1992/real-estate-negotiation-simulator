@@ -38,8 +38,8 @@ Requirements:
 4. Pick `property_advisor` from the dropdown.
 5. Test with these queries:
    - *"What's 742 Evergreen Terrace worth?"* → should call `get_market_price`
-   - *"What's the seller's minimum on 742 Evergreen?"* → should call `get_minimum_acceptable_price` (from the **other** server)
-   - *"Walk me through whether to make an offer on 742 Evergreen."* → should call **multiple** tools across **both** servers
+   - *"What's the seller's minimum on 742 Evergreen?"* → should call `get_minimum_acceptable_price` (from the inventory server, not the pricing server). The LLM may ask for the property ID — reply "Assume" and it will figure it out.
+   - *"Walk me through whether to make an offer on 742 Evergreen Terrace. I have a $460K budget."* → should call **multiple** tools across **both** servers
 
 ## Verify
 

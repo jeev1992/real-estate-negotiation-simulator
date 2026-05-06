@@ -40,16 +40,27 @@ Return shape:
    Output should list **three** tools now.
 4. Run the agent and observe:
    ```bash
-   adk web m3_adk_multiagents/adk_demos/d02_mcp_tools/
+   adk web m2_mcp/solution/ex01_walk_score_tool/
    ```
-   Ask: *"Is the neighborhood around 742 Evergreen Terrace walkable?"*
-   Watch whether the LLM picks `get_walk_score` on its own.
+   Pick **`walk_score_agent`** from the dropdown.
+5. Test with these queries in sequence:
+
+   | Query | Expected tool call | Why it matters |
+   |---|---|---|
+   | *"Is the 78701 area walkable?"* | `get_walk_score` | The LLM discovers and calls your new tool automatically |
+   | *"What's 742 Evergreen Terrace worth?"* | `get_market_price` | Proves existing tools still work — you didn't break anything |
+   | *"Is 742 Evergreen Terrace fairly priced and walkable?"* | `get_market_price` + `get_walk_score` | LLM composes **two** tools for a multi-faceted question |
+   | *"Can I get some reduction in price as I have a $500K budget in the 78701 area, and how easy is it there to get things nearby without using a car?"* | `calculate_discount` + `get_walk_score` | LLM picks `calculate_discount` for pricing strategy **and** your new tool for walkability — without being told which tools exist |
+
+6. Open the **Info tab** in the `adk web` UI — it should show 3 tools: `get_market_price`, `calculate_discount`, `get_walk_score`.
 
 ## Verify
 
 - `--check` shows 3 tools: `get_market_price`, `calculate_discount`, `get_walk_score`
-- The d02 agent calls `get_walk_score` for walkability questions **without any change to `agent.py`**
-- The agent calls a *different* tool (`get_market_price`) for pricing questions
+- The agent calls `get_walk_score` for walkability questions **without any change to `agent.py`**
+- The agent calls `get_market_price` for pricing questions
+- The agent calls `calculate_discount` + `get_walk_score` together when asked about both discount strategy and walkability
+- The Info tab lists all three tools
 
 ## Reflection
 

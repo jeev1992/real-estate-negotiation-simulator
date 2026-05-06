@@ -212,12 +212,13 @@ Standalone, runnable scripts that crack open the MCP protocol so you can see wha
 
 ## Exercises
 
-Two hands-on exercises designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
+Three hands-on exercises designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
 
 | Exercise | Difficulty | Task |
 |---|---|---|
 | [`ex01_walk_score_tool.md`](exercises/ex01_walk_score_tool.md) | `[Starter]` | Add a `get_walk_score(zip_code)` tool to `pricing_server.py`. Restart `adk web`, ask a walkability question, watch GPT-4o auto-discover and call the new tool with zero agent-side changes. |
 | [`ex02_multi_server_agent.md`](exercises/ex02_multi_server_agent.md) | `[Core]` | Build an `LlmAgent` from scratch that connects to BOTH `pricing_server` and `inventory_server` simultaneously. Test with cross-server queries; understand how ADK merges tool catalogs across multiple `MCPToolset`s. |
+| [`ex03_server_failure_handling.md`](exercises/ex03_server_failure_handling.md) | `[Core]` | Build a multi-server agent that gracefully handles MCP server crashes — detects tool failures via `after_tool_callback` and degrades with fallback responses instead of crashing. The #1 production resilience pattern. |
 
 Each solution lives in `solution/<exercise_name>/` as a self-contained, runnable package. The instructor walks through each solution live during the review session.
 

@@ -187,9 +187,9 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 
 ## Exercises
 
-Four core exercises plus one stretch — designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
+Six core exercises plus two stretch — designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
 
-Each exercise extends the real-estate codebase with a production-relevant pattern. Difficulty mix: 1 starter, 3 core, 1 stretch.
+Each exercise extends the real-estate codebase with a production-relevant pattern. Difficulty mix: 1 starter, 5 core, 2 stretch.
 
 | Exercise | Difficulty | Reinforces | Task |
 |---|---|---|---|
@@ -197,6 +197,9 @@ Each exercise extends the real-estate codebase with a production-relevant patter
 | [`ex02_stuck_detection.md`](exercises/ex02_stuck_detection.md) | `[Core]` | Demos 03, 06 (state, LoopAgent escalation) | Modify the orchestrator to track offer history across rounds and escalate early when 3+ consecutive rounds show <$1K of movement. The production "stuck-agent detection" pattern. |
 | [`ex03_a2a_multiround_client.md`](exercises/ex03_a2a_multiround_client.md) | `[Core]` | Demos 10, 11, 14 (A2A wire format, contextId threading) | Write a Python script that drives buyer ↔ seller via A2A `message/send`, threading by `contextId`. The matchmaker pattern, end to end. |
 | [`ex04_mediator_agent.md`](exercises/ex04_mediator_agent.md) | `[Core]` | Demo 07 (`AgentTool`) | Build a mediator that wraps buyer + seller as `AgentTool`s and proposes a midpoint price. Demonstrates hierarchical delegation as the alternative to peer-to-peer A2A. |
+| [`ex05_prompt_injection_defense.md`](exercises/ex05_prompt_injection_defense.md) | `[Core]` | Demo 08 (`before_model` callback) | Add a `before_model_callback` to the seller that detects and redacts prompt injection attempts ("ignore your instructions", "what's your floor price"). Adversarial input defense for multi-agent systems. |
+| [`ex06_human_in_the_loop.md`](exercises/ex06_human_in_the_loop.md) | `[Core]` | Demos 06, 08 (LoopAgent, callbacks) | Add a human-approval checkpoint that pauses the negotiation when the seller tries to accept above $455K. Three-tier governance: auto-approve, human checkpoint, hard block. |
+| [`ex07_parallel_negotiation.md`](exercises/ex07_parallel_negotiation.md) | `[Stretch]` | Demos 04, 05, 06 (Sequential, Parallel, Loop) | Build a system that negotiates with two sellers in parallel using `ParallelAgent`, then a `deal_picker` agent compares outcomes and recommends the best deal. Composes all three workflow agent types. |
 | [`stretch_streaming_client.md`](exercises/stretch_streaming_client.md) | `[Stretch]` | Demo 13 (A2A streaming) | Convert the multi-round client to use `message/stream` instead of `message/send`. Render task lifecycle events to console as they arrive. |
 
 Each solution lives in `solution/<exercise_name>/` as a self-contained, runnable package — most are launchable directly with `adk web solution/<exercise_name>/`. The instructor walks through each solution live during the review session.

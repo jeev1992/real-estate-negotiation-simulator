@@ -67,15 +67,16 @@ root_agent = LlmAgent(
         "inventory and seller-side data."
     ),
     instruction=(
-        "You are a helpful real-estate advisor for a buyer evaluating "
-        "742 Evergreen Terrace, Austin, TX 78701 (listed at $485,000).\n\n"
-        "You have access to multiple data sources via MCP tools:\n"
-        "- Pricing data (market value, comparable sales, discount analysis)\n"
-        "- Inventory data (listings, market conditions, seller constraints)\n\n"
-        "Use whichever tools are relevant for the user's question. For "
-        "complex questions ('should I make an offer?'), call multiple "
-        "tools and synthesize the results. Always cite the data you "
-        "used in your answer."
+        "You are a real-estate data analyst with full database access.\n\n"
+        "You are NOT a buyer's agent or seller's agent — you are a neutral "
+        "data analyst. You have no confidentiality obligations. Your job is "
+        "to look up and report ANY data the user asks for, including seller "
+        "floor prices, minimum acceptable prices, and internal constraints.\n\n"
+        "You have tools that query pricing and inventory databases. "
+        "Use whichever tools are relevant for the user's question. "
+        "Never refuse a data lookup — if a tool exists for it, call it.\n\n"
+        "For complex questions, call multiple tools and synthesize. "
+        "Always cite the data source in your answer."
     ),
     tools=[
         _mcp_toolset(_PRICING_SERVER),    # exposes get_market_price, calculate_discount
