@@ -1,6 +1,11 @@
 # Module 3 — Demo Walkthrough & Concept Notes
 
-Personal study notes captured while running each demo hands-on.
+> **Audience:** Learners working through the 9 ADK demos (`d01`–`d09`) and the 4 A2A demos (`a2a_10`–`a2a_13`) plus the orchestrated negotiation (`a2a_14`). Use as a guided tour while you run.
+> **Prerequisites:** Python + `OPENAI_API_KEY` set. Familiarity with `mcp_deep_dive.md` helps once you reach demo 02.
+> **Read this *while* running:** the demos in `m3_adk_multiagents/adk_demos/` and the negotiation system in `m3_adk_multiagents/negotiation_agents/`. Sections are numbered to match the demos.
+> **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) and [`a2a_protocols.md`](a2a_protocols.md) for the conceptual deep-dives. [`adk_quick_reference.md`](adk_quick_reference.md) is the one-page lookup.
+>
+> **TL;DR:** Per-demo narration covering expected output, session.db state changes, key observations, and production patterns. Read alongside the code to consolidate the M3 surface area, which is the largest in the workshop.
 
 ---
 

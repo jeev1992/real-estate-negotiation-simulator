@@ -1,6 +1,16 @@
 # A2A Protocols
 ## Agent-to-Agent Communication: How Agents Talk to Each Other
 
+> **Audience:** Engineers who have built one agent and need to connect it to *other* agents — built by other teams, in other languages, on other clouds — without sharing code or memory.
+> **Prerequisites:** Comfort with HTTP and JSON. Familiarity with [`mcp_deep_dive.md`](../../m2_mcp/notes/mcp_deep_dive.md) helps because A2A reuses the same JSON-RPC envelope as MCP.
+> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_13_streaming.py` in `m3_adk_multiagents/adk_demos/`. Seeing the wire frames first is essential.
+> **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) for how ADK exposes A2A endpoints automatically via `adk web --a2a`.
+>
+> **TL;DR:**
+> 1. **A2A is the agent-level analogue of MCP.** Same JSON-RPC envelope, same well-known discovery convention. Where MCP standardizes *agent → tool*, A2A standardizes *agent → agent*. Once you know one, the other is mostly vocabulary.
+> 2. **Four objects, four operations.** Objects: Task (the unit of work), Message (one turn), Part (atomic content — TextPart / DataPart / FilePart), Artifact (durable output). Operations: discover (Agent Card), invoke (`message/send`), stream (`message/stream`), poll (`tasks/get`).
+> 3. **`contextId` threads multi-turn conversations** across stateless HTTP requests. Round 1 omits it (server assigns); rounds 2+ pass it back. This is A2A's `session_id`.
+
 ---
 
 ## Table of Contents

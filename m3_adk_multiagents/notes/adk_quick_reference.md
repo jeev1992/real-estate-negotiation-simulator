@@ -1,7 +1,20 @@
-# ADK & A2A Quick Reference — Instructor Cheat Sheet
+# ADK & A2A Quick Reference
 
-Use this as a 5-minute verbal walkthrough before showing Module 3 code.
-Each construct has: what it is, the import, and the minimal usage from our repo.
+> **Audience:** Engineers reviewing Module 3 after the workshop, or anyone who wants the smallest possible recap of ADK's core constructs.
+> **Prerequisites:** None for the recap itself; ideally you've run at least the demos in `adk_demos/d01_basic_agent/` and `adk_demos/d02_mcp_tools/`.
+> **Read this after:** Running any Module 3 demo.
+> **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) for the deeper version of every construct below.
+>
+> **TL;DR:**
+> 1. **An agent is a declarative `LlmAgent` object.** No class, no boilerplate, no manual orchestration loop — just `root_agent = LlmAgent(...)`.
+> 2. **`adk web` is the runtime.** It auto-discovers any folder with `__init__.py` + `agent.py` (defining `root_agent`), creates a Runner + SessionService for you, and gives you a chat UI. Add `--a2a` and every agent also gets a JSON-RPC endpoint and Agent Card for free.
+> 3. **MCPToolset is the bridge to MCP servers.** Goes directly in the agent's `tools=[]` list. ADK manages the subprocess, the handshake, and translates LLM tool calls into MCP `tools/call` requests automatically.
+
+---
+
+This file is a one-page reminder of every ADK and A2A construct you'll actually
+touch. Each entry has: what it is, the import, a minimal usage from this repo,
+and one line of intuition.
 
 ---
 
@@ -23,7 +36,7 @@ root_agent = LlmAgent(
 )
 ```
 
-> **Tell class:** "This is like writing the system prompt + function list for `openai.chat.completions.create()`, but as a reusable, discoverable object. `adk web` finds this automatically."
+> **Intuition:** This is like writing the system prompt + function list for `openai.chat.completions.create()`, but as a reusable, discoverable object. `adk web` finds this automatically.
 
 ---
 
@@ -42,7 +55,7 @@ runner = Runner(
 )
 ```
 
-> **Tell class:** "When you use `adk web`, Runner is created automatically. You only need Runner explicitly when writing standalone scripts."
+> **Intuition:** When you use `adk web`, Runner is created automatically. You only need Runner explicitly when writing standalone scripts.
 
 ---
 
@@ -57,7 +70,7 @@ from google.adk.sessions import InMemorySessionService
 # For production: --session_service_uri="sqlite:///sessions.db"
 ```
 
-> **Tell class:** "In production, swap for a database-backed service via `--session_service_uri`. Same interface."
+> **Intuition:** In production, swap for a database-backed service via `--session_service_uri`. Same interface.
 
 ---
 
@@ -87,7 +100,7 @@ root_agent = LlmAgent(
 )
 ```
 
-> **Tell class:** "This is the same MCP `tools/list` you'd otherwise call by hand. `MCPToolset` does it for you — and also runs MCP `tools/call` automatically when the LLM picks a tool. ADK manages the subprocess lifecycle."
+> **Intuition:** This is the same MCP `tools/list` you'd otherwise call by hand. `MCPToolset` does it for you — and also runs MCP `tools/call` automatically when the LLM picks a tool. ADK manages the subprocess lifecycle.
 
 ---
 
@@ -106,7 +119,7 @@ adk web m3_adk_multiagents/adk_demos/
 adk web --a2a m3_adk_multiagents/negotiation_agents/
 ```
 
-> **Tell class:** "Each subfolder with `__init__.py` + `agent.py` (defining `root_agent`) becomes an agent in the dropdown. No boilerplate, no manual server setup."
+> **Intuition:** Each subfolder with `__init__.py` + `agent.py` (defining `root_agent`) becomes an agent in the dropdown. No boilerplate, no manual server setup.
 
 ---
 
@@ -118,7 +131,7 @@ ADK uses `provider/model` format, routed through litellm.
 OPENAI_MODEL = "openai/gpt-4o"   # not just "gpt-4o"
 ```
 
-> **Tell class:** "The `openai/` prefix tells ADK which provider to route to. You could swap to `google/gemini-2.0-flash` with one string change."
+> **Intuition:** The `openai/` prefix tells ADK which provider to route to. You could swap to `google/gemini-2.0-flash` with one string change.
 
 ---
 
@@ -134,7 +147,7 @@ adk web --a2a m3_adk_multiagents/negotiation_agents/
 # http://localhost:8000/a2a/seller_agent/.well-known/agent-card.json
 ```
 
-> **Tell class:** "No custom server code needed. ADK builds the A2A server, generates Agent Cards from your agent's name/description, and serves everything."
+> **Intuition:** No custom server code needed. ADK builds the A2A server, generates Agent Cards from your agent's name/description, and serves everything.
 
 ---
 
@@ -159,7 +172,7 @@ card = resp.json()
 print(card["name"], card["description"], card["capabilities"])
 ```
 
-> **Tell class:** "ADK generates this from your agent's `name`, `description`, and tools. The buyer fetches it to discover the seller. No manual card creation needed."
+> **Intuition:** ADK generates this from your agent's `name`, `description`, and tools. The buyer fetches it to discover the seller. No manual card creation needed.
 
 ---
 
@@ -191,7 +204,7 @@ body = {
 resp = await httpx.AsyncClient().post("http://localhost:8000/a2a/seller_agent", json=body)
 ```
 
-> **Tell class:** "Two steps: discover (fetch the card), then send (POST the message). Demo 09 shows raw HTTP; demo 10 uses the SDK."
+> **Intuition:** Two steps: discover (fetch the card), then send (POST the message). Demo 09 shows raw HTTP; demo 10 uses the SDK.
 
 ---
 
@@ -206,29 +219,28 @@ Client sends message  →  Task status: "submitted"
                          (or error        →  status: "failed")
 ```
 
-> **Tell class:** "`adk web --a2a` handles this lifecycle automatically. Demo 09 lets you see it from the client side."
+> **Intuition:** `adk web --a2a` handles this lifecycle automatically. Demo 09 lets you see it from the client side.
 
 ---
 
 ## 11. Context Threading — "Multi-turn conversations"
 
+A2A's `contextId` field is what threads multiple `message/send` calls into one
+conversation. Round 1 omits it (server assigns one); rounds 2+ pass it back so
+the agent remembers prior turns. **Equivalent to `session_id` in ADK** — same
+idea, just at the network layer instead of in-process.
+
+See `m3_adk_multiagents/adk_demos/a2a_11_context_threading.py` and the matching
+section in [`a2a_protocols.md`](a2a_protocols.md).
+
 ---
 
-## Teaching order suggestion
+## Recommended way to skim this file
 
-Walk through in this order (5 min total):
-
-1. **LlmAgent** — "here's how you define an agent" (10 sec)
-2. **MCPToolset** — "here's how it gets tools from MCP" (15 sec)
-3. **`adk web`** — "run it, pick from dropdown, chat" (10 sec)
-4. **Model ID** — "note the `openai/gpt-4o` format" (5 sec)
-5. **`adk web --a2a`** — "same command, adds A2A endpoints" (10 sec)
-6. **Agent Card** — "browse `/.well-known/agent-card.json`" (15 sec)
-7. **A2A client** — "fetch card, send message — two steps" (15 sec)
-8. **Task lifecycle** — "submitted → working → completed" (10 sec)
-9. **Context threading** — "contextId ties rounds together" (10 sec)
-
-Then say: "You'll see all of these in the code. Now let me show you the code."
+Read entries 1, 4, 5 first — those three are 80% of what you'll touch on day
+one. Entries 2, 3, 6 are background you only revisit if you're writing a
+standalone script (no `adk web`). Entries 7–11 are the A2A surface — read
+them when you're ready to expose your agent over the network.
 
 ---
 
@@ -255,7 +267,7 @@ def bump_offer_counter(tool_context: ToolContext) -> dict:
 - `tool_context.actions.transfer_to_agent = "other"` — hand control off
 - `await tool_context.save_artifact(name, ...)` / `load_artifact(name)` — binary blobs
 
-> **Tell class:** "ToolContext is how a tool talks back to the runtime —
-> not just to the model. State is for memory; actions are for control flow."
+> **Intuition:** ToolContext is how a tool talks back to the runtime —
+> not just to the model. State is for memory; actions are for control flow.
 
 Demo: `m3_adk_multiagents/adk_demos/d03_sessions_state/agent.py`.

@@ -1,6 +1,16 @@
 # Google ADK Overview
 ## Building Production-Grade Agents with Google's Agent Development Kit
 
+> **Audience:** Engineers who have built ad-hoc LLM agents (the OpenAI tool-calling loop, a custom session store, hand-rolled multi-agent orchestration) and want a framework that handles all that infrastructure declaratively.
+> **Prerequisites:** Familiarity with the OpenAI / Anthropic tool-calling loop. Helpful but not required: [`mcp_deep_dive.md`](../../m2_mcp/notes/mcp_deep_dive.md) for the protocol ADK speaks via `MCPToolset`.
+> **Read this after:** Running at least `adk web m3_adk_multiagents/adk_demos/` and trying demos d01–d06.
+> **Read this next:** [`a2a_protocols.md`](a2a_protocols.md) for the protocol layer that exposes ADK agents over the network. [`adk_quick_reference.md`](adk_quick_reference.md) is the one-page lookup for the constructs covered here.
+>
+> **TL;DR:**
+> 1. **ADK is opinionated infrastructure for LLM agents.** Sessions, memory, streaming, multi-agent orchestration, tool integration — all declarative. You write `root_agent = LlmAgent(...)` and ADK gives you a runtime.
+> 2. **Four primitives you'll touch every day:** `LlmAgent` (the agent), `Runner` (the loop), `SessionService` (memory), and some toolset (usually `MCPToolset`). Workflow agents — `SequentialAgent`, `ParallelAgent`, `LoopAgent` — and callbacks compose on top.
+> 3. **`adk web` runs everything.** It auto-discovers agents from package structure, creates Runner + Session for you, gives you a chat UI with event stream, and (with `--a2a`) exposes each agent as an A2A network service with an auto-generated Agent Card.
+
 See also: [A2A Protocols](a2a_protocols.md) for the protocol layer that lets ADK agents talk to other agents.
 
 ---

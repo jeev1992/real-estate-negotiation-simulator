@@ -86,17 +86,29 @@ Modules 2 and 3 ship a `demos/` folder of small, single-purpose, runnable script
 
 ### Notes live inside each module
 
-Each module has a `notes/` subfolder with reference documentation for that module's concepts.
+Each module has a `notes/` subfolder with reference documentation. There are
+two flavors: **demo study notes** (read while running the demos, narrate
+expected output and key observations) and **conceptual deep-dives** (read any
+time after the workshop for the theory and production patterns).
 
-| Module | Notes |
-|---|---|
-| `m1_baseline/notes/` | `agents_fundamentals.md` — agent fundamentals and failure modes |
-| `m2_mcp/notes/` | `mcp_deep_dive.md` — MCP protocol and tool integration |
-| `m3_adk_multiagents/notes/` | `a2a_protocols.md` — A2A protocol deep dive |
-| | `adk_quick_reference.md` — ADK API quick reference |
-| | `google_adk_overview.md` — Google ADK overview |
+Every note has a header block stating its audience, prerequisites, what to
+read before/after it, and a 3-point TL;DR. Open any note — the first thing
+you'll see is whether it's the right one for you right now.
 
-Module 3 has three notes because it spans two distinct topics: the A2A protocol standard and the ADK runtime.
+#### Recommended reading order
+
+| When | Read | Why |
+|---|---|---|
+| **While running M1 demos** | [`m1_baseline/notes/M1_DEMO_STUDY_NOTES.md`](m1_baseline/notes/M1_DEMO_STUDY_NOTES.md) | Per-demo narration of `naive_negotiation.py` and `state_machine.py` |
+| **After M1** | [`m1_baseline/notes/agents_fundamentals.md`](m1_baseline/notes/agents_fundamentals.md) | Conceptual deep-dive — what an agent *is*, where the FSM fits, when not to use agents |
+| **While running M2 demos** | [`m2_mcp/notes/M2_DEMO_STUDY_NOTES.md`](m2_mcp/notes/M2_DEMO_STUDY_NOTES.md) | Per-demo narration of all 5 MCP demos plus the GitHub + SSE clients |
+| **After M2** | [`m2_mcp/notes/mcp_deep_dive.md`](m2_mcp/notes/mcp_deep_dive.md) | Full MCP protocol reference — primitives, transports, design patterns |
+| **While running M3 demos** | [`m3_adk_multiagents/notes/M3_DEMO_STUDY_NOTES.md`](m3_adk_multiagents/notes/M3_DEMO_STUDY_NOTES.md) | Per-demo narration of all 9 ADK demos + the 4 A2A demos + the negotiation system |
+| **After M3 (start here)** | [`m3_adk_multiagents/notes/adk_quick_reference.md`](m3_adk_multiagents/notes/adk_quick_reference.md) | One-page lookup for every ADK + A2A construct |
+| **After M3 (go deep)** | [`m3_adk_multiagents/notes/google_adk_overview.md`](m3_adk_multiagents/notes/google_adk_overview.md) | Full ADK reference — every agent type, callbacks, sessions, event stream |
+| **After M3 (network layer)** | [`m3_adk_multiagents/notes/a2a_protocols.md`](m3_adk_multiagents/notes/a2a_protocols.md) | Full A2A reference — wire format, contextId, parts, artifacts, streaming, production patterns |
+
+Module 3 has three notes because it spans two distinct topics: the A2A protocol standard and the ADK runtime. Read `adk_quick_reference.md` first to get the construct names in your head; reach for the other two when you need depth on a specific construct.
 
 ---
 

@@ -1,6 +1,11 @@
 # Module 1 — Demo Walkthrough & Concept Notes
 
-Personal study notes captured while running each demo hands-on.
+> **Audience:** Learners reviewing Module 1 after the workshop, or anyone working through the demos for the first time who wants narrative context for what they're seeing.
+> **Prerequisites:** None — these notes assume you're seeing the M1 demos for the first time.
+> **Read this *while* running:** `m1_baseline/naive_negotiation.py` and `m1_baseline/state_machine.py`. Each section corresponds to one demo run.
+> **Read this next:** [`agents_fundamentals.md`](agents_fundamentals.md) for the conceptual deep-dive that this demo motivates.
+>
+> **TL;DR:** This file is a guided tour of what you'll see when you run each M1 demo — what the output looks like, why it looks that way, what bug it's exposing, and how the FSM fixes it. Read it as a companion to running the code, not as a standalone reference.
 
 ---
 

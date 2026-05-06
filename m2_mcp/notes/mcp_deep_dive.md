@@ -1,6 +1,16 @@
 # MCP Deep Dive
 ## Model Context Protocol: How Agents Connect to the World
 
+> **Audience:** Engineers who have an LLM agent and need to connect it to external tools/data — APIs, databases, file systems — *without* writing one-off integrations for every pair.
+> **Prerequisites:** Familiarity with HTTP, JSON, and what "tool use" means in the OpenAI / Anthropic SDKs.
+> **Read this after:** Running `m2_mcp/demos/01_initialize_handshake.py` and `02_tool_loop_trace.py`. Seeing the wire frames first makes the protocol concrete; reading this without the demos can feel abstract.
+> **Read this next:** [`../../m3_adk_multiagents/notes/google_adk_overview.md`](../../m3_adk_multiagents/notes/google_adk_overview.md) for how ADK consumes MCP via `MCPToolset`, and [`../../m3_adk_multiagents/notes/a2a_protocols.md`](../../m3_adk_multiagents/notes/a2a_protocols.md) for A2A — the parallel protocol but for *agents* instead of *tools*.
+>
+> **TL;DR:**
+> 1. **MCP is a thin RPC layer over JSON-RPC 2.0** standardizing three operations: `initialize` (handshake + capability negotiation), `tools/list` (discover what's available), `tools/call` (invoke a tool by name). Everything else — resources, prompts, streaming — is layered on these three.
+> 2. **Four primitives, three transports.** Primitives: Tools (the model invokes), Resources (the host fetches), Prompts (parameterized templates), Sampling (server asks host for LLM reasoning). Transports: stdio (local subprocess), SSE (legacy HTTP), Streamable HTTP (production HTTP).
+> 3. **N+M, not N×M.** The protocol turns a quadratic integration problem (every agent × every API) into linear (every agent + every API both speak MCP). 300M+ SDK downloads/month tell you the industry has converged on this.
+
 ---
 
 ## Table of Contents

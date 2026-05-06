@@ -1,6 +1,11 @@
 # Module 2 — Demo Walkthrough & Concept Notes
 
-Personal study notes captured while running each demo hands-on.
+> **Audience:** Learners working through the M2 MCP demos in `m2_mcp/demos/` (01–05) plus the GitHub MCP and SSE agent demos. Use this as a guided tour while you run.
+> **Prerequisites:** Python environment set up; `OPENAI_API_KEY` available; for the GitHub demo, also Node.js + `GITHUB_TOKEN`.
+> **Read this *while* running:** the five demo scripts in `m2_mcp/demos/` and the two clients (`github_agent_client.py`, `sse_agent_client.py`). Each section corresponds to one demo.
+> **Read this next:** [`mcp_deep_dive.md`](mcp_deep_dive.md) for the conceptual deep-dive on every primitive, transport, and design pattern these demos exercise.
+>
+> **TL;DR:** Per-demo narration of expected output, key observations, and connections to production patterns. Read alongside the code to consolidate what each demo proves.
 
 ---
 

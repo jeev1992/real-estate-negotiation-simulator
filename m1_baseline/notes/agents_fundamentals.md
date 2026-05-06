@@ -1,6 +1,16 @@
 # Agent Fundamentals
 ## A Complete Guide for Engineers New to AI Agents
 
+> **Audience:** Engineers comfortable with Python and LLM APIs (OpenAI, Anthropic) but new to *agentic* systems — multi-step LLM-driven workflows that perceive, decide, and act.
+> **Prerequisites:** Familiarity with calling an LLM API and what "function calling" / "tool use" means.
+> **Read this after:** Running `m1_baseline/naive_negotiation.py` and `m1_baseline/state_machine.py`. The note is written assuming you've watched a naive agent break and seen an FSM fix it.
+> **Read this next:** [`../../m2_mcp/notes/mcp_deep_dive.md`](../../m2_mcp/notes/mcp_deep_dive.md) — the protocol that lets agents access external tools without bespoke integration work.
+>
+> **TL;DR:**
+> 1. **Agent = LLM + Tools + Memory + Goal + Loop.** Remove any one and you have something less than an agent (a chatbot, a single inference call, an infinite script, an API client).
+> 2. **The defining property is *autonomy*** — the agent decides its own next step based on observation, not a predetermined script. Workflows execute logic; agents *select* it.
+> 3. **`while True` is not a loop — it's a bug.** Production agents need bounded iteration with explicit terminal conditions. The FSM you saw in M1 is the simplest realization; ADK's `LoopAgent` is the same idea at agent scale.
+
 ---
 
 ## Table of Contents
