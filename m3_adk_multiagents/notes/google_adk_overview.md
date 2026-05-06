@@ -26,6 +26,7 @@ See also: [A2A Protocols](a2a_protocols.md) for the protocol layer that lets ADK
 15. [`AgentTool` — Treating an Agent as a Function](#15-agenttool--treating-an-agent-as-a-function)
 16. [`ToolContext`, Scoped State, and Artifacts](#16-toolcontext-scoped-state-and-artifacts)
 17. [Callbacks (`before_model`, `before_tool`, `after_tool`, `after_agent`)](#17-callbacks)
+17.5. [The `submit_decision` Pattern — Structured Signals over Free Text](#175-the-submit_decision-pattern--structured-signals-over-free-text)
 18. [Events, Actions, and Escalation](#18-events-actions-and-escalation)
 19. [Authentication and Credentials](#19-authentication-and-credentials)
 20. [Agent Discovery — The `adk web` Convention](#20-agent-discovery--the-adk-web-convention)
@@ -1269,6 +1270,15 @@ permits `get_minimum_acceptable_price`.
 Callbacks are how you plug *policy* into an agent without changing its
 instruction. They run synchronously around model and tool calls.
 
+The mental model: **instructions are *suggestive*, callbacks are *deterministic*.**
+You can tell the LLM "never offer above $460,000" in its instruction — and most
+of the time it'll obey. But under pressure ("the seller is pushing hard"),
+GPT-4o will sometimes generate a $470,000 offer anyway. The instruction is a
+*nudge*, not a guarantee. A `before_tool_callback` that inspects the price
+argument and rejects anything over $460,000 is a *guarantee* — the model
+physically cannot bypass it. **When you need a guarantee, use a callback.
+When you can tolerate suggestions, use the instruction.**
+
 | Callback                   | Fires when                          | Return value semantics                                  |
 |----------------------------|-------------------------------------|---------------------------------------------------------|
 | `before_agent_callback`    | before the agent's first model turn | None = continue; `Content` = use this instead of running the agent |
@@ -1289,6 +1299,100 @@ seller-private inventory tools, even if the model tries.
 **Demo:** `m3_adk_multiagents/adk_demos/d08_callbacks/agent.py` wires
 `before_model` (PII redaction), `before_tool` (allowlist), and
 `after_tool` (logging) into a single agent.
+
+---
+
+## 17.5 The `submit_decision` Pattern — Structured Signals over Free Text
+
+Callbacks let you enforce policy on tool calls. But there's a second pattern
+the negotiation orchestrator uses, and it's worth its own section because
+*it's the single most important M3 pattern*: **`submit_decision` — a function
+tool that the agent calls to record a typed, structured decision in session
+state, instead of writing the decision in prose**.
+
+### Why this pattern exists — the `'ACCEPT' in 'acceptable'` bug
+
+Imagine you wanted to detect when the seller agent has accepted an offer.
+The naive approach:
+
+```python
+# DON'T DO THIS — fragile string parsing
+if "ACCEPT" in seller_response_text.upper():
+    deal_reached = True
+```
+
+This was the M1 lesson playing out at agent scale. The bug: the seller's
+MCP tool `get_minimum_acceptable_price` returns text containing
+*"minimum **acceptable** price is $445,000"*. The substring check matches
+**ACCEPTABLE** and false-triggers acceptance on every counter-offer that
+mentions the floor. **We hit this bug in production while building M3.**
+
+The fix is to never read prose. Instead, the seller is *required* to call
+a typed function tool with structured arguments:
+
+```python
+def submit_decision(
+    action: str, price: int, tool_context: ToolContext
+) -> dict:
+    """Record the seller's structured decision for this round.
+
+    Args:
+        action: Exactly "ACCEPT" or "COUNTER" — no other values.
+        price:  The price in dollars (e.g., 445000).
+    """
+    action_upper = action.strip().upper()
+    if action_upper not in ("ACCEPT", "COUNTER"):
+        return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
+    tool_context.state["seller_decision"] = {
+        "action": action_upper,
+        "price": price,
+    }
+    return {"recorded": action_upper, "price": price}
+```
+
+The seller's instruction says: *"After writing your response, you MUST call
+`submit_decision` with `action='ACCEPT'` or `action='COUNTER'` and the
+price."* Now the decision lives in `state['seller_decision']` as a typed
+dict, not in free-form text.
+
+### How the loop reads the decision
+
+The `LoopAgent` then escalates based on the typed dict, not on prose:
+
+```python
+def _check_agreement(callback_context: CallbackContext):
+    """Read structured state, not free text."""
+    decision = callback_context.state.get("seller_decision")
+    if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        callback_context.actions.escalate = True
+    return None
+```
+
+`state["seller_decision"]["action"] == "ACCEPT"` is a *dict-field equality
+check*. There is no substring matching, no regex, no possible false-positive
+from the seller's MCP tool output. The check is **deterministic**.
+
+### The pattern, generalized
+
+This is a recurring production pattern, not specific to negotiation:
+
+1. **Anywhere the agent's *decision* matters more than its *prose***, expose
+   a typed function tool whose arguments capture the decision.
+2. **Make the agent's instruction tell it to call the tool** — *"You MUST
+   call `submit_decision` after every turn."*
+3. **Read the decision from `tool_context.state`**, written by the tool —
+   not from the agent's text response.
+
+Used in our codebase by:
+
+- `negotiation_agents/negotiation/agent.py` — seller's `submit_decision(action, price)`
+  signals ACCEPT vs COUNTER to the `_check_agreement` callback that drives
+  `LoopAgent` escalation.
+
+This complements (does not replace) the callback pattern. **Callbacks
+intercept and enforce. Structured-signal tools capture and record.**
+Together they let you build agent loops whose termination logic is
+**inspectable, testable, and free of LLM-prose parsing.**
 
 ---
 

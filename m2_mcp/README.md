@@ -212,12 +212,14 @@ Standalone, runnable scripts that crack open the MCP protocol so you can see wha
 
 ## Exercises
 
+Two hands-on exercises designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
+
 | Exercise | Difficulty | Task |
 |---|---|---|
-| `ex01_add_mcp_tool.md` | `[Starter]` | Add a `get_property_tax_estimate` tool to the pricing server using `@mcp.tool()` |
-| `ex02_wire_tool_to_buyer.md` | `[Core]` | Wire the new tool into the buyer agent and verify it's auto-discovered via `list_tools()` |
+| [`ex01_walk_score_tool.md`](exercises/ex01_walk_score_tool.md) | `[Starter]` | Add a `get_walk_score(zip_code)` tool to `pricing_server.py`. Restart `adk web`, ask a walkability question, watch GPT-4o auto-discover and call the new tool with zero agent-side changes. |
+| [`ex02_multi_server_agent.md`](exercises/ex02_multi_server_agent.md) | `[Core]` | Build an `LlmAgent` from scratch that connects to BOTH `pricing_server` and `inventory_server` simultaneously. Test with cross-server queries; understand how ADK merges tool catalogs across multiple `MCPToolset`s. |
 
-Solutions are in `m2_mcp/solution/`. Each exercise includes a reflection question.
+Each solution lives in `solution/<exercise_name>/` as a self-contained, runnable package. The instructor walks through each solution live during the review session.
 
 ---
 

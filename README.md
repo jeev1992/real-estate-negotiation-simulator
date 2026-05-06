@@ -40,8 +40,6 @@ real-estate-negotiation-simulator/
 │   ├── README.md                      # Module guide for learners
 │   ├── naive_negotiation.py           # Intentionally broken (10 failure modes)
 │   ├── state_machine.py               # FSM that fixes termination
-│   ├── exercises/                      # Hands-on coding exercises for Module 1
-│   ├── solution/                       # Worked solutions for Module 1 exercises
 │   └── notes/
 │       └── agents_fundamentals.md     # Reference: agent fundamentals
 │
@@ -72,7 +70,7 @@ real-estate-negotiation-simulator/
 │       ├── adk_quick_reference.md     # Reference: ADK API quick reference
 │       └── google_adk_overview.md     # Reference: Google ADK overview
 │
-├── INSTRUCTOR_GUIDE.md                # 4-hour workshop script for instructors
+├── Week 6 _ ... Google ADK.pptx.pdf   # Workshop slide deck (97 slides)
 ├── .env.example                       # Copy to .env and add your API keys
 └── requirements.txt
 ```
@@ -220,21 +218,19 @@ python m3_adk_multiagents/a2a_14_orchestrated_negotiation.py
 
 ### 10. Module Exercises
 
-Each module contains hands-on exercises with worked solutions.
+Module 2 and Module 3 ship hands-on exercises with complete, runnable solutions. **These are designed for the 2-hour follow-up review session** held a few days after the workshop — students attempt them as homework, the instructor walks through each solution and runs it live in class. (Module 1 has no exercises — its purpose is conceptual motivation, not skill practice.)
 
 | Module | Exercise | Difficulty | Task |
 |---|---|---|---|
-| M1 | `ex01_add_timeout_state.md` | `[Core]` | Add a TIMEOUT terminal state to the FSM |
-| M1 | `ex02_compare_failure_modes.md` | `[Core]` | Compare naive vs FSM failure modes |
-| M2 | `ex01_add_mcp_tool.md` | `[Starter]` | Add a new MCP tool to the pricing server |
-| M2 | `ex02_wire_tool_to_buyer.md` | `[Core]` | Wire the new tool into the ADK buyer agent |
-| M3 | `ex01_tool_agent.md` | `[Starter]` | Build a tool agent with two cooperating tools |
-| M3 | `ex02_stateful_offers.md` | `[Core]` | Add stateful offer tracking with regression warnings |
-| M3 | `ex03_research_pipeline.md` | `[Core]` | Build a three-stage SequentialAgent pipeline |
-| M3 | `ex04_callback_guard.md` | `[Core]` | Add argument validation callback to buyer agent |
-| M3 | `ex05_fetch_agent_card.md` | `[Core]` | Fetch and compare A2A Agent Cards |
+| M2 | `ex01_walk_score_tool.md` | `[Starter]` | Add a `get_walk_score` tool to the pricing server; watch the LLM auto-discover and use it |
+| M2 | `ex02_multi_server_agent.md` | `[Core]` | Build an `LlmAgent` that connects to both pricing + inventory MCP servers from scratch |
+| M3 | `ex01_budget_cap_callback.md` | `[Starter]` | Write a `before_tool_callback` that blocks `submit_decision` calls with `price > $460,000` |
+| M3 | `ex02_stuck_detection.md` | `[Core]` | Modify the orchestrator to track offer history and escalate early when rounds stall |
+| M3 | `ex03_a2a_multiround_client.md` | `[Core]` | Write an A2A client that drives buyer ↔ seller via `message/send` with `contextId` threading |
+| M3 | `ex04_mediator_agent.md` | `[Core]` | Build a mediator that wraps buyer + seller as `AgentTool`s and proposes a midpoint |
+| M3 | `stretch_streaming_client.md` | `[Stretch]` | Convert M3.3 to use `message/stream` and render task lifecycle events as they arrive |
 
-Solutions are in each module's `solution/` folder.
+Each solution lives in its module's `solution/` folder as a self-contained, runnable package — `agent.py` files you can launch directly with `adk web`, or scripts you can run with `python`. The instructor walks through each solution live during the review session.
 
 ---
 
@@ -296,7 +292,7 @@ Round 3: BUYER ◄──[ACCEPT: $449,000]────────────�
 
 ## Workshop Schedule (4 Hours)
 
-See `INSTRUCTOR_GUIDE.md` for the full 4-hour script, talking points, and debrief questions.
+The full 97-slide deck ships as a PDF in the repo root.
 
 | Time | Module | Topic | Key Files |
 |---|---|---|---|
@@ -306,7 +302,7 @@ See `INSTRUCTOR_GUIDE.md` for the full 4-hour script, talking points, and debrie
 | 1:30–2:15 | M2 | MCP deep dive: protocol, primitives, transports, custom servers | `m2_mcp/notes/mcp_deep_dive.md`, `m2_mcp/pricing_server.py` |
 | 2:15–3:00 | M3 | Google ADK deep dive: LlmAgent, workflow agents, sessions, callbacks | `adk web m3_adk_multiagents/adk_demos/` |
 | 3:00–3:50 | M3 | A2A protocol: Agent Card, JSON-RPC, task lifecycle | `adk web --a2a m3_adk_multiagents/negotiation_agents/` |
-| 3:50–4:00 | Wrap | Exercises + Q&A | `m1_baseline/exercises/`, `m2_mcp/exercises/`, `m3_adk_multiagents/exercises/` |
+| 3:50–4:00 | Wrap | Q&A + preview of follow-up exercise session | `m2_mcp/exercises/`, `m3_adk_multiagents/exercises/` |
 
 ---
 

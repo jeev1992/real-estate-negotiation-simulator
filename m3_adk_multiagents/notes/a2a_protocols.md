@@ -821,6 +821,68 @@ Key files:
 
 ## 10. Production A2A Patterns
 
+### Pattern 0: The Matchmaker (Most Common)
+
+The most common production A2A topology is **a non-agent orchestrator
+script that bridges two A2A peers**. The script discovers each peer via
+its Agent Card, sends `message/send` requests in alternation, and
+threads each side's conversation with its own `contextId`.
+
+This is the "matchmaker" pattern. **The two agents never know about each
+other.** They each see only messages from "a user" (the script). The
+script is the only thing that knows about both.
+
+```python
+# Pseudocode for the matchmaker pattern.
+# Full working example: a2a_14_orchestrated_negotiation.py
+
+# 1) Discover both peers via Agent Cards.
+buyer_card  = await A2ACardResolver(http, base_url=BUYER_URL).get_agent_card()
+seller_card = await A2ACardResolver(http, base_url=SELLER_URL).get_agent_card()
+
+# 2) Maintain SEPARATE contextIds. Each agent has its own conversation thread.
+buyer_context_id, seller_context_id = None, None
+
+# 3) Loop: ask buyer → forward to seller → break on ACCEPT.
+for round_num in range(1, MAX_ROUNDS + 1):
+    buyer_text, buyer_context_id = await send_message(
+        http, buyer_card.url, prompt_for_buyer, buyer_context_id
+    )
+    seller_text, seller_context_id = await send_message(
+        http, seller_card.url, f"Buyer offered: {buyer_text}", seller_context_id
+    )
+    if has_acceptance(seller_text):
+        break
+```
+
+**Why this is the production default**, even when "everything is an agent":
+
+- **No special access required.** The matchmaker doesn't need a Python
+  import of either agent's code — just network access to their A2A
+  endpoints. Agents written in different languages, by different teams,
+  in different processes work the same way.
+- **Central place for policy.** Logging, audit, retries, rate limiting,
+  and human-in-the-loop gates all live in the matchmaker. Modifying
+  either agent is unnecessary.
+- **Substitutable.** Swap in a different buyer or different seller — as
+  long as they speak A2A and present compatible skills, the matchmaker
+  works unchanged. *This is what the protocol buys you.*
+
+**Matchmaker → A2A agent.** The matchmaker can itself be wrapped as an
+A2A agent — give it an Agent Card with skill `negotiation_orchestration`
+and serve it over `adk web --a2a`. Now *its* clients discover *it* via
+its card, call it like any other A2A peer, and the two agents under it
+remain hidden behind the abstraction. **Recursion all the way down** is
+how A2A networks scale beyond two agents.
+
+Compare to:
+- **Mediator (Pattern 2 below)** — the mediator is *itself* an LLM agent
+  that *participates* in the conversation, often when buyer and seller
+  deadlock. Different role; not a matchmaker.
+- **Peer-to-peer A2A** — the buyer agent discovers the seller's card
+  directly and sends messages without an intermediary. Possible but rare;
+  usually the matchmaker pattern wins because it centralizes policy.
+
 ### Pattern 1: Agent Registry
 
 In production, agents need to discover each other. An agent registry solves this:
@@ -1162,6 +1224,39 @@ they happen:
 
 This is best for in-flight UX — show "Seller is thinking..." and then
 the final answer in the same connection.
+
+**Capability gating (`capabilities.streaming`).** Streaming is opt-in
+per agent. The Agent Card's `capabilities.streaming` field declares
+whether the server supports `message/stream`:
+
+```json
+{
+  "name": "seller_agent",
+  "url": "http://localhost:8000/a2a/seller_agent",
+  "capabilities": { "streaming": true, "pushNotifications": false },
+  "skills": [...]
+}
+```
+
+**If a client calls `message/stream` against a server with
+`capabilities.streaming: false`, the server returns HTTP 400** — there is
+no automatic fallback to `message/send`. **Robust clients fetch the Agent
+Card first, check the capability, and either proceed or fail loudly.** The
+relevant snippet looks like:
+
+```python
+card = (await A2ACardResolver(httpx_client=http, base_url=seller_url)
+        .get_agent_card()).model_dump(mode="json")
+if not card.get("capabilities", {}).get("streaming", False):
+    raise RuntimeError(
+        f"{card['name']} does not support streaming; "
+        "use message/send instead."
+    )
+```
+
+**Capabilities are the contract.** This applies symmetrically to push
+notifications, blob upload, and any other capability the spec adds —
+always check the card before relying on a feature.
 
 **Demo:** `m3_adk_multiagents/adk_demos/a2a_13_streaming.py` consumes
 the stream and prints every event (kind, state, final marker) as it arrives.

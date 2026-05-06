@@ -615,6 +615,44 @@ Tools exposed:
 
 **Educational note on access control**: The seller agent connects to the inventory server to get `minimum_acceptable_price`. The buyer agent does NOT connect to this tool — just like in real life where the buyer doesn't know the seller's bottom line. MCP servers can implement auth/access control to enforce this.
 
+### Information asymmetry — the design point
+
+The split between which agent connects to which server is **not a stylistic
+choice**. It's the canonical MCP pattern for modeling **information
+asymmetry** — situations where different agents serve different principals
+and must therefore see different data.
+
+| Tool | Buyer can call? | Seller can call? |
+|------|---|---|
+| `get_market_price`               | ✓ Yes | ✓ Yes |
+| `calculate_discount`             | ✓ Yes | ✓ Yes |
+| `get_inventory_level`            | ✗ No  | ✓ Yes |
+| `get_minimum_acceptable_price`   | ✗ No  | ✓ Yes |
+
+Two layers enforce the asymmetry:
+
+1. **Connection-level isolation.** The buyer agent doesn't construct an
+   `MCPToolset` for the inventory server, so `get_minimum_acceptable_price`
+   never appears in its tool catalog. *The LLM cannot call a tool it
+   doesn't know exists.*
+2. **Callback-level allowlist (Module 3).** Even if the buyer somehow
+   *did* connect to the inventory server (e.g., a bug, a prompt-injection
+   attack), a `before_tool_callback` rejects any call to a non-allowlisted
+   tool. *The LLM cannot bypass a callback — it's deterministic, not
+   suggestive.*
+
+**Belt and braces.** This pattern generalizes far beyond real estate:
+
+- Customer-service agents connect to CRM tools but not to admin tools.
+- Employee agents connect to HR tools but not to customer-PII tools.
+- Partner agents connect to read-only data but not to write-back tools.
+
+In every case, the architecture is the same — *different MCPToolset
+configurations for different agent personas, plus a callback-level
+allowlist for defense in depth*. **Information asymmetry is a security
+architecture, and MCP gives you the building blocks to enforce it
+declaratively.**
+
 ### How Agents Use These Servers
 
 ```
@@ -1037,10 +1075,24 @@ Every tool result and most messages carry a list of typed content blocks:
 - **resource (embedded)** — inline document, useful when the server wants
   to ship a file alongside textual output.
 
+In the Python SDK these JSON shapes correspond to the typed classes:
+**`TextContent`**, **`ImageContent`**, **`AudioContent`**, and
+**`EmbeddedResource`**. When you write a `@mcp.tool()` that returns a
+plain `str` or `dict`, FastMCP wraps it in `TextContent` automatically —
+that's why every workshop tool just returns a dict and ignores content
+typing entirely. You only construct the other classes by hand when you
+specifically need to return an image, audio clip, or referenced resource.
+
 The model's host is responsible for converting these into something the
 model provider understands (e.g. OpenAI's `image_url` or Anthropic's
 `content` block). For text-only models, image/audio blocks are usually
 dropped or summarized.
+
+**Forward link to A2A.** A2A defines a parallel set of typed Parts —
+`TextPart`, `DataPart`, `FilePart` — that play the same role inside A2A
+Messages. **Different protocol, same idea: typed content blocks all the
+way down.** Once you internalize MCP's content blocks, A2A's Parts cost
+nothing extra to learn.
 
 **Demo:** `m2_mcp/demos/04_content_types.py` spawns a tiny server that
 returns each kind of block so you can see the JSON shape.

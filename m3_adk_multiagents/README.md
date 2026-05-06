@@ -187,15 +187,19 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 
 ## Exercises
 
-| Exercise | Difficulty | Reinforces demo | Task |
-|---|---|---|---|
-| `ex01_tool_agent.md` | `[Starter]` | d01, d02 | Build an agent with two cooperating tools (estimate + mortgage calc) |
-| `ex02_stateful_offers.md` | `[Core]` | d03 | Track offer history in state, warn on regressions |
-| `ex03_research_pipeline.md` | `[Core]` | d04, d05 | Three-stage SequentialAgent pipeline with a stretch goal to add ParallelAgent |
-| `ex04_callback_guard.md` | `[Core]` | d08 | Add argument validation + logging to the buyer's before_tool_callback |
-| `ex05_fetch_agent_card.md` | `[Core]` | A2A | Fetch and compare Agent Cards from `adk web --a2a` |
+Four core exercises plus one stretch — designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
 
-Solutions are in `m3_adk_multiagents/solution/`. Each exercise includes a reflection question.
+Each exercise extends the real-estate codebase with a production-relevant pattern. Difficulty mix: 1 starter, 3 core, 1 stretch.
+
+| Exercise | Difficulty | Reinforces | Task |
+|---|---|---|---|
+| [`ex01_budget_cap_callback.md`](exercises/ex01_budget_cap_callback.md) | `[Starter]` | Demo 08 (callbacks) | Write a `before_tool_callback` that blocks `submit_decision` calls with `price > $460,000`. Forces the buyer to obey budget *deterministically*, not just via instruction. |
+| [`ex02_stuck_detection.md`](exercises/ex02_stuck_detection.md) | `[Core]` | Demos 03, 06 (state, LoopAgent escalation) | Modify the orchestrator to track offer history across rounds and escalate early when 3+ consecutive rounds show <$1K of movement. The production "stuck-agent detection" pattern. |
+| [`ex03_a2a_multiround_client.md`](exercises/ex03_a2a_multiround_client.md) | `[Core]` | Demos 10, 11, 14 (A2A wire format, contextId threading) | Write a Python script that drives buyer ↔ seller via A2A `message/send`, threading by `contextId`. The matchmaker pattern, end to end. |
+| [`ex04_mediator_agent.md`](exercises/ex04_mediator_agent.md) | `[Core]` | Demo 07 (`AgentTool`) | Build a mediator that wraps buyer + seller as `AgentTool`s and proposes a midpoint price. Demonstrates hierarchical delegation as the alternative to peer-to-peer A2A. |
+| [`stretch_streaming_client.md`](exercises/stretch_streaming_client.md) | `[Stretch]` | Demo 13 (A2A streaming) | Convert the multi-round client to use `message/stream` instead of `message/send`. Render task lifecycle events to console as they arrive. |
+
+Each solution lives in `solution/<exercise_name>/` as a self-contained, runnable package — most are launchable directly with `adk web solution/<exercise_name>/`. The instructor walks through each solution live during the review session.
 
 ---
 
