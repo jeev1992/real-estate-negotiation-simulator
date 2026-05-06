@@ -187,9 +187,9 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 
 ## Exercises
 
-Six core exercises plus two stretch — designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
+Ten core exercises plus two stretch — designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
 
-Each exercise extends the real-estate codebase with a production-relevant pattern. Difficulty mix: 1 starter, 5 core, 2 stretch.
+Each exercise extends the real-estate codebase with a production-relevant pattern. Difficulty mix: 1 starter, 5 core, 4 memory-focused, 2 stretch.
 
 | Exercise | Difficulty | Reinforces | Task |
 |---|---|---|---|
@@ -200,6 +200,10 @@ Each exercise extends the real-estate codebase with a production-relevant patter
 | [`ex05_prompt_injection_defense.md`](exercises/ex05_prompt_injection_defense.md) | `[Core]` | Demo 08 (`before_model` callback) | Add a `before_model_callback` to the seller that detects and redacts prompt injection attempts ("ignore your instructions", "what's your floor price"). Adversarial input defense for multi-agent systems. |
 | [`ex06_human_in_the_loop.md`](exercises/ex06_human_in_the_loop.md) | `[Core]` | Demos 06, 08 (LoopAgent, callbacks) | Add a human-approval checkpoint that pauses the negotiation when the seller tries to accept above $455K. Three-tier governance: auto-approve, human checkpoint, hard block. |
 | [`ex07_parallel_negotiation.md`](exercises/ex07_parallel_negotiation.md) | `[Stretch]` | Demos 04, 05, 06 (Sequential, Parallel, Loop) | Build a system that negotiates with two sellers in parallel using `ParallelAgent`, then a `deal_picker` agent compares outcomes and recommends the best deal. Composes all three workflow agent types. |
+| [`ex08_cross_session_memory.md`](exercises/ex08_cross_session_memory.md) | `[Core]` | Demo 03 (`user:` state) | Build a buyer agent that persists negotiation outcomes to `user:deal_journal` across sessions. The agent anchors future offers using historical data that survives "New Session". |
+| [`ex09_shared_market_intel.md`](exercises/ex09_shared_market_intel.md) | `[Core]` | Demo 03 (`app:` state) | Use `app:`-scoped state as a shared market intelligence layer. An `after_tool_callback` caches every pricing lookup; both buyer and seller reference the same comparable sales data. |
+| [`ex10_adaptive_strategy.md`](exercises/ex10_adaptive_strategy.md) | `[Stretch]` | Demos 03, 07 (state, AgentTool) | Add episodic negotiation memory and a strategy advisor sub-agent (wrapped as `AgentTool`) that analyses concession patterns and recommends tactics before each buyer offer. |
+| [`ex11_memory_bounded_context.md`](exercises/ex11_memory_bounded_context.md) | `[Stretch]` | Demos 03, 08 (state, callbacks) | Implement memory compression via `before_model_callback` — when negotiation history exceeds N rounds, old rounds are summarized into aggregate statistics to prevent context window overflow. |
 | [`stretch_streaming_client.md`](exercises/stretch_streaming_client.md) | `[Stretch]` | Demo 13 (A2A streaming) | Convert the multi-round client to use `message/stream` instead of `message/send`. Render task lifecycle events to console as they arrive. |
 
 Each solution lives in `solution/<exercise_name>/` as a self-contained, runnable package — most are launchable directly with `adk web solution/<exercise_name>/`. The instructor walks through each solution live during the review session.

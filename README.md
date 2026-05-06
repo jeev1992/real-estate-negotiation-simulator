@@ -240,6 +240,13 @@ Module 2 and Module 3 ship hands-on exercises with complete, runnable solutions.
 | M3 | `ex02_stuck_detection.md` | `[Core]` | Modify the orchestrator to track offer history and escalate early when rounds stall |
 | M3 | `ex03_a2a_multiround_client.md` | `[Core]` | Write an A2A client that drives buyer ↔ seller via `message/send` with `contextId` threading |
 | M3 | `ex04_mediator_agent.md` | `[Core]` | Build a mediator that wraps buyer + seller as `AgentTool`s and proposes a midpoint |
+| M3 | `ex05_prompt_injection_defense.md` | `[Core]` | Add a `before_model_callback` to detect and redact prompt injection attempts |
+| M3 | `ex06_human_in_the_loop.md` | `[Core]` | Add a human-approval checkpoint with three-tier governance: auto-approve, checkpoint, block |
+| M3 | `ex07_parallel_negotiation.md` | `[Stretch]` | Negotiate with two sellers in parallel using `ParallelAgent`, then pick the best deal |
+| M3 | `ex08_cross_session_memory.md` | `[Core]` | Build a buyer agent that persists deal outcomes to `user:` state across sessions |
+| M3 | `ex09_shared_market_intel.md` | `[Core]` | Use `app:` state as shared market intelligence — cache pricing lookups for all agents |
+| M3 | `ex10_adaptive_strategy.md` | `[Stretch]` | Episodic memory + strategy advisor `AgentTool` that analyses concession patterns |
+| M3 | `ex11_memory_bounded_context.md` | `[Stretch]` | Memory compression via `before_model_callback` to prevent context window overflow |
 | M3 | `stretch_streaming_client.md` | `[Stretch]` | Convert M3.3 to use `message/stream` and render task lifecycle events as they arrive |
 
 Each solution lives in its module's `solution/` folder as a self-contained, runnable package — `agent.py` files you can launch directly with `adk web`, or scripts you can run with `python`. The instructor walks through each solution live during the review session.

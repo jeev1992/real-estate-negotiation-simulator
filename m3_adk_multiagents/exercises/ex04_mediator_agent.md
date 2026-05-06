@@ -38,7 +38,20 @@ In `agent.py`:
 1. Build the two specialist agents first. Keep them small — they're tools, not products.
 2. Wrap each in `AgentTool(agent=...)` from `google.adk.tools.agent_tool`.
 3. Define the mediator with a clear instruction: *"For any pricing question, call buyer_specialist for the buyer's max, call seller_specialist for the seller's floor, then propose a midpoint."*
-4. Run via `adk web` and ask: *"What's a fair price for 742 Evergreen?"*
+4. Run:
+   ```bash
+   adk web m3_adk_multiagents/solution/ex04_mediator_agent/
+   ```
+5. Pick **`mediator`** from the dropdown.
+6. Open the **Info tab** — verify it shows two AgentTool entries (`buyer_specialist`, `seller_specialist`).
+7. Test with these queries:
+
+   | Query | Expected behavior |
+   |---|---|
+   | *"What's a fair price for 742 Evergreen Terrace?"* | Two AgentTool calls (buyer + seller), then a midpoint recommendation citing both numbers |
+   | *"Should I make an offer on 742 Evergreen?"* | Same two calls, but mediator may also assess ZOPA and advise yes/no |
+
+8. Watch the **Events panel** — you should see the mediator's LLM calling both specialists (often in parallel), then synthesizing.
 
 ## Verify
 

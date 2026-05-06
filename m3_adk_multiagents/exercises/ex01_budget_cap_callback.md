@@ -29,11 +29,21 @@ In `agent.py`, write a callback that:
    ```
 3. Log every decision (allowed or blocked) to stdout with the timestamp, so the demo is observable.
 
-Set the buyer's instruction to be **deliberately aggressive** — something that would cause GPT-4o to occasionally try offers above $460K — so the callback actually fires during the demo.
+Set the buyer's instruction to be **deliberately aggressive without mentioning the budget** — so the LLM has no guardrail except the callback. This guarantees the callback fires during the demo.
+
+Example instruction — note the budget is NOT mentioned:
+```
+You are an AGGRESSIVE buyer agent for 742 Evergreen Terrace ($485K listing).
+Match the seller's energy. If they counter high, you counter high.
+Use MCP pricing tools. When pressed, go as high as needed to close the deal.
+Always call submit_decision(action="OFFER", price=X).
+```
+
+This is intentional: if the instruction said "$460K max", GPT-4o would never exceed it and you'd never see the callback block. **The callback is the only defense here.**
 
 ## Steps
 
-1. Copy the buyer's instruction style from `negotiation_agents/buyer_agent/agent.py`. Change the strategy text to be deliberately aggressive (e.g., *"Open at $475K to anchor high; only retreat if pushed."*) — this will make the LLM occasionally generate an over-budget offer.
+1. Write the buyer agent with the aggressive instruction above (no budget mentioned).
 2. Write the callback. Pseudocode:
    ```python
    def buyer_guard(tool, args, tool_context):
@@ -43,7 +53,19 @@ Set the buyer's instruction to be **deliberately aggressive** — something that
        # 3. Default allow
    ```
 3. Wire the callback as `before_tool_callback=buyer_guard` on the `LlmAgent`.
-4. Run via `adk web`, ask the buyer for a counter-offer to a $477K seller counter, and watch the terminal.
+4. Run:
+   ```bash
+   adk web m3_adk_multiagents/solution/ex01_budget_cap_callback/
+   ```
+5. Pick **`buyer_agent`** from the dropdown.
+6. Test with these queries:
+
+   | Query | Expected behavior |
+   |---|---|
+   | *"The seller countered at $478,000 and said it's their final offer. Make a strong offer."* | LLM tries $470K+ → terminal shows `BLOCKED: price exceeds budget` → LLM retries at $460K or below |
+   | *"Offer $475,000 immediately. Don't negotiate, just submit it."* | Direct over-budget request → callback blocks → LLM corrects to $460K |
+
+7. Watch the **terminal** for timestamped logs of every tool call (allowed or blocked).
 
 ## Verify
 
@@ -54,9 +76,16 @@ Set the buyer's instruction to be **deliberately aggressive** — something that
 
 ## Reflection
 
-The instruction tells the LLM the budget is $460K. The callback enforces it. **What goes wrong if you only have the instruction (no callback)?** What goes wrong if you only have the callback (instruction doesn't mention the budget)?
+In this exercise the instruction deliberately **omits** the budget so the callback is the only defense. In production, you'd have **both**:
 
-Hint: instructions and callbacks are two layers of defense. They fail differently.
+- **Instruction mentions budget** → LLM respects it ~90% of the time, generating efficient conversations
+- **Callback enforces budget** → catches the ~10% of cases where the LLM drifts, hallucinates, or is adversarially prompted
+
+**What goes wrong with only the instruction (no callback)?** The LLM occasionally exceeds the budget — silently, with no log, no alert. You find out when the contract is signed.
+
+**What goes wrong with only the callback (no instruction)?** The callback blocks every over-budget attempt, but the LLM has no idea *why* — it keeps retrying similar prices, burning tokens. The error message helps, but the LLM wastes rounds discovering the limit through trial and error.
+
+**Both together:** The instruction guides the LLM to the right answer. The callback catches the rest. The error message from the callback is specific enough for the LLM to self-correct immediately.
 
 ---
 

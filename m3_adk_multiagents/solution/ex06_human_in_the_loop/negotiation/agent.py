@@ -5,28 +5,23 @@ Solution — Exercise 6: Human-in-the-Loop Checkpoint
 Negotiation orchestrator with a three-tier governance model:
 
   Tier 1 — Auto-approve:    Deal at or below $455,000 → escalate immediately
-  Tier 2 — Human checkpoint: Deal above $455,000 → pause, prompt human, wait
+  Tier 2 — Human checkpoint: Deal above $455,000 → pause, ask user in chat
   Tier 3 — Hard block:       (From Exercise 1) Price above $460,000 → callback blocks
 
-The human checkpoint uses Python's input() for simplicity. In production,
-replace with Slack/email/dashboard approval workflows.
-
-NOTE: This exercise must be tested via terminal (python -m or adk run),
-not adk web — the web UI doesn't support interactive input().
+The human checkpoint works through the **web UI chat**: the negotiation
+loop exits with a pending approval, and the parent LlmAgent asks the
+user to approve or reject in the conversation.
 
 To demo:
 
-    # Use adk web for observation, but the input() prompt will appear
-    # in the terminal where adk web is running:
     adk web m3_adk_multiagents/solution/ex06_human_in_the_loop/
 
     Pick `negotiation`, send: "Start the negotiation."
 
-    If the deal closes above $455K, the terminal will pause with:
-      ╔══════════════════════════════════════════════════════╗
-      ║  HUMAN APPROVAL REQUIRED                            ║
-      ╚══════════════════════════════════════════════════════╝
-      Approve this deal? [y/n]:
+    If the deal closes above $455K, the agent will ask you:
+      "The seller wants to accept at $457,000. Approve or reject?"
+
+    Reply "approve" or "reject" in the chat.
 """
 
 import re
@@ -35,6 +30,7 @@ from pathlib import Path
 
 from google.adk.agents import LlmAgent, LoopAgent, SequentialAgent
 from google.adk.agents.callback_context import CallbackContext
+from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
     MCPToolset,
@@ -45,7 +41,7 @@ from google.adk.tools.tool_context import ToolContext
 
 MODEL = "openai/gpt-4o"
 
-_REPO_ROOT = Path(__file__).resolve().parents[5]
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 _PRICING_SERVER = str(_REPO_ROOT / "m2_mcp" / "pricing_server.py")
 _INVENTORY_SERVER = str(_REPO_ROOT / "m2_mcp" / "inventory_server.py")
 
@@ -101,62 +97,57 @@ def submit_decision(action: str, price: int, tool_context: ToolContext) -> dict:
 # ─── Human-in-the-loop callback (the heart of this exercise) ─────────────────
 
 def _check_agreement_with_approval(callback_context: CallbackContext):
-    """After the seller responds, implement three-tier governance.
+    """After each round, implement three-tier governance.
 
     Tier 1: price <= AUTO_APPROVE_CEILING → auto-approve, escalate
-    Tier 2: price >  AUTO_APPROVE_CEILING → human checkpoint
+    Tier 2: price >  AUTO_APPROVE_CEILING → set pending_approval, escalate
+            (parent LlmAgent will ask user in chat)
     Tier 3: (handled by buyer's budget callback, not here)
     """
+    if callback_context.state.get("deal_finalized"):
+        callback_context.actions.escalate = True
+        return None
+
     decision = callback_context.state.get("seller_decision")
     if not isinstance(decision, dict) or decision.get("action") != "ACCEPT":
-        # Not an acceptance — counter-offers proceed without checkpoint
         return None
 
     price = decision.get("price", 0)
 
     # ── Tier 1: Auto-approve ──────────────────────────────────────────────
     if price <= AUTO_APPROVE_CEILING:
-        print(f"[AUTO-APPROVED] Deal at ${price:,} — within auto-approval "
-              f"threshold (${AUTO_APPROVE_CEILING:,})")
+        print(f"[AUTO-APPROVED] Deal at ${price:,} — within threshold")
+        callback_context.state["deal_finalized"] = True
+        callback_context.state["deal_outcome"] = (
+            f"Deal auto-approved at ${price:,} (within ${AUTO_APPROVE_CEILING:,} threshold)."
+        )
         callback_context.actions.escalate = True
         return None
 
-    # ── Tier 2: Human checkpoint ──────────────────────────────────────────
-    print()
-    print("╔" + "═" * 54 + "╗")
-    print(f"║  {'HUMAN APPROVAL REQUIRED':<52}  ║")
-    print(f"║  {'Seller wants to accept at $' + f'{price:,}':<52}  ║")
-    print(f"║  {'Auto-approval threshold: $' + f'{AUTO_APPROVE_CEILING:,}':<52}  ║")
-    print("╚" + "═" * 54 + "╝")
-
-    try:
-        answer = input("Approve this deal? [y/n]: ").strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        # Non-interactive environment — default to reject (safer)
-        answer = "n"
-        print("\n[NO INPUT] Defaulting to reject (non-interactive environment)")
-
-    if answer == "y":
-        print(f"[APPROVED] Human approved deal at ${price:,}")
-        callback_context.actions.escalate = True
-    else:
-        print(f"[REJECTED] Human rejected deal at ${price:,}. "
-              "Continuing negotiation.")
-        # Override the seller's decision to COUNTER so the loop continues
-        callback_context.state["seller_decision"] = {
-            "action": "COUNTER",
-            "price": price,
-        }
-
+    # ── Tier 2: Pending human approval ────────────────────────────────────
+    print(f"[PENDING APPROVAL] Deal at ${price:,} — above threshold, asking user")
+    callback_context.state["pending_approval"] = {
+        "price": price,
+        "threshold": AUTO_APPROVE_CEILING,
+    }
+    callback_context.state["deal_outcome"] = (
+        f"Negotiation paused — seller wants to accept at ${price:,}, "
+        f"which exceeds the auto-approval threshold of ${AUTO_APPROVE_CEILING:,}."
+    )
+    callback_context.actions.escalate = True
     return None
 
 
 def _init_round_state(callback_context: CallbackContext):
-    """Ensure seller_response exists in state before round 1."""
+    """Ensure state variables exist before round 1."""
     if "seller_response" not in callback_context.state:
         callback_context.state["seller_response"] = (
             "(No seller response yet — this is round 1)"
         )
+    if "deal_outcome" not in callback_context.state:
+        callback_context.state["deal_outcome"] = "(negotiation not started yet)"
+    if "pending_approval" not in callback_context.state:
+        callback_context.state["pending_approval"] = ""
     return None
 
 
@@ -169,11 +160,11 @@ buyer = LlmAgent(
         "You are a buyer agent for 742 Evergreen Terrace, Austin TX 78701 "
         "(listed at $485,000).\n\n"
         "BUDGET: $460,000 maximum.\n"
-        "TARGET: $445,000 - $455,000.\n\n"
+        "TARGET: $455,000 - $460,000.\n\n"
         "STRATEGY:\n"
         "- Call your MCP pricing tools BEFORE every offer\n"
-        "- Round 1: offer ~$425,000\n"
-        "- Each subsequent round: increase by 2-4%\n"
+        "- Round 1: offer ~$450,000\n"
+        "- Each subsequent round: increase by 1-2%\n"
         "- Read {seller_response} and adjust\n"
         "- Walk away if seller won't go below $460,000\n\n"
         "Write your offer as a dollar amount with brief justification."
@@ -225,20 +216,48 @@ seller = LlmAgent(
     ],
     before_tool_callback=_enforce_seller_allowlist,
     output_key="seller_response",
-    after_agent_callback=_check_agreement_with_approval,  # ← the checkpoint
 )
 
 negotiation_round = SequentialAgent(
     name="round",
     sub_agents=[buyer, seller],
+    after_agent_callback=_check_agreement_with_approval,
 )
 
-root_agent = LoopAgent(
+negotiation_loop = LoopAgent(
+    name="negotiation_loop",
+    description=(
+        "Runs multi-round buyer ↔ seller negotiation. Returns the deal outcome. "
+        "If deal is at or below $455,000 it is auto-approved. "
+        "If above $455,000, it needs human approval — the outcome will say 'paused'."
+    ),
+    sub_agents=[negotiation_round],
+    max_iterations=5,
+)
+
+# ─── Root agent: orchestrates negotiation + handles approval in chat ──────────
+
+root_agent = LlmAgent(
     name="negotiation",
+    model=MODEL,
     description=(
         "Multi-round buyer ↔ seller negotiation with human-in-the-loop "
         "approval for deals above $455,000."
     ),
-    sub_agents=[negotiation_round],
-    max_iterations=5,
+    instruction=(
+        "You orchestrate real estate negotiations with human oversight.\n\n"
+        "WORKFLOW:\n"
+        "1. When the user asks to negotiate, call the `negotiation_loop` tool.\n"
+        "2. After it completes, read the session state to check what happened:\n"
+        "   - If the deal was auto-approved (at or below $455,000), report "
+        "     the final price to the user.\n"
+        "   - If there is a pending approval (deal above $455,000), tell the "
+        "     user the price and ask: 'The seller wants to accept at $X. "
+        "This exceeds the $455,000 auto-approval threshold. "
+        "Do you APPROVE or REJECT this deal?'\n"
+        "3. If the user says APPROVE: confirm the deal is closed at that price.\n"
+        "4. If the user says REJECT: tell the user the deal was rejected.\n\n"
+        "Always wait for the user's response before finalizing."
+    ),
+    tools=[AgentTool(agent=negotiation_loop)],
 )

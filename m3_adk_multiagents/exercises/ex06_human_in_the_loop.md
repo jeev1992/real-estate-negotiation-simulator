@@ -47,7 +47,7 @@ Requirements:
 
 3. The `$455,000` threshold should be a module-level constant `AUTO_APPROVE_CEILING = 455_000` — easy to reconfigure.
 
-4. Use Python's built-in `input()` for the human prompt. This works in terminal; `adk web` won't support interactive input, so **test this exercise via a script or terminal, not the web UI**.
+4. Use a **parent LlmAgent** that wraps the negotiation loop as an `AgentTool`. When the loop exits with a pending approval, the parent agent asks the user in the **chat UI** whether to approve or reject — no `input()` needed.
 
 ## Steps
 
@@ -87,9 +87,24 @@ Requirements:
        return None
    ```
 3. Wire the callback on the seller agent: `after_agent_callback=_check_agreement_with_approval`.
-4. Test scenario 1 — set buyer max to $450K so the deal closes below threshold → should auto-approve.
-5. Test scenario 2 — set buyer max to $460K so the deal closes above $455K → should prompt for approval.
-6. Test scenario 3 — get prompted, type `n` → negotiation should continue for another round.
+4. Run:
+   ```bash
+   adk web m3_adk_multiagents/solution/ex06_human_in_the_loop/
+   ```
+5. Open `http://localhost:8000`, pick **`negotiation`** from the dropdown.
+6. Send: **"Start the negotiation for 742 Evergreen Terrace."**
+7. Watch the **chat UI**. The negotiation runs automatically (buyer ↔ seller). When the seller tries to accept:
+
+   | Scenario | What happens in the chat | What to do |
+   |---|---|---|
+   | Deal ≤ $455K | Agent reports: "Deal auto-approved at $X" | Nothing — auto-approved |
+   | Deal > $455K | Agent asks: "The seller wants to accept at $X. Do you APPROVE or REJECT?" | Reply **APPROVE** or **REJECT** in the chat |
+   | You reply REJECT | Agent confirms rejection | You can start a new negotiation |
+   | You reply APPROVE | Agent confirms: "Deal is closed at $X" | Done |
+
+8. Try both paths:
+   - **First run:** If you get the approval prompt, type **REJECT**. Confirm the deal is rejected.
+   - **Second run:** Start a new negotiation, type **APPROVE** when prompted. Confirm the deal closes.
 
 ## Verify
 

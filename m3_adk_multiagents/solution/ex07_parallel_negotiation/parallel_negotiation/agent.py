@@ -44,7 +44,7 @@ from google.adk.tools.tool_context import ToolContext
 
 MODEL = "openai/gpt-4o"
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 _PRICING_SERVER = str(_REPO_ROOT / "m2_mcp" / "pricing_server.py")
 _INVENTORY_SERVER = str(_REPO_ROOT / "m2_mcp" / "inventory_server.py")
 

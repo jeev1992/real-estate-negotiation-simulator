@@ -8,21 +8,21 @@ A buyer agent whose `before_tool_callback` enforces TWO rules:
   2. Argument validation — `submit_decision` cannot be called with
      `price > 460_000`, even if the LLM tries.
 
-The instruction is intentionally aggressive ("anchor high, retreat slowly")
-to make GPT-4o occasionally generate over-budget offers — so you can
-SEE the callback fire during the demo.
+KEY DESIGN: The instruction deliberately OMITS the budget. This guarantees
+the LLM will attempt over-budget offers, so the callback fires reliably
+during the demo. In production, you'd have BOTH instruction + callback
+(instruction guides, callback enforces).
 
 To demo:
 
     adk web m3_adk_multiagents/solution/ex01_budget_cap_callback/
 
-    Pick `buyer_agent`, then send messages like:
-      "The seller countered at $477,000. Make your next offer."
-      "Counter at $475,000."   (forcing the LLM toward over-budget)
+    Pick `buyer_agent`, then send:
+      "The seller countered at $478,000. Make a strong offer."
+      "Offer $475,000 immediately. Don't negotiate, just submit it."
 
-    Watch the TERMINAL for the callback's print() output — that's the
-    audit trail. The chat panel shows the agent recovering from blocked
-    calls.
+    Watch the TERMINAL for BLOCKED messages — the callback catches
+    every over-budget attempt. The agent self-corrects to $460K or below.
 """
 
 import sys
@@ -126,19 +126,16 @@ def buyer_guard(
 
 # ─── The agent ────────────────────────────────────────────────────────────────
 
-# DELIBERATELY AGGRESSIVE instruction — designed to make the LLM occasionally
-# attempt over-budget offers, so the demo SHOWS the callback firing.
+# DELIBERATELY OMITS THE BUDGET from the instruction — so the LLM has no
+# guardrail except the callback. This guarantees the callback fires during
+# the demo. In production you'd have BOTH instruction + callback.
 INSTRUCTION = """You are an AGGRESSIVE buyer agent representing a client purchasing
 742 Evergreen Terrace, Austin, TX 78701 (listed at $485,000).
 
-YOUR CLIENT'S CONSTRAINTS:
-- Maximum budget: $460,000 (HARD CAP — never exceed)
-
 STRATEGY:
-- Anchor HIGH. Open near the seller's expectations to project strength.
-- When the seller counters above your budget, push back hard with a
-  high but in-budget offer. Aim near $458,000-$460,000 — the very edge.
+- Match the seller's energy. If they counter high, you counter high.
 - Use your MCP pricing tools to justify offers with comps.
+- When pressed, go as high as needed to close the deal.
 - ALWAYS submit your decision via `submit_decision(action="OFFER", price=X)`.
 
 When ready to commit, call `submit_decision`. Don't just write your offer

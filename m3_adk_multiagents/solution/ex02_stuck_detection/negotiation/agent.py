@@ -20,8 +20,10 @@ To demo:
     Pick `negotiation` and send: "Start the negotiation."
     Expect: ACCEPT around round 2-3.
 
-    # 2. Stalled run — edit the buyer instruction below to cap at $440K
-    #    and re-run. Expect: stall detected at round 3-4, NOT round 5.
+    # 2. Stalled run — set STALL_DEMO=true to drop buyer budget to $440K:
+    #    $env:STALL_DEMO = "true"
+    #    adk web m3_adk_multiagents/solution/ex02_stuck_detection/
+    #    Expect: stall detected at round 3-4, NOT round 5.
 """
 
 import re
@@ -46,8 +48,8 @@ _INVENTORY_SERVER = str(_REPO_ROOT / "m2_mcp" / "inventory_server.py")
 
 # Stall-detection parameters — see the reflection in walkthrough.md for
 # how you would calibrate these in production.
-STALL_WINDOW = 3        # number of consecutive rounds to inspect
-STALL_THRESHOLD = 1_000 # dollars; if both prices move less than this each round, we call it stalled
+STALL_WINDOW = 2        # number of consecutive rounds to inspect
+STALL_THRESHOLD = 5_000 # dollars; if all prices move less than this each round, we call it stalled
 
 
 # ─── Tool allowlists (unchanged from the canonical orchestrator) ──────────────
@@ -182,17 +184,25 @@ def _init_round_state(callback_context: CallbackContext):
 
 # ─── The agents ───────────────────────────────────────────────────────────────
 
+# When STALL_DEMO=true, buyer budget drops to $440K (below seller's $445K floor)
+# to guarantee a no-ZOPA stall. Default is $460K (healthy ZOPA).
+import os
+_STALL_DEMO = os.environ.get("STALL_DEMO", "").lower() == "true"
+_BUYER_BUDGET = 440_000 if _STALL_DEMO else 460_000
+_BUYER_TARGET_LO = _BUYER_BUDGET - 10_000
+_BUYER_TARGET_HI = _BUYER_BUDGET
+
 buyer = LlmAgent(
     name="buyer",
     model=MODEL,
     instruction=(
         "You are a buyer agent for 742 Evergreen Terrace, Austin TX 78701 "
         "(listed at $485,000).\n\n"
-        "BUDGET: $460,000 maximum.\n"
-        "TARGET: $445,000 - $455,000.\n\n"
+        f"BUDGET: ${_BUYER_BUDGET:,} maximum.\n"
+        f"TARGET: ${_BUYER_TARGET_LO:,} - ${_BUYER_TARGET_HI:,}.\n\n"
         "Read {seller_response}. Make your next offer with one specific dollar "
         "amount. Use your MCP pricing tools to justify it.\n\n"
-        "If you've already pushed to your max ($460,000) and the seller is "
+        f"If you've already pushed to your max (${_BUYER_BUDGET:,}) and the seller is "
         "above it, repeat your max offer firmly."
     ),
     tools=[
