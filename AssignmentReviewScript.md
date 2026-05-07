@@ -1146,15 +1146,16 @@ Seller name:      seller_agent
 Streaming:        True
 
 STEP 2 — Streaming offer to seller
-[+ 0.05s] status: submitted
-[+ 0.30s] status: working
-[+ 1.85s] status: working — Calling get_market_price for current val...
-[+ 3.42s] status: working — Looking up minimum acceptable price...
-[+ 4.91s] artifact: id=f7ae8903... text='Thank you for your offer of $445,000. We accept!'
-[+ 5.04s] status: completed [FINAL]
+[+ 0.19s] status: submitted — Final-and-best offer: $445,000 for 742 Evergreen Terrace, Au...
+[+ 0.21s] status: working
+[+14.55s] status: working
+[+14.58s] status: working
+[+17.27s] status: working — Thank you for your offer of $445,000. I am pleased to inform...
+[+17.27s] artifact: id=71272c23... text='Thank you for your offer of $445,000. I am pleased to inform you that we are abl'
+[+17.27s] status: completed [FINAL]
 
-Total events: 6
-Wall-clock: 5.04s
+Total events: 7
+Wall-clock:   17.27s
 ```
 
 > *"Stop and point at three things:*

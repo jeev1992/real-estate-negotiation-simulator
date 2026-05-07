@@ -38,6 +38,15 @@ A modified script `streaming_client.py` that:
    - Yields each event to the caller.
 3. The caller does single-round demo (not multi-round) — keep it simple. Send one offer, render the full event stream, end.
 4. Capability check: fetch the Agent Card first, verify `capabilities.streaming` is true, fail loudly if not.
+5. Start the agents with A2A enabled in a separate terminal:
+   ```bash
+   adk web --a2a m3_adk_multiagents/negotiation_agents/
+   ```
+6. Run your script:
+   ```bash
+   python m3_adk_multiagents/solution/stretch_streaming_client/streaming_client.py
+   ```
+7. Watch the console — you should see timestamped events streaming in over ~5 seconds.
 
 ## Verify
 
