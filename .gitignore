@@ -4,6 +4,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.adk/
 create_slides.py
 real-estate-negotiation-simulator.pptx
 run_all.ps1
@@ -14,3 +15,5 @@ create_presentation.py
 negotiation_workshop_presentation.pptx
 .claude/
 TALKING_SCRIPT.md
+SLIDE_SPEC.md
+AssignmentReviewScript.md

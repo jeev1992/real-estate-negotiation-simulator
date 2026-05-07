@@ -127,14 +127,16 @@ python m1_baseline/state_machine.py
 
 ---
 
-## Exercises
+## No exercises in this module
 
-| Exercise | Difficulty | Task |
-|---|---|---|
-| `ex01_add_timeout_state.md` | `[Core]` | Add a TIMEOUT terminal state to the FSM — new enum, transition table, deadline check, invariants |
-| `ex02_compare_failure_modes.md` | `[Core]` | Run naive vs FSM side by side, fill in a comparison table mapping each failure mode to its fix |
+Module 1 exists to *motivate* the rest of the workshop — to show why naive LLM agents break. Its lessons are conceptual, not skill-based. The FSM pattern is reinforced as a hands-on exercise in **Module 3** (`ex02_stuck_detection.md`), where you'll apply the same termination guarantee to an actual ADK `LoopAgent`.
 
-Solutions are in `m1_baseline/solution/`. Each exercise includes a reflection question.
+If you want to internalize Module 1's content, the best practice is simply to **run both files** and read the source carefully:
+
+```bash
+python m1_baseline/naive_negotiation.py    # watch it work by luck, then fail
+python m1_baseline/state_machine.py        # watch the FSM terminate by design
+```
 
 ---
 

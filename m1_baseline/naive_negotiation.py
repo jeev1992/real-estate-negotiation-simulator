@@ -37,7 +37,7 @@ WHAT TO WATCH FOR:
   • Failure mode demos -- see all 4 ways the regex parser breaks on real LLM output
 
 COMPARE WITH:
-  python m3_adk_multiagents/a2a_protocol_seller_server.py  <- The fixed version
+  adk web m3_adk_multiagents/negotiation_agents/  <- The fixed version
 """
 
 import os
@@ -516,7 +516,7 @@ Each problem maps to a specific solution in the workshop:
   Problem #10  No evaluation        -> Session analytics, agreed price tracking
 
 RUN THE FIXED VERSION:
-  python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
+  adk web m3_adk_multiagents/negotiation_agents/
     """)
 
 

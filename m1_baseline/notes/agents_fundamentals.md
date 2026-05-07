@@ -1,6 +1,16 @@
 # Agent Fundamentals
 ## A Complete Guide for Engineers New to AI Agents
 
+> **Audience:** Engineers comfortable with Python and LLM APIs (OpenAI, Anthropic) but new to *agentic* systems — multi-step LLM-driven workflows that perceive, decide, and act.
+> **Prerequisites:** Familiarity with calling an LLM API and what "function calling" / "tool use" means.
+> **Read this after:** Running `m1_baseline/naive_negotiation.py` and `m1_baseline/state_machine.py`. The note is written assuming you've watched a naive agent break and seen an FSM fix it.
+> **Read this next:** [`../../m2_mcp/notes/mcp_deep_dive.md`](../../m2_mcp/notes/mcp_deep_dive.md) — the protocol that lets agents access external tools without bespoke integration work.
+>
+> **TL;DR:**
+> 1. **Agent = LLM + Tools + Memory + Goal + Loop.** Remove any one and you have something less than an agent (a chatbot, a single inference call, an infinite script, an API client).
+> 2. **The defining property is *autonomy*** — the agent decides its own next step based on observation, not a predetermined script. Workflows execute logic; agents *select* it.
+> 3. **`while True` is not a loop — it's a bug.** Production agents need bounded iteration with explicit terminal conditions. The FSM you saw in M1 is the simplest realization; ADK's `LoopAgent` is the same idea at agent scale.
+
 ---
 
 ## Table of Contents
@@ -16,6 +26,7 @@
 8. [Common Misconceptions](#8-common-misconceptions)
 9. [When to Use Agents (and When NOT To)](#9-when-to-use-agents-and-when-not-to)
 10. [How Our Negotiation Simulator Uses These Concepts](#10-how-our-negotiation-simulator-uses-these-concepts)
+11. [The Workshop's 10 Failure Modes — Why Naive Agents Break](#11-the-workshops-10-failure-modes--why-naive-agents-break)
 
 ---
 
@@ -606,6 +617,122 @@ Google ADK                Production-style agent framework (see note 05)
    │  • calc_discount    │          │  • min_price        │
    └─────────────────────┘          └─────────────────────┘
 ```
+
+---
+
+## 11. The Workshop's 10 Failure Modes — Why Naive Agents Break
+
+This section exists specifically to map the conceptual material above onto
+the failure modes the **Module 1 workshop demo** is built around. If you
+read this note before the workshop, this is the section that previews the
+demo. If you read it after, this is the section that lets you re-anchor on
+the specific bugs you saw.
+
+The premise of `m1_baseline/naive_negotiation.py` is: **"Build the most
+obvious agent system you can. Then watch every part of it fail in
+production-realistic ways."** The file documents 10 distinct failure modes —
+each one fixed somewhere later in the workshop.
+
+### The 10 failure modes
+
+| # | Failure mode | What goes wrong | Fixed by |
+|---|---|---|---|
+| 1 | Raw string communication | LLM returns anything; downstream code can't reliably parse intent | A2A structured messages (Module 3) |
+| 2 | No schema validation | Messages have no contract — fields can be missing, types can drift | Pydantic / A2A `DataPart` (Module 3) |
+| 3 | No state machine | `while True` loop with no termination guarantee | `NegotiationFSM` → `LoopAgent` |
+| 4 | No turn limits | Can loop forever if no agreement is reached | `max_turns` → `max_iterations` |
+| 5 | Fragile regex parsing | `re.search(r'\$?(\d[\d,]*)')` extracts the *first* number it sees — wrong if the LLM mentions any other dollar amount first | Typed `submit_decision` parameters |
+| 6 | No termination guarantee | `"DEAL" in message.upper()` matches `"DEAL-breaker"` (false positive) and misses `"let's finalize this"` (false negative) | Terminal states with empty transitions / `submit_decision` action field |
+| 7 | Silent failures | Bad parse returns `None`; loop keeps going on corrupted data with no error | Pydantic validation that raises on missing fields |
+| 8 | Hardcoded prices | `SELLER_MIN_PRICE = 445_000` lives in source — stale, leaked, untyped | MCP servers (Module 2) |
+| 9 | No observability | Can't reconstruct what happened; no event log | ADK event stream + A2A task lifecycle |
+| 10 | No evaluation | Can't measure if the result was actually good | Session analytics, agreed-price tracking |
+
+### The bugs in concrete terms
+
+The first three are abstract until you see them play out. Three concrete
+examples from the workshop demo:
+
+**Bug from Demo 1 — "works by luck."** Buyer max $460K, seller min $445K
+(ZOPA exists). The buyer offers $425K, the seller counters $453K, the
+buyer says `"ACCEPT at $453,150"`. The system reports a deal. **It worked,
+but barely.** Three things had to happen by coincidence:
+- The seller's LLM happened to start its reply with the magic word `"DEAL"`.
+- The seller's reply happened to mention the counter price as the *only*
+  dollar amount in the text.
+- The buyer's LLM happened to use the keyword `"ACCEPT"` rather than
+  `"agreed"`, `"yes"`, `"sold"`, or any of the dozens of natural ways a
+  human might phrase agreement.
+
+Change any one of those — different temperature, different model version,
+slightly different prompt — and the same scenario fails. This is why
+**"my agent works on my machine" is not a release criterion for agent systems.**
+
+**Bug from Demo 2 — "no-ZOPA infinite loop."** Buyer max $420K, seller min
+$450K. The agents physically cannot agree. The naive loop runs for the
+full 100-turn cap, burning ~$5 of API calls. Then **the seller's LLM
+fatigues and emits the word `"DEAL"` to escape the conversation, accepting
+$420K — thirty thousand below its own floor.** The system reports
+"success" with a contract that violates the seller's stated constraint.
+Nothing in the code caught the violation. *No code checked whether
+$420K ≥ $450K.* The "business rule" existed only as a prompt instruction.
+
+**Bug from M3 development — `'ACCEPT' in 'acceptable'`.** When we built the
+M3 negotiation orchestrator, the first version's acceptance check was:
+
+```python
+if "ACCEPT" in seller_response.upper():
+    deal_reached = True
+```
+
+The seller's MCP tool `get_minimum_acceptable_price` returns text containing
+**"minimum *acceptable* price is $445,000"**. The substring check matched
+**ACCEPTABLE** and false-triggered acceptance on every counter-offer that
+mentioned the floor. The negotiation closed on round 1 every time.
+
+The fix is the M3 `submit_decision` tool — the seller calls a typed
+function with `action='ACCEPT'` or `action='COUNTER'`, and the loop reads
+`state['seller_decision']['action']` as a structured dict field. **No
+substring matching, ever.** This is M1's lesson cashing out two modules later.
+
+### How the FSM fixes the first slice of these
+
+The remediations live across three modules, but Module 1's `state_machine.py`
+fixes failure modes **#3, #4, and #6** directly:
+
+- **#3 (no state machine)** → `NegotiationFSM` with explicit states.
+- **#4 (no turn limits)** → `process_turn()` increments `turn_count`,
+  capped at `max_turns`. Loop must exit.
+- **#6 (no termination guarantee)** → Terminal states `AGREED` and `FAILED`
+  have **empty transition sets**:
+  ```python
+  TRANSITIONS = {
+      IDLE:        {NEGOTIATING, FAILED},
+      NEGOTIATING: {NEGOTIATING, AGREED, FAILED},
+      AGREED:      set(),    # ← empty: no way out
+      FAILED:      set(),    # ← empty: no way out
+  }
+  ```
+  Once the FSM enters a terminal state, it cannot move. Combined with the
+  turn cap, **the loop is mathematically guaranteed to terminate**.
+
+The remaining failure modes (#1, #2, #5, #7, #8, #9, #10) are fixed by
+MCP (Module 2) and ADK + A2A (Module 3). The "termination guarantee" lesson
+from `state_machine.py` is the conceptual foundation; everything later is
+the same idea applied to richer scenarios.
+
+### What this means for everything that follows
+
+**Module 2** (MCP) replaces hardcoded data with protocol-served tools —
+fixing failure mode #8.
+
+**Module 3** (ADK + A2A) replaces fragile control flow with `LoopAgent`,
+typed messages with A2A `DataPart`, and string-match termination with the
+`submit_decision` pattern — fixing failure modes #1, #2, #5, #6, #7, #9, #10.
+
+The arc of the entire course is: **"see the failure → name it → fix it
+properly".** Section 11 you just read is the *first half* — the seeing and
+naming. The rest of the workshop is the *second half* — the proper fixing.
 
 ---
 

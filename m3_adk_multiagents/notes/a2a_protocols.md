@@ -1,6 +1,16 @@
 # A2A Protocols
 ## Agent-to-Agent Communication: How Agents Talk to Each Other
 
+> **Audience:** Engineers who have built one agent and need to connect it to *other* agents — built by other teams, in other languages, on other clouds — without sharing code or memory.
+> **Prerequisites:** Comfort with HTTP and JSON. Familiarity with [`mcp_deep_dive.md`](../../m2_mcp/notes/mcp_deep_dive.md) helps because A2A reuses the same JSON-RPC envelope as MCP.
+> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_13_streaming.py` in `m3_adk_multiagents/adk_demos/`. Seeing the wire frames first is essential.
+> **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) for how ADK exposes A2A endpoints automatically via `adk web --a2a`.
+>
+> **TL;DR:**
+> 1. **A2A is the agent-level analogue of MCP.** Same JSON-RPC envelope, same well-known discovery convention. Where MCP standardizes *agent → tool*, A2A standardizes *agent → agent*. Once you know one, the other is mostly vocabulary.
+> 2. **Four objects, four operations.** Objects: Task (the unit of work), Message (one turn), Part (atomic content — TextPart / DataPart / FilePart), Artifact (durable output). Operations: discover (Agent Card), invoke (`message/send`), stream (`message/stream`), poll (`tasks/get`).
+> 3. **`contextId` threads multi-turn conversations** across stateless HTTP requests. Round 1 omits it (server assigns); rounds 2+ pass it back. This is A2A's `session_id`.
+
 ---
 
 ## Table of Contents
@@ -571,7 +581,7 @@ ADK workflow agents (`LoopAgent`, `SequentialAgent`, `ParallelAgent`) **are** st
 ```bash
 python m1_baseline/naive_negotiation.py   # ← See the while True problem
 python m1_baseline/state_machine.py       # ← See the FSM fix
-python m3_adk_multiagents/a2a_protocol_seller_server.py    # ← See the same principle inside ADK + A2A
+adk web m3_adk_multiagents/negotiation_agents/  # ← See the same principle inside ADK
 ```
 
 ---
@@ -709,7 +719,7 @@ error_msg = A2AMessage(
 
 ## 9. Implementing A2A in Python
 
-For the production protocol transport in this workshop, see Module 3 (`m3_adk_multiagents/a2a_protocol_*`).
+For the production protocol transport in this workshop, use `adk web --a2a`.
 Here's a minimal in-process routing pattern for learning:
 
 ### Message Router
@@ -783,30 +793,105 @@ async def run_negotiation():
     return bus.history
 ```
 
-### 9.1 Google ADK True A2A Demo in This Repo
+### 9.1 Google ADK A2A in This Repo
 
-If you want the **Google ADK true protocol A2A** version in this repo, run:
+The idiomatic way to run A2A in this repo:
 
 ```bash
-python m3_adk_multiagents/a2a_protocol_seller_server.py --port 9102
-python m3_adk_multiagents/a2a_protocol_http_orchestrator.py --seller-url http://127.0.0.1:9102 --rounds 5
-python m3_adk_multiagents/a2a_protocol_buyer_client_demo.py --seller-url http://127.0.0.1:9102
+# Terminal 1 — start agents with A2A endpoints
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+
+# Terminal 2 — see the wire format and task lifecycle
+python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py \
+    --seller-url http://127.0.0.1:8000/a2a/seller_agent
+
+# Terminal 2 — see context threading across rounds
+python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py \
+    --seller-url http://127.0.0.1:8000/a2a/seller_agent
+
+# Terminal 2 — see multi-part messages and artifacts
+python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py \
+    --seller-url http://127.0.0.1:8000/a2a/seller_agent
+
+# Terminal 2 — see streaming (message/stream SSE events)
+python m3_adk_multiagents/adk_demos/a2a_13_streaming.py \
+    --seller-url http://127.0.0.1:8000/a2a/seller_agent
 ```
 
-What this demonstrates:
-- Buyer and seller are both ADK `LlmAgent`-based agents
-- Communication happens over networked A2A JSON-RPC transport
-- Seller endpoint publishes an A2A agent card for discovery
-
 Key files:
-- `m3_adk_multiagents/a2a_protocol_seller_server.py` (A2A protocol seller endpoint)
-- `m3_adk_multiagents/a2a_protocol_http_orchestrator.py` (A2A protocol multi-round HTTP orchestrator)
-- `m3_adk_multiagents/a2a_protocol_buyer_client_demo.py` (A2A protocol buyer client)
-- `m3_adk_multiagents/buyer_adk.py` and `m3_adk_multiagents/seller_adk.py` (ADK agents)
+- `m3_adk_multiagents/negotiation_agents/buyer_agent/agent.py` (buyer LlmAgent + MCPToolset)
+- `m3_adk_multiagents/negotiation_agents/seller_agent/agent.py` (seller LlmAgent + dual MCPToolsets)
+- `m3_adk_multiagents/negotiation_agents/negotiation/agent.py` (LoopAgent + SequentialAgent)
+- `m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` (raw A2A wire format)
+- `m3_adk_multiagents/adk_demos/a2a_11_context_threading.py` (contextId threading)
+- `m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py` (multi-part messages)
+- `m3_adk_multiagents/adk_demos/a2a_13_streaming.py` (SSE streaming)
 
 ---
 
 ## 10. Production A2A Patterns
+
+### Pattern 0: The Matchmaker (Most Common)
+
+The most common production A2A topology is **a non-agent orchestrator
+script that bridges two A2A peers**. The script discovers each peer via
+its Agent Card, sends `message/send` requests in alternation, and
+threads each side's conversation with its own `contextId`.
+
+This is the "matchmaker" pattern. **The two agents never know about each
+other.** They each see only messages from "a user" (the script). The
+script is the only thing that knows about both.
+
+```python
+# Pseudocode for the matchmaker pattern.
+# Full working example: a2a_14_orchestrated_negotiation.py
+
+# 1) Discover both peers via Agent Cards.
+buyer_card  = await A2ACardResolver(http, base_url=BUYER_URL).get_agent_card()
+seller_card = await A2ACardResolver(http, base_url=SELLER_URL).get_agent_card()
+
+# 2) Maintain SEPARATE contextIds. Each agent has its own conversation thread.
+buyer_context_id, seller_context_id = None, None
+
+# 3) Loop: ask buyer → forward to seller → break on ACCEPT.
+for round_num in range(1, MAX_ROUNDS + 1):
+    buyer_text, buyer_context_id = await send_message(
+        http, buyer_card.url, prompt_for_buyer, buyer_context_id
+    )
+    seller_text, seller_context_id = await send_message(
+        http, seller_card.url, f"Buyer offered: {buyer_text}", seller_context_id
+    )
+    if has_acceptance(seller_text):
+        break
+```
+
+**Why this is the production default**, even when "everything is an agent":
+
+- **No special access required.** The matchmaker doesn't need a Python
+  import of either agent's code — just network access to their A2A
+  endpoints. Agents written in different languages, by different teams,
+  in different processes work the same way.
+- **Central place for policy.** Logging, audit, retries, rate limiting,
+  and human-in-the-loop gates all live in the matchmaker. Modifying
+  either agent is unnecessary.
+- **Substitutable.** Swap in a different buyer or different seller — as
+  long as they speak A2A and present compatible skills, the matchmaker
+  works unchanged. *This is what the protocol buys you.*
+
+**Matchmaker → A2A agent.** The matchmaker can itself be wrapped as an
+A2A agent — give it an Agent Card with skill `negotiation_orchestration`
+and serve it over `adk web --a2a`. Now *its* clients discover *it* via
+its card, call it like any other A2A peer, and the two agents under it
+remain hidden behind the abstraction. **Recursion all the way down** is
+how A2A networks scale beyond two agents.
+
+Compare to:
+- **Mediator (Pattern 2 below)** — the mediator is *itself* an LLM agent
+  that *participates* in the conversation, often when buyer and seller
+  deadlock. Different role; not a matchmaker.
+- **Peer-to-peer A2A** — the buyer agent discovers the seller's card
+  directly and sends messages without an intermediary. Possible but rare;
+  usually the matchmaker pattern wins because it centralizes policy.
 
 ### Pattern 1: Agent Registry
 
@@ -939,13 +1024,25 @@ delegation_message = A2AMessage(
 
 ---
 
-# Part II — The A2A Protocol Spec (Phase 2 Deep-Dive)
+# Part II — The A2A Protocol Spec (Deep-Dive)
 
 The first half of this document explains the *idea* of agent-to-agent
-communication and a hand-rolled implementation of it. This part walks
-through the actual A2A specification — the one our `a2a_protocol_*.py`
-files implement on top of `a2a-sdk`. Pair each section with a runnable
-demo under [`m3_adk_multiagents/demos/`](../demos/).
+communication. This part walks through the actual A2A specification.
+Pair each section with a runnable demo under
+[`m3_adk_multiagents/adk_demos/`](../adk_demos/).
+
+To see the protocol live, start the agents with:
+```bash
+adk web --a2a m3_adk_multiagents/negotiation_agents/
+```
+
+Then run:
+```bash
+python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py
+python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py
+python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py
+python m3_adk_multiagents/adk_demos/a2a_13_streaming.py
+```
 
 ---
 
@@ -973,7 +1070,7 @@ they don't understand. The workshop uses `"0.3.0"`.
 
 A2A is **not a replacement for MCP**. MCP is *agent ↔ tool*; A2A is
 *agent ↔ agent*. A single agent can be an A2A server *and* an MCP client
-at the same time — that's exactly what `a2a_protocol_seller_server.py` is.
+at the same time — that's exactly what `adk web --a2a` does for our agents.
 
 ---
 
@@ -1005,11 +1102,10 @@ Each `AgentSkill` should have an `id`, `name`, `description`, `tags`,
 `examples`, and per-skill `inputModes`/`outputModes`. Skills are how a
 caller (human or another agent) decides whether your agent is a fit.
 
-In Phase 2, `a2a_protocol_seller_server.py` advertises two skills
-(`real_estate_seller_negotiation` and `negotiation_history`) and turns on
-`capabilities.streaming = True`.
+With `adk web --a2a`, the seller agent advertises skills automatically
+based on its `description` and tools. Agent Cards are auto-generated.
 
-**Demo:** `m3_adk_multiagents/demos/01_handcraft_message_send.py` fetches
+**Demo:** `m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` fetches
 and prints the Agent Card before sending the first message.
 
 ---
@@ -1051,8 +1147,8 @@ Four object types describe everything that flows between agents.
 In Phase 2, the seller server attaches a `negotiation-summary` artifact
 (a `DataPart` with the full structured response) to every completed Task.
 
-**Demo:** `m3_adk_multiagents/demos/03_parts_and_artifacts.py` sends a
-multi-part message and inspects any artifacts the server returns.
+**Demo:** `m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py` sends a
+multi-part message (TextPart + DataPart) and inspects any artifacts the server returns.
 
 ---
 
@@ -1085,7 +1181,7 @@ The request envelope is plain JSON-RPC 2.0:
 }
 ```
 
-**Demo:** `m3_adk_multiagents/demos/01_handcraft_message_send.py` builds
+**Demo:** `m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` builds
 this envelope by hand — no SDK helpers — so you can see the exact wire
 shape.
 
@@ -1118,7 +1214,7 @@ The server advances the state by calling `TaskUpdater` methods:
 In Phase 2, our seller server emits a `working` status update *before* the
 slow LLM/MCP roundtrip starts so streaming clients see the agent is alive.
 
-**Demo:** `m3_adk_multiagents/demos/02_task_lifecycle.py` sends a valid
+**Demo:** `m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` sends a valid
 and an invalid envelope so you can compare `completed` vs `failed`.
 
 ---
@@ -1139,8 +1235,41 @@ they happen:
 This is best for in-flight UX — show "Seller is thinking..." and then
 the final answer in the same connection.
 
-**Demo:** `m3_adk_multiagents/demos/04_streaming_negotiation.py` consumes
-the stream and prints every event as it arrives.
+**Capability gating (`capabilities.streaming`).** Streaming is opt-in
+per agent. The Agent Card's `capabilities.streaming` field declares
+whether the server supports `message/stream`:
+
+```json
+{
+  "name": "seller_agent",
+  "url": "http://localhost:8000/a2a/seller_agent",
+  "capabilities": { "streaming": true, "pushNotifications": false },
+  "skills": [...]
+}
+```
+
+**If a client calls `message/stream` against a server with
+`capabilities.streaming: false`, the server returns HTTP 400** — there is
+no automatic fallback to `message/send`. **Robust clients fetch the Agent
+Card first, check the capability, and either proceed or fail loudly.** The
+relevant snippet looks like:
+
+```python
+card = (await A2ACardResolver(httpx_client=http, base_url=seller_url)
+        .get_agent_card()).model_dump(mode="json")
+if not card.get("capabilities", {}).get("streaming", False):
+    raise RuntimeError(
+        f"{card['name']} does not support streaming; "
+        "use message/send instead."
+    )
+```
+
+**Capabilities are the contract.** This applies symmetrically to push
+notifications, blob upload, and any other capability the spec adds —
+always check the card before relying on a feature.
+
+**Demo:** `m3_adk_multiagents/adk_demos/a2a_13_streaming.py` consumes
+the stream and prints every event (kind, state, final marker) as it arrives.
 
 ### 17.2 Push notifications (webhooks)
 
