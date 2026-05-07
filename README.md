@@ -214,12 +214,18 @@ python m1_baseline/state_machine.py       # no API key needed — FSM terminatio
 python m2_mcp/github_agent_client.py      # GitHub MCP agent (needs GITHUB_TOKEN + OPENAI_API_KEY)
 python m2_mcp/pricing_server.py           # Run MCP server standalone (stdio)
 python m2_mcp/pricing_server.py --sse --port 8001  # SSE transport mode
+# MCP deep-dive demos (no API key needed unless noted):
+python m2_mcp/demos/01_initialize_handshake.py
+python m2_mcp/demos/02_tool_loop_trace.py
+python m2_mcp/demos/03_list_all_primitives.py
+python m2_mcp/demos/04_content_types.py
+python m2_mcp/demos/05_streamable_http_transport.py
 
 # MODULE 3: Google ADK + A2A protocol (needs OPENAI_API_KEY)
-adk web m3_adk_multiagents/adk_demos/               # 9 concept demos in dropdown
+adk web m3_adk_multiagents/adk_demos/               # ADK demos d01–d09 in dropdown
 adk web m3_adk_multiagents/negotiation_agents/       # buyer, seller, negotiation in dropdown
 adk web --a2a m3_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Agent Cards
-# A2A protocol demos (run against adk web --a2a):
+# A2A protocol demos (run in a second terminal against adk web --a2a):
 python m3_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m3_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m3_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
