@@ -13,6 +13,8 @@ Run:
     adk web m3_adk_multiagents/adk_demos/d03_sessions_state/
 """
 
+import os
+
 from google.adk.agents import LlmAgent
 from google.adk.tools.tool_context import ToolContext
 
@@ -37,9 +39,11 @@ def get_offer_history(tool_context: ToolContext) -> dict:
     return {"offers": history, "total_across_sessions": total}
 
 
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
+
 root_agent = LlmAgent(
     name="stateful_agent",
-    model="openai/gpt-4o",
+    model=MODEL,
     description="Real estate agent that remembers offer history across turns.",
     instruction=(
         "You help users negotiate on 742 Evergreen Terrace (listed $485,000).\n\n"

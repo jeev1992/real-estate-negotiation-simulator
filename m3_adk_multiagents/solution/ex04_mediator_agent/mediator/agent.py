@@ -35,7 +35,9 @@ from google.adk.tools.mcp_tool.mcp_toolset import (
     StdioServerParameters,
 )
 
-MODEL = "openai/gpt-4o"
+import os
+
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _INVENTORY_SERVER = str(_REPO_ROOT / "m2_mcp" / "inventory_server.py")

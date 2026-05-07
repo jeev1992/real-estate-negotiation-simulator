@@ -17,7 +17,9 @@ Run:
 
 from google.adk.agents import LlmAgent, SequentialAgent
 
-MODEL = "openai/gpt-4o"
+import os
+
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
 
 market_brief = LlmAgent(
     name="market_brief",

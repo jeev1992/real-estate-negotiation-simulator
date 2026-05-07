@@ -54,7 +54,9 @@ from google.adk.tools.tool_context import ToolContext
 from google.adk.models.llm_response import LlmResponse
 from google.genai.types import Content, Part
 
-MODEL = "openai/gpt-4o"
+import os
+
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
 JUDGE_MODEL = "openai/gpt-4o-mini"  # cheap/fast model for classification
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]

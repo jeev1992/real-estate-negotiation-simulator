@@ -12,6 +12,7 @@ Run with:
     adk web --a2a m3_adk_multiagents/negotiation_agents/
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -46,9 +47,11 @@ def _enforce_seller_allowlist(
     return None
 
 
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
+
 root_agent = LlmAgent(
     name="seller_agent",
-    model="openai/gpt-4o",
+    model=MODEL,
     description="Real estate seller agent for 742 Evergreen Terrace, Austin TX.",
     instruction=(
         "You are an expert listing agent for 742 Evergreen Terrace, "

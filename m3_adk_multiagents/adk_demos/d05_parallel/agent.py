@@ -15,7 +15,9 @@ Run:
 
 from google.adk.agents import LlmAgent, ParallelAgent
 
-MODEL = "openai/gpt-4o"
+import os
+
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
 
 schools = LlmAgent(
     name="schools_signal",

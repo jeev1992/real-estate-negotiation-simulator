@@ -21,6 +21,7 @@ To demo:
       - "Walk me through whether to make an offer."
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -59,9 +60,11 @@ def _mcp_toolset(server_path: str) -> MCPToolset:
 # the LLM. The model doesn't know which server hosts which tool — it just
 # sees a unified function-calling list.
 
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
+
 root_agent = LlmAgent(
     name="property_advisor",
-    model="openai/gpt-4o",
+    model=MODEL,
     description=(
         "Real-estate advisor that combines market data (pricing) with "
         "inventory and seller-side data."

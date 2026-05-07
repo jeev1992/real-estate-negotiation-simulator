@@ -18,7 +18,9 @@ Run:
 from google.adk.agents import LlmAgent, LoopAgent
 from google.adk.agents.callback_context import CallbackContext
 
-MODEL = "openai/gpt-4o"
+import os
+
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
 
 
 def stop_when_in_range(callback_context: CallbackContext):

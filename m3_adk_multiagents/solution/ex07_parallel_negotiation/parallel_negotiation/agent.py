@@ -42,7 +42,9 @@ from google.adk.tools.mcp_tool.mcp_toolset import (
 )
 from google.adk.tools.tool_context import ToolContext
 
-MODEL = "openai/gpt-4o"
+import os
+
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _PRICING_SERVER = str(_REPO_ROOT / "m2_mcp" / "pricing_server.py")

@@ -5,6 +5,7 @@ so it can be launched via `adk web`.
     adk web m2_mcp/solution/ex01_walk_score_tool/
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -19,9 +20,11 @@ _PRICING_SERVER = str(
     Path(__file__).resolve().parent.parent / "pricing_server.py"
 )
 
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
+
 root_agent = LlmAgent(
     name="walk_score_agent",
-    model="openai/gpt-4o",
+    model=MODEL,
     description="Real estate agent with walk score tool (ex01 solution).",
     instruction=(
         "You are a real estate advisor for Austin, TX.\n\n"

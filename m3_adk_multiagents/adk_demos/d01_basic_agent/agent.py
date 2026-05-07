@@ -13,7 +13,11 @@ Run:
     adk web m3_adk_multiagents/adk_demos/d01_basic_agent/
 """
 
+import os
+
 from google.adk.agents import LlmAgent
+
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
 
 
 def get_quick_estimate(address: str) -> dict:
@@ -30,7 +34,7 @@ def get_quick_estimate(address: str) -> dict:
 
 root_agent = LlmAgent(
     name="basic_agent",
-    model="openai/gpt-4o",
+    model=MODEL,
     description="A simple real estate assistant that estimates property values.",
     instruction=(
         "You are a helpful real estate assistant. When asked about a property, "

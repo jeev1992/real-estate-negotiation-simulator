@@ -24,7 +24,9 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 
-MODEL = "openai/gpt-4o"
+import os
+
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
 ALLOWED_TOOLS = {"get_quick_estimate"}
 SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 

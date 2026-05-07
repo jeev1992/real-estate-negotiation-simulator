@@ -9,6 +9,7 @@ Run with:
     adk web --a2a m3_adk_multiagents/negotiation_agents/
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -42,9 +43,11 @@ def _enforce_buyer_allowlist(
     return None
 
 
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
+
 root_agent = LlmAgent(
     name="buyer_agent",
-    model="openai/gpt-4o",
+    model=MODEL,
     description="Real estate buyer agent for 742 Evergreen Terrace, Austin TX.",
     instruction=(
         "You are an expert real estate buyer agent representing a client "

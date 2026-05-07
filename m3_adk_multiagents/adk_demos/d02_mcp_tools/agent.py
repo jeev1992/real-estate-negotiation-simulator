@@ -14,6 +14,7 @@ Run:
     adk web m3_adk_multiagents/adk_demos/d02_mcp_tools/
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -28,9 +29,11 @@ _PRICING_SERVER = str(
     Path(__file__).resolve().parents[3] / "m2_mcp" / "pricing_server.py"
 )
 
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
+
 root_agent = LlmAgent(
     name="mcp_tools_agent",
-    model="openai/gpt-4o",
+    model=MODEL,
     description="Real estate pricing agent with MCP-discovered tools.",
     instruction=(
         "You are a real estate pricing analyst for Austin, TX.\n\n"

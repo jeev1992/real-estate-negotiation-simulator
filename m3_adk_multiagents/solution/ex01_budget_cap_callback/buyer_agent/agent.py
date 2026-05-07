@@ -25,6 +25,7 @@ To demo:
     every over-budget attempt. The agent self-corrects to $460K or below.
 """
 
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -142,9 +143,11 @@ When ready to commit, call `submit_decision`. Don't just write your offer
 in prose — call the tool."""
 
 
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
+
 root_agent = LlmAgent(
     name="buyer_agent",
-    model="openai/gpt-4o",
+    model=MODEL,
     description="Aggressive buyer agent with budget-cap enforcement.",
     instruction=INSTRUCTION,
     tools=[

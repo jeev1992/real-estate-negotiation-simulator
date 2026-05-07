@@ -30,7 +30,9 @@ instructor walkthroughs.
 from google.adk.agents import LlmAgent
 from google.adk.tools.tool_context import ToolContext
 
-MODEL = "openai/gpt-4o"
+import os
+
+MODEL = os.environ.get("AGENT_MODEL", "openai/gpt-4o")
 
 
 def lookup_comps(address: str, tool_context: ToolContext) -> dict:
