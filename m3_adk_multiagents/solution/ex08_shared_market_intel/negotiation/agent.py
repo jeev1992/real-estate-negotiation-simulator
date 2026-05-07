@@ -1,5 +1,5 @@
 """
-Solution — Exercise 9: Shared market intelligence via app state
+Solution — Exercise 8: Shared market intelligence via app state
 =================================================================
 
 Negotiation orchestrator that uses `app:`-scoped state as a shared memory
@@ -19,7 +19,7 @@ ADK CONCEPTS:
 
 To demo:
 
-    adk web m3_adk_multiagents/solution/ex09_shared_market_intel/
+    adk web m3_adk_multiagents/solution/ex08_shared_market_intel/
 
     Pick `negotiation`, send: "Start the negotiation for 742 Evergreen Terrace."
 

@@ -1,4 +1,4 @@
-# Exercise 10 — Adaptive Strategy via Offer Memory `[Stretch]`
+# Exercise 9 — Adaptive Strategy via Offer Memory `[Stretch]`
 
 ## Goal
 
@@ -6,7 +6,7 @@ Build a buyer agent that maintains **structured episodic memory** of the seller'
 
 ## Context
 
-In Exercises 02 and 08, agents accumulated state (offer history, deal journal). But they only used it passively — the LLM saw the data and did whatever it wanted with it. No *analysis* layer existed between raw memory and decision-making.
+In Exercise 02, agents accumulated state (offer history). But they only used it passively — the LLM saw the data and did whatever it wanted with it. No *analysis* layer existed between raw memory and decision-making.
 
 In production negotiation systems, raw memory is an input to a reasoning step:
 - "The seller conceded 3% last round → push harder"
@@ -20,7 +20,7 @@ Your job: build a two-layer system where raw offer memory feeds a strategy advis
 A modified negotiation orchestrator with a strategy advisor:
 
 ```
-solution/ex10_adaptive_strategy/
+solution/ex09_adaptive_strategy/
 └── negotiation/
     ├── __init__.py
     └── agent.py
@@ -74,7 +74,7 @@ Requirements:
 5. Update the buyer's instruction to call the advisor before each offer.
 6. Run:
    ```bash
-   adk web m3_adk_multiagents/solution/ex10_adaptive_strategy/
+   adk web m3_adk_multiagents/solution/ex09_adaptive_strategy/
    ```
 7. Pick **`negotiation`** and send: *"Start the negotiation for 742 Evergreen Terrace."*
 8. Watch the **events panel** — you should see `strategy_advisor` tool calls appearing inside the buyer's turn, with recommendations like "SPLIT_DIFFERENCE: seller concessions decelerating."
@@ -94,7 +94,7 @@ ADK persists all state in a SQLite database at `negotiation/.adk/session.db`. Qu
 ```bash
 python -c "
 import sqlite3, json
-conn = sqlite3.connect('m3_adk_multiagents/solution/ex10_adaptive_strategy/negotiation/.adk/session.db')
+conn = sqlite3.connect('m3_adk_multiagents/solution/ex09_adaptive_strategy/negotiation/.adk/session.db')
 cur = conn.cursor()
 cur.execute('SELECT id, state FROM sessions ORDER BY create_time DESC LIMIT 1')
 sid, raw = cur.fetchone()
@@ -137,8 +137,7 @@ Compare the three memory patterns across exercises:
 | Exercise | Memory type | How memory is used |
 |----------|------------|-------------------|
 | Ex02 | Offer history (list) | Stall detection (threshold check) |
-| Ex08 | Deal journal (cross-session) | Anchoring in instruction (passive) |
-| **Ex10** | **Episodic negotiation memory** | **Active analysis via sub-agent** |
+| **Ex09** | **Episodic negotiation memory** | **Active analysis via sub-agent** |
 
 **Design question:** Why use a separate `AgentTool` for strategy analysis instead of putting the analysis logic directly in the buyer's instruction?
 
@@ -146,4 +145,4 @@ Answer: Separation of concerns. The buyer's instruction is already complex (pric
 
 ---
 
-> **Solution:** see `solution/ex10_adaptive_strategy/` for the complete, runnable orchestrator. The instructor will walk through it live during the review session.
+> **Solution:** see `solution/ex09_adaptive_strategy/` for the complete, runnable orchestrator. The instructor will walk through it live during the review session.

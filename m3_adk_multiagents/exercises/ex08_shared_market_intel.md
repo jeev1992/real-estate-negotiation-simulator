@@ -1,4 +1,4 @@
-# Exercise 9 — Shared Market Intelligence via App State `[Core]`
+# Exercise 8 — Shared Market Intelligence via App State `[Core]`
 
 ## Goal
 
@@ -11,7 +11,7 @@ Demo 03 showed three state scopes:
 - **User state** (`state["user:key"]`) — persists per user across sessions
 - **App state** (`state["app:key"]`) — global, shared across ALL users and sessions
 
-Exercise 08 used `user:` state for per-agent deal memory. But some knowledge should be shared across *all* agents — market comps, neighborhood trends, price benchmarks. That's what `app:` state is for.
+Some knowledge should be shared across *all* agents — market comps, neighborhood trends, price benchmarks. That's what `app:` state is for.
 
 Your job: build a negotiation orchestrator where every MCP pricing tool call gets cached into `app:` state, building shared market intelligence that both buyer and seller can reference.
 
@@ -20,7 +20,7 @@ Your job: build a negotiation orchestrator where every MCP pricing tool call get
 A modified negotiation orchestrator:
 
 ```
-solution/ex09_shared_market_intel/
+solution/ex08_shared_market_intel/
 └── negotiation/
     ├── __init__.py
     └── agent.py
@@ -68,7 +68,7 @@ Requirements:
 4. Add `{app:recent_comps}` references to both buyer and seller instructions.
 5. Run:
    ```bash
-   adk web m3_adk_multiagents/solution/ex09_shared_market_intel/
+   adk web m3_adk_multiagents/solution/ex08_shared_market_intel/
    ```
 6. Pick **`negotiation`** from the dropdown. Send: **"Start the negotiation for 742 Evergreen Terrace."**
    - Watch the **terminal** for `[cache]` log lines:
@@ -100,7 +100,7 @@ ADK persists all state in a SQLite database at `negotiation/.adk/session.db`. Yo
 ```bash
 python -c "
 import sqlite3, json
-conn = sqlite3.connect('m3_adk_multiagents/solution/ex09_shared_market_intel/negotiation/.adk/session.db')
+conn = sqlite3.connect('m3_adk_multiagents/solution/ex08_shared_market_intel/negotiation/.adk/session.db')
 cur = conn.cursor()
 cur.execute('SELECT state FROM app_states')
 state = json.loads(cur.fetchone()[0])
@@ -137,4 +137,4 @@ In production, `app:` state raises questions:
 
 ---
 
-> **Solution:** see `solution/ex09_shared_market_intel/` for the complete, runnable orchestrator. The instructor will walk through it live during the review session.
+> **Solution:** see `solution/ex08_shared_market_intel/` for the complete, runnable orchestrator. The instructor will walk through it live during the review session.

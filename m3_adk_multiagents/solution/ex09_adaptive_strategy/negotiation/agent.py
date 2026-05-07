@@ -1,5 +1,5 @@
 """
-Solution — Exercise 10: Adaptive strategy via offer memory
+Solution — Exercise 9: Adaptive strategy via offer memory
 =============================================================
 
 Negotiation orchestrator with a **strategy advisor sub-agent** that
@@ -16,7 +16,7 @@ ADK CONCEPTS:
 
 To demo:
 
-    adk web m3_adk_multiagents/solution/ex10_adaptive_strategy/
+    adk web m3_adk_multiagents/solution/ex09_adaptive_strategy/
 
     Pick `negotiation`, send: "Start the negotiation for 742 Evergreen Terrace."
 
