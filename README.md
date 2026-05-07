@@ -190,7 +190,7 @@ OPENAI_API_KEY=sk-your-key-here
 GITHUB_TOKEN=ghp-your-token-here   # Optional — Module 2 GitHub demo only
 ```
 
-### 8. Run a smoke test
+### 7. Run a smoke test
 
 ```bash
 # Smoke test (no API key needed — FSM only)
@@ -203,7 +203,7 @@ python m1_baseline/naive_negotiation.py
 If `state_machine.py` runs cleanly, your Python environment is ready.
 If `naive_negotiation.py` runs (needs `OPENAI_API_KEY`), your API key is configured correctly.
 
-### 9. Run the Workshop Modules in Order
+### 8. Run the Workshop Modules in Order
 
 ```bash
 # MODULE 1: Naive LLM negotiation (10 failure modes) + FSM fix
@@ -228,7 +228,7 @@ python m3_adk_multiagents/adk_demos/a2a_13_streaming.py --seller-url http://127.
 python m3_adk_multiagents/a2a_14_orchestrated_negotiation.py
 ```
 
-### 10. Module Exercises
+### 9. Module Exercises
 
 Module 2 and Module 3 ship hands-on exercises with complete, runnable solutions. **These are designed for the 2-hour follow-up review session** held a few days after the workshop — students attempt them as homework, the instructor walks through each solution and runs it live in class. (Module 1 has no exercises — its purpose is conceptual motivation, not skill practice.)
 
@@ -259,11 +259,11 @@ Each solution lives in its module's `solution/` folder as a self-contained, runn
 adk web --a2a m3_adk_multiagents/negotiation_agents/
     │
     ├── buyer_agent (negotiation_agents/buyer_agent/agent.py)
-    │     ├── root_agent = LlmAgent(model="openai/gpt-4o")
+    │     ├── root_agent = LlmAgent(model=AGENT_MODEL)  # default: openai/gpt-4o
     │     └── MCPToolset → m2_mcp/pricing_server.py
     │
     ├── seller_agent (negotiation_agents/seller_agent/agent.py)
-    │     ├── root_agent = LlmAgent(model="openai/gpt-4o")
+    │     ├── root_agent = LlmAgent(model=AGENT_MODEL)  # default: openai/gpt-4o
     │     ├── MCPToolset → m2_mcp/pricing_server.py
     │     └── MCPToolset → m2_mcp/inventory_server.py (seller ONLY)
     │
