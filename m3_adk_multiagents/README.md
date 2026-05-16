@@ -106,7 +106,7 @@ When `adk web` runs, it creates a `.adk/` directory inside the agents folder con
 
 ## How to run
 
-### ADK demos (01–08) — interactive web UI
+### ADK demos (01–09) — interactive web UI
 
 ```bash
 # Run ALL demos (9 agents appear in the dropdown)
@@ -130,7 +130,7 @@ With `--a2a`, each agent gets an Agent Card at:
 - `http://localhost:8000/a2a/seller_agent/.well-known/agent-card.json`
 - `http://localhost:8000/a2a/negotiation/.well-known/agent-card.json`
 
-### A2A protocol demos (09–12) — terminal scripts
+### A2A protocol demos (10–13) — terminal scripts
 
 ```bash
 # Terminal 1 — start agents with A2A endpoints
@@ -187,9 +187,9 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 
 ## Exercises
 
-Ten core exercises plus two stretch — designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
+Ten exercises — designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
 
-Each exercise extends the real-estate codebase with a production-relevant pattern. Difficulty mix: 1 starter, 5 core, 4 memory-focused, 2 stretch.
+Each exercise extends the real-estate codebase with a production-relevant pattern. Difficulty mix: 1 starter, 6 core, 3 stretch.
 
 | Exercise | Difficulty | Reinforces | Task |
 |---|---|---|---|
@@ -216,12 +216,12 @@ adk web --a2a negotiation_agents/
   ├─ seller_agent  → GET /.well-known/agent-card.json
   └─ negotiation   → GET /.well-known/agent-card.json
 
-Demo 09 (terminal):
-  1. GET /seller_agent/.well-known/agent-card.json  → discover capabilities
-  2. POST /seller_agent  (JSON-RPC message/send)    → send offer
+Demo 10 (terminal):
+  1. GET /a2a/seller_agent/.well-known/agent-card.json  → discover capabilities
+  2. POST /a2a/seller_agent  (JSON-RPC message/send)    → send offer
   3. Response: Task { status: "completed", result: counter-offer }
 
-Demo 10 (terminal):
+Demo 11 (terminal):
   Round 1: POST → get contextId from response
   Round 2: POST + contextId → threaded conversation
   Round 3: POST + contextId → agreement or deadlock
