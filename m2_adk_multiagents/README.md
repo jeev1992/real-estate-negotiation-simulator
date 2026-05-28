@@ -47,7 +47,6 @@ m2_adk_multiagents/
     a2a_10_wire_lifecycle.py       Terminal script: raw JSON-RPC + task states
     a2a_11_context_threading.py    Terminal script: contextId across rounds
     a2a_12_parts_and_artifacts.py  Terminal script: multi-part messages + artifacts
-    a2a_13_streaming.py            Terminal script: message/stream SSE events
   a2a_14_orchestrated_negotiation.py  Terminal script: full buyer↔seller negotiation over A2A
   exercises/
   solution/
@@ -140,7 +139,6 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
 python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
-python m2_adk_multiagents/adk_demos/a2a_13_streaming.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 # A2A orchestrated negotiation (buyer ↔ seller via Agent Cards)
 python m2_adk_multiagents/a2a_14_orchestrated_negotiation.py

@@ -3,7 +3,7 @@
 
 > **Audience:** Engineers who have built one agent and need to connect it to *other* agents — built by other teams, in other languages, on other clouds — without sharing code or memory.
 > **Prerequisites:** Comfort with HTTP and JSON. Familiarity with [`mcp_deep_dive.md`](../../m1_mcp/notes/mcp_deep_dive.md) helps because A2A reuses the same JSON-RPC envelope as MCP.
-> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_13_streaming.py` in `m2_adk_multiagents/adk_demos/`. Seeing the wire frames first is essential.
+> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_12_parts_and_artifacts.py` in `m2_adk_multiagents/adk_demos/`. Seeing the wire frames first is essential.
 > **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) for how ADK exposes A2A endpoints automatically via `adk web --a2a`.
 >
 > **TL;DR:**
@@ -800,9 +800,6 @@ python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py \
 python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py \
     --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
-# Terminal 2 — see streaming (message/stream SSE events)
-python m2_adk_multiagents/adk_demos/a2a_13_streaming.py \
-    --seller-url http://127.0.0.1:8000/a2a/seller_agent
 ```
 
 Key files:
@@ -812,7 +809,6 @@ Key files:
 - `m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` (raw A2A wire format)
 - `m2_adk_multiagents/adk_demos/a2a_11_context_threading.py` (contextId threading)
 - `m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py` (multi-part messages)
-- `m2_adk_multiagents/adk_demos/a2a_13_streaming.py` (SSE streaming)
 
 ---
 
@@ -1028,7 +1024,6 @@ Then run:
 python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py
 python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py
 python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py
-python m2_adk_multiagents/adk_demos/a2a_13_streaming.py
 ```
 
 ---
@@ -1254,9 +1249,6 @@ if not card.get("capabilities", {}).get("streaming", False):
 **Capabilities are the contract.** This applies symmetrically to push
 notifications, blob upload, and any other capability the spec adds —
 always check the card before relying on a feature.
-
-**Demo:** `m2_adk_multiagents/adk_demos/a2a_13_streaming.py` consumes
-the stream and prints every event (kind, state, final marker) as it arrives.
 
 ### 17.2 Push notifications (webhooks)
 
