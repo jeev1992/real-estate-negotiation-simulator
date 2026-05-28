@@ -1,5 +1,5 @@
 """
-Demo 14 — A2A Orchestrated Negotiation
+Demo 13 — A2A Orchestrated Negotiation
 =========================================
 Full multi-round buyer ↔ seller negotiation where BOTH agents are
 discovered via Agent Cards and communicate through A2A messages.
@@ -34,7 +34,7 @@ Prereq:
     adk web --a2a m2_adk_multiagents/negotiation_agents/ --port 8000
 
 Run:
-    python m2_adk_multiagents/adk_demos/a2a_14_orchestrated_negotiation.py
+    python m2_adk_multiagents/a2a_13_orchestrated_negotiation.py
 """
 
 import argparse

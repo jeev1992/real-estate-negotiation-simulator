@@ -54,8 +54,8 @@ real-estate-negotiation-simulator/
 │   │   ├── buyer_agent/agent.py         # Buyer LlmAgent + MCPToolset (pricing)
 │   │   ├── seller_agent/agent.py        # Seller LlmAgent + MCPToolset (pricing + inventory)
 │   │   └── negotiation/agent.py         # LoopAgent + SequentialAgent + MCP tools + submit_decision
-│   ├── adk_demos/                      # adk web-launchable demos (d01–d09) + A2A scripts (10–13)
-│   ├── a2a_14_orchestrated_negotiation.py  # A2A multi-round buyer↔seller negotiation
+│   ├── adk_demos/                      # adk web-launchable demos (d01–d09) + A2A scripts (10–12)
+│   ├── a2a_13_orchestrated_negotiation.py  # A2A multi-round buyer↔seller negotiation
 │   ├── exercises/                      # Hands-on coding exercises for Module 2
 │   ├── solution/                       # Worked solutions for Module 2 exercises
 │   └── notes/
@@ -213,7 +213,7 @@ python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http:/
 python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 # A2A orchestrated negotiation (buyer ↔ seller via Agent Cards):
-python m2_adk_multiagents/a2a_14_orchestrated_negotiation.py
+python m2_adk_multiagents/a2a_13_orchestrated_negotiation.py
 ```
 
 ### 9. Module Exercises
@@ -279,7 +279,7 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 | 10 | `python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url …/a2a/seller_agent` | Hand-crafted JSON-RPC `message/send` — see Agent Card discovery and task-state transitions. |
 | 11 | `python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url …/a2a/seller_agent` | Reuse `contextId` across rounds — multiple A2A calls become **one threaded conversation**. |
 | 12 | `python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url …/a2a/seller_agent` | Multi-part Messages (`TextPart` + `DataPart`) and inspecting Artifacts returned by the agent. |
-| 13 | `python m2_adk_multiagents/a2a_14_orchestrated_negotiation.py` | Full **buyer ↔ seller multi-round negotiation** over A2A — Agent Card discovery + threaded `message/send`. |
+| 13 | `python m2_adk_multiagents/a2a_13_orchestrated_negotiation.py` | Full **buyer ↔ seller multi-round negotiation** over A2A — Agent Card discovery + threaded `message/send`. |
 
 **Negotiation agents — interactive Web UI** (`adk web m2_adk_multiagents/negotiation_agents/`)
 

@@ -827,7 +827,7 @@ script is the only thing that knows about both.
 
 ```python
 # Pseudocode for the matchmaker pattern.
-# Full working example: a2a_14_orchestrated_negotiation.py
+# Full working example: a2a_13_orchestrated_negotiation.py
 
 # 1) Discover both peers via Agent Cards.
 buyer_card  = await A2ACardResolver(http, base_url=BUYER_URL).get_agent_card()

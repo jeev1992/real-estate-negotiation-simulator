@@ -8,7 +8,7 @@ This is the production pattern: **a script that doesn't know how either agent is
 
 ## Context
 
-In Module 2 you ran `a2a_14_orchestrated_negotiation.py` — a script that does exactly this. Today you'll write your own version from scratch. The point isn't to invent something new; it's to **internalize the wire-level pattern** so you'd recognize and write it again at work.
+In Module 2 you ran `a2a_13_orchestrated_negotiation.py` — a script that does exactly this. Today you'll write your own version from scratch. The point isn't to invent something new; it's to **internalize the wire-level pattern** so you'd recognize and write it again at work.
 
 ## What you're building
 

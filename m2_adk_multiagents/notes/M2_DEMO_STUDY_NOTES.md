@@ -1,6 +1,6 @@
 # Module 2 — Demo Walkthrough & Concept Notes
 
-> **Audience:** Learners working through the 9 ADK demos (`d01`–`d09`) and the 4 A2A demos (`a2a_10`–`a2a_13`) plus the orchestrated negotiation (`a2a_14`). Use as a guided tour while you run.
+> **Audience:** Learners working through the 9 ADK demos (`d01`–`d09`) and the 3 A2A demos (`a2a_10`–`a2a_12`) plus the orchestrated negotiation (`a2a_13`). Use as a guided tour while you run.
 > **Prerequisites:** Python + `OPENAI_API_KEY` set. Familiarity with `mcp_deep_dive.md` helps once you reach demo 02.
 > **Read this *while* running:** the demos in `m2_adk_multiagents/adk_demos/` and the negotiation system in `m2_adk_multiagents/negotiation_agents/`. Sections are numbered to match the demos.
 > **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) and [`a2a_protocols.md`](a2a_protocols.md) for the conceptual deep-dives. [`adk_quick_reference.md`](adk_quick_reference.md) is the one-page lookup.
@@ -210,7 +210,7 @@ async for event in runner.run_async(
         print(event.content.parts[0].text)
 ```
 
-**You don't need this in the workshop.** It's here so you can answer "how would I do this without `adk web`?" if a student asks. The A2A terminal scripts (10–13) also don't show this — they're HTTP clients talking to `adk web --a2a`, which handles sessions server-side.
+**You don't need this in the workshop.** It's here so you can answer "how would I do this without `adk web`?" if a student asks. The A2A terminal scripts (10–12) also don't show this — they're HTTP clients talking to `adk web --a2a`, which handles sessions server-side.
 
 ---
 
@@ -1813,9 +1813,9 @@ Post-acceptance (current iteration completes):
 
 5. **`seller_decision` dict survives in state**: Unlike `seller_response` (overwritten by chatter), the `seller_decision` dict retains the final structured answer: `{"action": "ACCEPT", "price": 445000}`.
 
-### A2A Orchestrated Negotiation (Demo 14)
+### A2A Orchestrated Negotiation (Demo 13)
 
-**File:** `m2_adk_multiagents/a2a_14_orchestrated_negotiation.py`
+**File:** `m2_adk_multiagents/a2a_13_orchestrated_negotiation.py`
 
 **What it teaches:** How to orchestrate a full buyer ↔ seller negotiation using Agent Card discovery and A2A message/send — two separate agents communicating over HTTP with a script as matchmaker.
 
@@ -1825,7 +1825,7 @@ Post-acceptance (current iteration completes):
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # Terminal 2:
-python m2_adk_multiagents/a2a_14_orchestrated_negotiation.py
+python m2_adk_multiagents/a2a_13_orchestrated_negotiation.py
 ```
 
 **What the script does:**
@@ -1889,12 +1889,11 @@ STEP 2: Multi-Round Negotiation
 | `AgentTool` | d07 | — |
 | Callbacks (before/after) | d08 | buyer_agent, seller_agent, negotiation |
 | Event stream | d09 | — |
-| Agent Card | a2a_10 | a2a_11, a2a_12, a2a_13, a2a_14 |
-| `contextId` threading | a2a_11 | a2a_14 |
+| Agent Card | a2a_10 | a2a_11, a2a_12, a2a_13 |
+| `contextId` threading | a2a_11 | a2a_13 |
 | Parts (Text/Data/File) | a2a_12 | — |
 | Artifacts | a2a_12 | — |
-| `message/stream` SSE | a2a_13 | — |
 | Information asymmetry | buyer vs seller | negotiation orchestrator |
 | `before_tool_callback` allowlist | d08 | buyer_agent, seller_agent, negotiation |
-| Structured decision tool | negotiation | a2a_14 (detection) |
-| A2A orchestration | a2a_14 | — |
+| Structured decision tool | negotiation | a2a_13 (detection) |
+| A2A orchestration | a2a_13 | — |

@@ -20,8 +20,7 @@ This module teaches Google's Agent Development Kit (ADK) from first principles, 
 | A2A wire format & task lifecycle | Demo 10 (terminal script) |
 | A2A context threading | Demo 11 (terminal script) |
 | A2A parts & artifacts | Demo 12 (terminal script) |
-| A2A streaming (`message/stream`) | Demo 13 (terminal script) |
-| A2A orchestrated negotiation | Demo 14 / `a2a_14_orchestrated_negotiation.py` |
+| A2A orchestrated negotiation | Demo 13 / `a2a_13_orchestrated_negotiation.py` |
 | Full negotiation orchestration | `negotiation_agents/negotiation` |
 
 ---
@@ -47,7 +46,7 @@ m2_adk_multiagents/
     a2a_10_wire_lifecycle.py       Terminal script: raw JSON-RPC + task states
     a2a_11_context_threading.py    Terminal script: contextId across rounds
     a2a_12_parts_and_artifacts.py  Terminal script: multi-part messages + artifacts
-  a2a_14_orchestrated_negotiation.py  Terminal script: full buyer↔seller negotiation over A2A
+  a2a_13_orchestrated_negotiation.py  Terminal script: full buyer↔seller negotiation over A2A
   exercises/
   solution/
   notes/
@@ -129,7 +128,7 @@ With `--a2a`, each agent gets an Agent Card at:
 - `http://localhost:8000/a2a/seller_agent/.well-known/agent-card.json`
 - `http://localhost:8000/a2a/negotiation/.well-known/agent-card.json`
 
-### A2A protocol demos (10–13) — terminal scripts
+### A2A protocol demos (10–12) — terminal scripts
 
 ```bash
 # Terminal 1 — start agents with A2A endpoints
@@ -141,7 +140,7 @@ python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url htt
 python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 # A2A orchestrated negotiation (buyer ↔ seller via Agent Cards)
-python m2_adk_multiagents/a2a_14_orchestrated_negotiation.py
+python m2_adk_multiagents/a2a_13_orchestrated_negotiation.py
 ```
 
 ---
@@ -178,8 +177,7 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 | 10 | A2A wire format | Hand-craft JSON-RPC, see Agent Card discovery, task state transitions |
 | 11 | A2A context threading | `contextId` ties multiple rounds into one conversation |
 | 12 | A2A parts & artifacts | Multi-part Messages (TextPart + DataPart), inspect Artifacts |
-| 13 | A2A streaming | `message/stream` SSE events — see status transitions in real time |
-| 14 | A2A orchestration | Full buyer↔seller negotiation — Agent Card discovery + multi-round A2A messages |
+| 13 | A2A orchestration | Full buyer↔seller negotiation — Agent Card discovery + multi-round A2A messages |
 
 ---
 
