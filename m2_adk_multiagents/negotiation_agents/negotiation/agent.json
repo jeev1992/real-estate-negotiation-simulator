@@ -1,0 +1,21 @@
+{
+  "name": "negotiation",
+  "description": "Multi-round buyer-seller negotiation orchestrator for 742 Evergreen Terrace. Runs LoopAgent with SequentialAgent(buyer, seller) until agreement or max rounds.",
+  "url": "http://localhost:8000/a2a/negotiation",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"],
+  "skills": [
+    {
+      "id": "multi_round_negotiation",
+      "name": "Multi-Round Property Negotiation",
+      "description": "Orchestrates a complete buyer-seller negotiation over multiple rounds until agreement, rejection, or max rounds reached",
+      "tags": ["real_estate", "negotiation", "multi_agent", "orchestration"],
+      "examples": ["Start negotiation", "Negotiate the purchase of this property"]
+    }
+  ]
+}

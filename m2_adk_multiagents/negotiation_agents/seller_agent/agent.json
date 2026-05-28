@@ -1,0 +1,21 @@
+{
+  "name": "seller_agent",
+  "description": "Real estate seller agent for 742 Evergreen Terrace, Austin TX. Uses MCP pricing and inventory tools to evaluate and respond to buyer offers.",
+  "url": "http://localhost:8000/a2a/seller_agent",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"],
+  "skills": [
+    {
+      "id": "negotiation_response",
+      "name": "Real Estate Seller Negotiation",
+      "description": "Responds to buyer offers with counter-offers or acceptance based on market data and seller constraints",
+      "tags": ["real_estate", "seller", "negotiation", "mcp"],
+      "examples": ["Buyer offers $438,000 with 45-day close", "What is your counter-offer?"]
+    }
+  ]
+}

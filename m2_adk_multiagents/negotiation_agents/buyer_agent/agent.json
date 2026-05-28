@@ -1,0 +1,21 @@
+{
+  "name": "buyer_agent",
+  "description": "Real estate buyer agent for 742 Evergreen Terrace, Austin TX. Uses MCP pricing tools to evaluate properties and make offers.",
+  "url": "http://localhost:8000/a2a/buyer_agent",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"],
+  "skills": [
+    {
+      "id": "property_valuation",
+      "name": "Property Valuation",
+      "description": "Evaluates property value using MCP pricing tools and makes purchase offers",
+      "tags": ["real_estate", "buyer", "negotiation", "mcp"],
+      "examples": ["What is 742 Evergreen Terrace worth?", "Make an offer on this property"]
+    }
+  ]
+}
