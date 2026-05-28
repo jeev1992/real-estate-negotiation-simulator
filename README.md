@@ -75,7 +75,7 @@ If module files feel overwhelming, start with the README inside each module fold
 Modules 1 and 2 ship a `demos/` folder of small, single-purpose, runnable scripts that crack open the protocols on the wire — designed to pair with the `notes/` reference docs. See each module README for the per-demo table:
 
 - [m1_mcp/demos/](m1_mcp/demos/) — MCP handshake, tool loop trace, primitives, content types, Streamable HTTP
-- [m2_adk_multiagents/adk_demos/](m2_adk_multiagents/adk_demos/) — ADK concept demos (basic agent, MCP tools, sessions, sequential, parallel, loop, agent-as-tool, callbacks, event stream) + A2A protocol scripts (wire format, context threading, parts/artifacts, streaming)
+- [m2_adk_multiagents/adk_demos/](m2_adk_multiagents/adk_demos/) — ADK concept demos (basic agent, MCP tools, sessions, sequential, parallel, loop, agent-as-tool, callbacks, event stream) + A2A protocol scripts (wire format, context threading, parts/artifacts)
 
 ### Notes live inside each module
 
@@ -94,7 +94,7 @@ you'll see is whether it's the right one for you right now.
 |---|---|---|
 | **While running M1 demos** | [`m1_mcp/notes/M1_DEMO_STUDY_NOTES.md`](m1_mcp/notes/M1_DEMO_STUDY_NOTES.md) | Per-demo narration of all 5 MCP demos plus the GitHub + SSE clients |
 | **After M1** | [`m1_mcp/notes/mcp_deep_dive.md`](m1_mcp/notes/mcp_deep_dive.md) | Full MCP protocol reference — primitives, transports, design patterns |
-| **While running M2 demos** | [`m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md`](m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md) | Per-demo narration of all 9 ADK demos + the 4 A2A demos + the negotiation system |
+| **While running M2 demos** | [`m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md`](m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md) | Per-demo narration of all 9 ADK demos + the 3 A2A demos + the negotiation system |
 | **After M2 (start here)** | [`m2_adk_multiagents/notes/adk_quick_reference.md`](m2_adk_multiagents/notes/adk_quick_reference.md) | One-page lookup for every ADK + A2A construct |
 | **After M2 (go deep)** | [`m2_adk_multiagents/notes/google_adk_overview.md`](m2_adk_multiagents/notes/google_adk_overview.md) | Full ADK reference — every agent type, callbacks, sessions, event stream |
 | **After M2 (network layer)** | [`m2_adk_multiagents/notes/a2a_protocols.md`](m2_adk_multiagents/notes/a2a_protocols.md) | Full A2A reference — wire format, contextId, parts, artifacts, streaming, production patterns |
