@@ -210,6 +210,78 @@ Standalone, runnable scripts that crack open the MCP protocol so you can see wha
 
 ---
 
+## Inspect visually with the MCP Inspector
+
+The demos above show the protocol in your terminal. The **MCP Inspector** is the official browser-based GUI host — it connects to any MCP server and renders **Tools, Resources, and Prompts in separate tabs**, so you can *see* a generic host treat each primitive type differently (exactly what Claude Desktop does when it wires tools into the model loop, lists prompts as slash-commands, and shows resources in its attachment picker).
+
+No Python code or API key needed — it runs via `npx` (Node.js 18+). Point it at either server:
+
+```bash
+# Inventory server — 2 tools + 1 resource (inventory://floor-prices)
+npx @modelcontextprotocol/inspector python m1_mcp/inventory_server.py
+
+# Pricing server — 2 tools + 1 prompt (negotiation-tactics)
+npx @modelcontextprotocol/inspector python m1_mcp/pricing_server.py
+```
+
+> On Windows, if `python` is not the workshop venv, use its interpreter explicitly:
+> `npx @modelcontextprotocol/inspector .venv\Scripts\python.exe m1_mcp\inventory_server.py`
+
+Open the printed `http://localhost:6274?...` URL, click **Connect** (this runs the same `initialize` + `*/list` discovery as demo 03), then explore the tabs:
+
+| Tab | Try this | The lesson |
+|---|---|---|
+| **Tools** | Run `get_minimum_acceptable_price` with `742-evergreen-austin-78701` | A model-invokable action with typed args — the host gives you a form + "Run" |
+| **Resources** | Read `inventory://floor-prices` | You *read* it; there's no args form. The host never "calls" a resource |
+| **Prompts** *(pricing server)* | Render `negotiation-tactics` with `role=seller` | A user-selected template — surfaced for a human to pick, not the model |
+
+This is the visual companion to [`03_list_all_primitives.py`](m1_mcp/demos/03_list_all_primitives.py): that script *lists* the primitives on the wire; the Inspector *renders* them the way a real host would — sorting them into tabs purely from the `type` each was declared with, with zero Inspector-specific code from you.
+
+---
+
+## Try it in a full chat host (Claude Desktop)
+
+The Inspector is a debug GUI. **Claude Desktop** is a production MCP host — wiring these servers into it shows the primitives inside a real chat, exactly as an end user would meet them.
+
+**1. Install** Claude Desktop from [claude.ai/download](https://claude.ai/download) and sign in.
+
+**2. Register the servers.** Open **Settings → Developer → Edit Config** (this opens the correct `claude_desktop_config.json`) and add an `mcpServers` block — use **absolute paths** and the **venv's** `python.exe` so the `mcp` dependency is available:
+
+```json
+{
+  "mcpServers": {
+    "real-estate-pricing": {
+      "command": "C:\\path\\to\\real-estate-negotiation-simulator\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\path\\to\\real-estate-negotiation-simulator\\m1_mcp\\pricing_server.py"]
+    },
+    "real-estate-inventory": {
+      "command": "C:\\path\\to\\real-estate-negotiation-simulator\\.venv\\Scripts\\python.exe",
+      "args": ["C:\\path\\to\\real-estate-negotiation-simulator\\m1_mcp\\inventory_server.py"]
+    }
+  }
+}
+```
+
+Config file location (the **Edit Config** button always opens the right one):
+- **Windows (standalone install):** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Windows (Microsoft Store install):** `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\claude_desktop_config.json`
+- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+> JSON on Windows needs **doubled backslashes** (`\\`). If the file already has other keys (preferences, etc.), just add `mcpServers` alongside them — don't overwrite the file.
+
+**3. Fully restart** Claude Desktop — quit from the **system tray** (right-click → Quit), not just the window. Config is read only at launch.
+
+**4. Verify:** the **tools icon** in the chat input bar lists both servers and their tools; **Settings → Developer** shows each server's status (click a red one for its error log — almost always a wrong path or non-venv Python).
+
+**5. See each primitive type in a real chat:**
+- **Tool** — ask: *"What's the market price for 742 Evergreen Terrace, Austin TX 78701?"* Claude asks to run `get_market_price`, then answers from the result.
+- **Prompt** — the **`+` / attachment** menu surfaces `negotiation-tactics`; pick it, set `role=seller`, and it drops into the chat.
+- **Resource** — the same menu lets you attach `inventory://floor-prices` as context. You *attach* it — Claude never "calls" it.
+
+Same servers, same primitives you saw in the Inspector — now inside a production host.
+
+---
+
 ## Exercises
 
 Three hands-on exercises designed for the **2-hour follow-up review session** held a few days after the workshop. Try them as homework; the instructor will walk through and run each solution live in class.
