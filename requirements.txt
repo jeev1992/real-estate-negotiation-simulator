@@ -11,6 +11,9 @@
 #   • Node.js 18+ (for GitHub MCP server demo)
 #     Install: https://nodejs.org
 #   • npx (comes with Node.js)
+#   • MCP Inspector (optional — visual host GUI for browsing a server's
+#     tools/resources/prompts). Runs via npx, no install needed:
+#       npx @modelcontextprotocol/inspector python m1_mcp/inventory_server.py
 #
 # API KEYS NEEDED:
 #   Simple version: export OPENAI_API_KEY=sk-...

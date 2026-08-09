@@ -25,6 +25,22 @@ TOOLS EXPOSED:
 TRANSPORT:
   stdio (default): python inventory_server.py
   SSE:             python inventory_server.py --sse --port 8002
+
+INSPECT VISUALLY (MCP Inspector — browser GUI host, needs Node.js 18+):
+  npx @modelcontextprotocol/inspector python inventory_server.py
+    Opens a UI at http://localhost:6274 with separate Tools / Resources /
+    Prompts tabs. This server exposes 2 tools + the `inventory://floor-prices`
+    resource — note you *read* the resource, you never "call" it.
+
+USE IN CLAUDE DESKTOP (full chat host):
+  Add to claude_desktop_config.json (Settings > Developer > Edit Config),
+  using absolute paths and the venv's python.exe:
+    "real-estate-inventory": {
+      "command": "<abs>\\.venv\\Scripts\\python.exe",
+      "args": ["<abs>\\m1_mcp\\inventory_server.py"]
+    }
+  Fully restart Claude Desktop; the 2 tools appear in the tools icon and
+  `inventory://floor-prices` appears in the attachment menu (read, not called).
 """
 
 import argparse

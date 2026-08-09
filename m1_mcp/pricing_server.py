@@ -16,6 +16,22 @@ TRANSPORT OPTIONS:
   SSE (HTTP)      — runs as standalone HTTP server, multiple clients
     python pricing_server.py --sse --port 8001
 
+INSPECT VISUALLY (MCP Inspector — browser GUI host, needs Node.js 18+):
+  npx @modelcontextprotocol/inspector python pricing_server.py
+    Opens a UI at http://localhost:6274 with separate Tools / Resources /
+    Prompts tabs. This server exposes 2 tools + the `negotiation-tactics`
+    prompt — see a generic host render each primitive type differently.
+
+USE IN CLAUDE DESKTOP (full chat host):
+  Add to claude_desktop_config.json (Settings > Developer > Edit Config),
+  using absolute paths and the venv's python.exe:
+    "real-estate-pricing": {
+      "command": "<abs>\\.venv\\Scripts\\python.exe",
+      "args": ["<abs>\\m1_mcp\\pricing_server.py"]
+    }
+  Fully restart Claude Desktop; the 2 tools + `negotiation-tactics` prompt
+  appear in the chat's tools icon / attachment menu.
+
 TOOLS EXPOSED:
   • get_market_price(address, property_type)
       Returns comparable sales, estimated value, price analysis
