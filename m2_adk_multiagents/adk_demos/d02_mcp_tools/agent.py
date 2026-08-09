@@ -49,7 +49,10 @@ root_agent = LlmAgent(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_PRICING_SERVER],
-                )
+                ),
+                # Windows + cold Python subprocess imports can easily blow past
+                # the 5s default. Give the MCP server time to boot.
+                timeout=30.0,
             )
         )
     ],
