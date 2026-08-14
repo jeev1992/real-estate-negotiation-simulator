@@ -65,6 +65,12 @@ def extract_agent_text(task: Task) -> str:
         for part in artifact.parts:
             if isinstance(part.root, TextPart):
                 return part.root.text
+    # The final agent turn often lands in status.message, not history/artifacts
+    status_message = task.status.message if task.status else None
+    if status_message and status_message.role == Role.agent:
+        for part in status_message.parts:
+            if isinstance(part.root, TextPart):
+                return part.root.text
     # Fall back to last agent message in history
     for msg in reversed(task.history or []):
         if msg.role == Role.agent:
