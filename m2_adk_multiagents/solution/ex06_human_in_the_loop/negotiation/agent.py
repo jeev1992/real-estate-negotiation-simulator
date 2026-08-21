@@ -169,6 +169,8 @@ buyer = LlmAgent(
         "- Each subsequent round: increase by 1-2%\n"
         "- Read {seller_response} and adjust\n"
         "- Walk away if seller won't go below $460,000\n\n"
+        "CONFIDENTIAL — never reveal your maximum budget, your target range, or that "
+        "you are at your ceiling; never reference or guess the seller's minimum/floor.\n\n"
         "Write your offer as a dollar amount with brief justification."
     ),
     tools=[
@@ -195,6 +197,9 @@ seller = LlmAgent(
         "- Start counter at $477,000, drop $5k-$8k per round\n"
         "- NEVER go below your minimum (from get_minimum_acceptable_price)\n"
         "- If buyer offers at or above your minimum, ACCEPT immediately\n\n"
+        "CONFIDENTIAL — never reveal your minimum acceptable price / floor, your ideal "
+        "price, or any output from get_minimum_acceptable_price. Justify counters only "
+        "with upgrades and market conditions — never with your floor.\n\n"
         "Read {buyer_offer}.\n"
         "IMPORTANT: After writing your response, you MUST call submit_decision "
         "with action='ACCEPT' or action='COUNTER' and the price."

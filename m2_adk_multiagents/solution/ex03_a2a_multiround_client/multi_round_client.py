@@ -50,6 +50,13 @@ def extract_agent_text(result: dict) -> str:
             if part.get("kind") == "text":
                 return part["text"]
 
+    # The final agent turn often lands in status.message, not artifacts/history.
+    status_message = (result.get("status") or {}).get("message")
+    if status_message and status_message.get("role") == "agent":
+        for part in status_message.get("parts") or []:
+            if part.get("kind") == "text":
+                return part["text"]
+
     # Fallback: last agent message in history.
     for msg in reversed(result.get("history") or []):
         if msg.get("role") == "agent":
@@ -104,6 +111,12 @@ def has_acceptance(text: str) -> bool:
            not bool(re.search(r"\bCOUNTER\b", text, re.IGNORECASE))
 
 
+def extract_price(text: str) -> str | None:
+    """Best-effort extraction of a dollar amount from an agent message."""
+    match = re.search(r"\$\s?([\d,]{4,})", text)
+    return f"${match.group(1)}" if match else None
+
+
 # ─── The orchestrator ─────────────────────────────────────────────────────────
 
 async def run_negotiation(base_url: str, max_rounds: int) -> None:
@@ -138,6 +151,8 @@ async def run_negotiation(base_url: str, max_rounds: int) -> None:
         buyer_context_id: str | None = None
         seller_context_id: str | None = None
         seller_response_text: str | None = None  # nothing on round 1
+        messages_sent = 0
+        outcome = None
 
         for round_num in range(1, max_rounds + 1):
             print(f"\n{'─' * 50}\nROUND {round_num}\n{'─' * 50}")
@@ -157,9 +172,18 @@ async def run_negotiation(base_url: str, max_rounds: int) -> None:
             buyer_result, buyer_context_id = await send_a2a_message(
                 http, buyer_card["url"], buyer_prompt, buyer_context_id
             )
+            messages_sent += 1
             buyer_offer_text = extract_agent_text(buyer_result)
-            print(f"\n→ BUYER (contextId={buyer_context_id[:8]}...):")
-            print(f"  {buyer_offer_text[:250]}...")
+            print(f"\n→ BUYER (contextId={(buyer_context_id or '')[:8]}...):")
+            print(f"  {buyer_offer_text}")
+
+            # ── Buyer walked away? End the negotiation ──────────────────
+            if re.search(r"\bWALK[\s_-]?AWAY\b", buyer_offer_text, re.IGNORECASE):
+                print(f"\n{'=' * 60}")
+                print(f"BUYER WALKED AWAY in round {round_num} — no deal")
+                print(f"{'=' * 60}")
+                outcome = "buyer_walked_away"
+                break
 
             # ── Forward the buyer's offer to the seller ───────────────────
             seller_prompt = (
@@ -170,27 +194,35 @@ async def run_negotiation(base_url: str, max_rounds: int) -> None:
             seller_result, seller_context_id = await send_a2a_message(
                 http, seller_card["url"], seller_prompt, seller_context_id
             )
+            messages_sent += 1
             seller_response_text = extract_agent_text(seller_result)
-            print(f"\n← SELLER (contextId={seller_context_id[:8]}...):")
-            print(f"  {seller_response_text[:250]}...")
+            print(f"\n← SELLER (contextId={(seller_context_id or '')[:8]}...):")
+            print(f"  {seller_response_text}")
 
-            # ── Termination check ─────────────────────────────────────────
+            # ── Termination check ──────────────────────────────
             if has_acceptance(seller_response_text):
+                agreed_price = extract_price(seller_response_text)
                 print(f"\n{'=' * 60}")
-                print(f"DEAL REACHED in round {round_num}")
+                deal_line = f"DEAL REACHED in round {round_num}"
+                if agreed_price:
+                    deal_line += f" at {agreed_price}"
+                print(deal_line)
                 print(f"{'=' * 60}")
+                outcome = "deal"
                 break
         else:
             print(f"\n{'=' * 60}")
             print(f"MAX ROUNDS ({max_rounds}) REACHED — no agreement")
             print(f"{'=' * 60}")
+            outcome = "max_rounds"
 
         # ─ Summary ────────────────────────────────────────────────────────
         print(f"\nA2A summary:")
+        print(f"  Outcome:          {outcome}")
         print(f"  Buyer  contextId: {buyer_context_id}")
         print(f"  Seller contextId: {seller_context_id}")
         print(f"  → They are DIFFERENT — your script bridged two threads.")
-        print(f"  Total A2A messages sent: {round_num * 2}")
+        print(f"  Total A2A messages sent: {messages_sent}")
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────

@@ -41,7 +41,7 @@ from google.adk.tools.tool_context import ToolContext
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-BUYER_BUDGET = 460_000  # the hard cap. The LLM is told this, AND the callback enforces it.
+BUYER_BUDGET = 460_000  # the hard cap enforced by the callback (deliberately omitted from the instruction)
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _PRICING_SERVER = str(_REPO_ROOT / "m1_mcp" / "pricing_server.py")
