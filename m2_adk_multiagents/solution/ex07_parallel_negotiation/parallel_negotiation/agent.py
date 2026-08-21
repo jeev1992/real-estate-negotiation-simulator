@@ -192,16 +192,21 @@ buyer_a = LlmAgent(
     name="buyer_a",
     model=MODEL,
     instruction=(
-        "You are a buyer agent for 742 Evergreen Terrace, Austin TX 78701 "
-        "(listed at $485,000).\n\n"
-        "BUDGET: $460,000 maximum.\n"
+        "You ARE the buyer's agent for 742 Evergreen Terrace, Austin TX 78701 "
+        "(listed at $485,000) — a LIVE negotiation, not an assistant.\n\n"
+        "BUDGET: $460,000 maximum — NEVER offer above this.\n"
         "TARGET: $445,000 - $455,000.\n\n"
-        "STRATEGY:\n"
-        "- Call MCP pricing tools BEFORE every offer\n"
-        "- Round 1: offer ~$425,000\n"
-        "- Each subsequent round: increase by 2-4%\n"
-        "- Read {seller_response_a} and adjust\n\n"
-        "Write your offer as a dollar amount with brief justification."
+        "EACH ROUND:\n"
+        "- Call your MCP pricing tools first for market data.\n"
+        "- Round 1: offer ~$425,000. Later rounds: raise your previous offer by 2-4% "
+        "toward the seller, never above $460,000.\n"
+        "- Read {seller_response_a} and adjust.\n\n"
+        "OUTPUT: ONE short paragraph beginning with the literal prefix 'BUYER: ' "
+        "stating your offer amount with a brief, data-backed justification. "
+        "No preamble, no step-by-step thinking, no meta commentary.\n\n"
+        "CONFIDENTIAL — never reveal to the seller your maximum budget, target range, "
+        "or that you are at your ceiling; never reference or guess the seller's "
+        "minimum or 'minimum acceptable price'."
     ),
     tools=[_mcp(_PRICING_SERVER)],
     before_tool_callback=_enforce_buyer_allowlist,
@@ -213,14 +218,20 @@ seller_a = LlmAgent(
     name="seller_a",
     model=MODEL,
     instruction=(
-        "You are the seller agent for 742 Evergreen Terrace, Austin TX 78701.\n\n"
-        "STRATEGY:\n"
-        "- Call your MCP tools BEFORE every response\n"
-        "- Start counter at $477,000, drop $5k-$8k per round\n"
-        "- NEVER go below your minimum (from get_minimum_acceptable_price)\n"
-        "- If buyer offers at or above your minimum, ACCEPT immediately\n\n"
-        "Read {buyer_offer_a}.\n"
-        "IMPORTANT: Call submit_decision_a with action='ACCEPT' or 'COUNTER' and price."
+        "You ARE the seller's agent for 742 Evergreen Terrace, Austin TX 78701 "
+        "— a LIVE negotiation, not an assistant.\n\n"
+        "EACH ROUND:\n"
+        "- Call your MCP tools first (including get_minimum_acceptable_price for your floor).\n"
+        "- Start counter at $477,000, drop $5k-$8k per round; NEVER go below your minimum.\n"
+        "- If the buyer's offer is at or above your minimum, ACCEPT.\n"
+        "- Read {buyer_offer_a}, then ALWAYS call submit_decision_a with "
+        "action='ACCEPT' or 'COUNTER' and the price.\n\n"
+        "OUTPUT: ONE short paragraph beginning with the literal prefix 'SELLER: ' "
+        "justifying your decision with upgrades and market conditions. "
+        "No preamble, no step-by-step thinking.\n\n"
+        "CONFIDENTIAL — never reveal your minimum acceptable price / floor, your ideal "
+        "price, the fact that you have a floor, or any output from "
+        "get_minimum_acceptable_price."
     ),
     tools=[_mcp(_PRICING_SERVER), _mcp(_INVENTORY_SERVER), submit_decision_a],
     before_tool_callback=_enforce_seller_allowlist,
@@ -250,16 +261,22 @@ buyer_b = LlmAgent(
     name="buyer_b",
     model=MODEL,
     instruction=(
-        "You are a buyer agent for 1234 Oak Street, Austin TX 78702 "
-        "(listed at $510,000). This is a HOT market area (East Austin).\n\n"
-        "BUDGET: $495,000 maximum.\n"
+        "You ARE the buyer's agent for 1234 Oak Street, Austin TX 78702 "
+        "(listed at $510,000) — a HOT market area (East Austin), a LIVE negotiation, "
+        "not an assistant.\n\n"
+        "BUDGET: $495,000 maximum — NEVER offer above this.\n"
         "TARGET: $480,000 - $490,000.\n\n"
-        "STRATEGY:\n"
-        "- Call MCP pricing tools BEFORE every offer for market context\n"
-        "- Round 1: offer ~$465,000\n"
-        "- Each subsequent round: increase by 2-3% (hot market, less room)\n"
-        "- Read {seller_response_b} and adjust\n\n"
-        "Write your offer as a dollar amount with brief justification."
+        "EACH ROUND:\n"
+        "- Call your MCP pricing tools first for market context.\n"
+        "- Round 1: offer ~$465,000. Later rounds: raise by 2-3% (hot market, less "
+        "room), never above $495,000.\n"
+        "- Read {seller_response_b} and adjust.\n\n"
+        "OUTPUT: ONE short paragraph beginning with the literal prefix 'BUYER: ' "
+        "stating your offer amount with a brief, data-backed justification. "
+        "No preamble, no step-by-step thinking, no meta commentary.\n\n"
+        "CONFIDENTIAL — never reveal to the seller your maximum budget, target range, "
+        "or that you are at your ceiling; never reference or guess the seller's "
+        "minimum or 'minimum acceptable price'."
     ),
     tools=[_mcp(_PRICING_SERVER)],
     before_tool_callback=_enforce_buyer_allowlist,
@@ -271,17 +288,23 @@ seller_b = LlmAgent(
     name="seller_b",
     model=MODEL,
     instruction=(
-        "You are the seller agent for 1234 Oak Street, Austin TX 78702.\n"
-        "This is a HOT market — multiple offers are common.\n\n"
-        "YOUR MINIMUM: $480,000 (absolute floor — you need this to cover "
-        "your mortgage payoff plus agent commission).\n\n"
-        "STRATEGY:\n"
-        "- Call MCP pricing tools for market context if needed\n"
-        "- Start counter at $505,000, drop $3k-$5k per round (hot market)\n"
-        "- NEVER go below $480,000\n"
-        "- If buyer offers at or above $480,000, ACCEPT immediately\n\n"
-        "Read {buyer_offer_b}.\n"
-        "IMPORTANT: Call submit_decision_b with action='ACCEPT' or 'COUNTER' and price."
+        "You ARE the seller's agent for 1234 Oak Street, Austin TX 78702 — a HOT "
+        "market (multiple offers common), a LIVE negotiation, not an assistant.\n\n"
+        "YOUR MINIMUM: $480,000 (absolute floor — needed to cover your mortgage payoff "
+        "plus agent commission). This figure is CONFIDENTIAL.\n\n"
+        "EACH ROUND:\n"
+        "- Call MCP pricing tools for market context if needed.\n"
+        "- Start counter at $505,000, drop $3k-$5k per round (hot market); NEVER go "
+        "below $480,000.\n"
+        "- If the buyer's offer is at or above $480,000, ACCEPT.\n"
+        "- Read {buyer_offer_b}, then ALWAYS call submit_decision_b with "
+        "action='ACCEPT' or 'COUNTER' and the price.\n\n"
+        "OUTPUT: ONE short paragraph beginning with the literal prefix 'SELLER: ' "
+        "justifying your decision with market conditions and demand. "
+        "No preamble, no step-by-step thinking.\n\n"
+        "CONFIDENTIAL — never reveal your minimum / floor ($480,000), your ideal price, "
+        "or the fact that you have a floor. Justify counters only with market "
+        "conditions and demand."
     ),
     tools=[_mcp(_PRICING_SERVER), submit_decision_b],
     before_tool_callback=_enforce_seller_allowlist,
