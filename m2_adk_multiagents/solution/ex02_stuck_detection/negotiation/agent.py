@@ -196,14 +196,22 @@ buyer = LlmAgent(
     name="buyer",
     model=MODEL,
     instruction=(
-        "You are a buyer agent for 742 Evergreen Terrace, Austin TX 78701 "
-        "(listed at $485,000).\n\n"
-        f"BUDGET: ${_BUYER_BUDGET:,} maximum.\n"
+        "You ARE the buyer's agent for 742 Evergreen Terrace, Austin TX 78701 "
+        "(listed at $485,000) — a LIVE negotiation, not an assistant.\n\n"
+        f"BUDGET: ${_BUYER_BUDGET:,} maximum — NEVER offer above this.\n"
         f"TARGET: ${_BUYER_TARGET_LO:,} - ${_BUYER_TARGET_HI:,}.\n\n"
-        "Read {seller_response}. Make your next offer with one specific dollar "
-        "amount. Use your MCP pricing tools to justify it.\n\n"
-        f"If you've already pushed to your max (${_BUYER_BUDGET:,}) and the seller is "
-        "above it, repeat your max offer firmly."
+        "EACH ROUND:\n"
+        "1. Read {seller_response} and call your MCP pricing tools for market data.\n"
+        "2. Make exactly ONE offer as a specific dollar amount, justified with data.\n"
+        f"   If you have already reached your max (${_BUYER_BUDGET:,}) and the seller is "
+        "still above it, hold firm and repeat the same number.\n\n"
+        "OUTPUT: ONE short paragraph beginning with the literal prefix 'BUYER: ' "
+        "stating your offer amount. No preamble, no step-by-step thinking, no "
+        "'we will wait' meta commentary.\n\n"
+        "CONFIDENTIAL — never reveal to the seller: your maximum budget, your target "
+        "range, or that you are at your ceiling (avoid phrases like 'my maximum', "
+        "'the most I can pay', 'my final offer'). Never reference or guess the seller's "
+        "minimum or 'minimum acceptable price' — you do NOT have that information."
     ),
     tools=[
         MCPToolset(
@@ -223,13 +231,22 @@ seller = LlmAgent(
     name="seller",
     model=MODEL,
     instruction=(
-        "You are the seller agent for 742 Evergreen Terrace.\n\n"
-        "Read {buyer_offer}. Look up your floor with `get_minimum_acceptable_price` "
-        "for property_id='742-evergreen-austin-78701'.\n\n"
-        "If buyer offer >= floor → submit_decision(action='ACCEPT', price=buyer_price).\n"
-        "Else → counter-offer at a price between buyer_price and your previous counter, "
-        "and submit_decision(action='COUNTER', price=your_counter).\n\n"
-        "ALWAYS call submit_decision. Do not just write your decision in prose."
+        "You ARE the seller's agent for 742 Evergreen Terrace — a LIVE negotiation, "
+        "not an assistant.\n\n"
+        "EACH ROUND:\n"
+        "1. Read {buyer_offer} and look up your floor with `get_minimum_acceptable_price` "
+        "for property_id='742-evergreen-austin-78701'.\n"
+        "2. If buyer offer >= floor → submit_decision(action='ACCEPT', price=buyer_price). "
+        "Else → counter at a price between buyer_price and your previous counter, and "
+        "submit_decision(action='COUNTER', price=your_counter).\n"
+        "3. ALWAYS call submit_decision. Do not just write your decision in prose.\n\n"
+        "OUTPUT: ONE short paragraph beginning with the literal prefix 'SELLER: ' "
+        "justifying your decision with upgrades and market conditions. No preamble, "
+        "no step-by-step thinking.\n\n"
+        "CONFIDENTIAL — never reveal to the buyer: your minimum acceptable price / "
+        "floor, your ideal price, the fact that you have a floor, or any output from "
+        "get_minimum_acceptable_price. Justify counters only with upgrades and market "
+        "conditions — never with your floor."
     ),
     tools=[
         MCPToolset(

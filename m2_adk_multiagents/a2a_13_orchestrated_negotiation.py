@@ -39,8 +39,10 @@ Run:
 
 import argparse
 import asyncio
-import json
+import re
 import uuid
+
+import warnings
 
 import httpx
 from a2a.client import A2ACardResolver, A2AClient
@@ -52,6 +54,11 @@ from a2a.types import (
     SendMessageSuccessResponse,
     Task,
     TextPart,
+)
+
+# Classic A2AClient is used intentionally for parity with the other demos.
+warnings.filterwarnings(
+    "ignore", message=".*A2AClient is deprecated.*", category=DeprecationWarning
 )
 
 BASE_URL = "http://127.0.0.1:8000"
@@ -78,6 +85,12 @@ def extract_agent_text(task: Task) -> str:
                 if isinstance(part.root, TextPart):
                     return part.root.text
     return "(no response)"
+
+
+def extract_price(text: str) -> str | None:
+    """Best-effort extraction of a dollar amount from an agent message."""
+    match = re.search(r"\$\s?([\d,]{4,})", text)
+    return f"${match.group(1)}" if match else None
 
 
 async def send_a2a_message(
@@ -151,6 +164,8 @@ async def main() -> None:
         buyer_context_id = None
         seller_context_id = None
         seller_response_text = None  # No seller response for round 1
+        messages_sent = 0
+        outcome = None
 
         for round_num in range(1, args.max_rounds + 1):
             print(f"\n{'─' * 50}")
@@ -170,13 +185,22 @@ async def main() -> None:
                     "Use your pricing tools first."
                 )
 
-            print(f"\n→ Sending to BUYER: {buyer_prompt[:80]}...")
+            print(f"\n→ Sending to BUYER:\n{buyer_prompt}")
             buyer_task, buyer_context_id = await send_a2a_message(
                 buyer_client, buyer_prompt, buyer_context_id
             )
+            messages_sent += 1
             buyer_offer_text = extract_agent_text(buyer_task)
-            print(f"← Buyer says: {buyer_offer_text[:200]}...")
+            print(f"← Buyer says:\n{buyer_offer_text}")
             print(f"  (contextId: {buyer_context_id})")
+
+            # ── Buyer walked away? End the negotiation ────────────────
+            if re.search(r"\bWALK[\s_-]?AWAY\b", buyer_offer_text, re.IGNORECASE):
+                print(f"\n{'=' * 60}")
+                print(f"BUYER WALKED AWAY in round {round_num} — no deal.")
+                print(f"{'=' * 60}")
+                outcome = "buyer_walked_away"
+                break
 
             # ── Forward buyer's offer to seller ───────────────────────
             seller_prompt = (
@@ -184,34 +208,41 @@ async def main() -> None:
                 f"This is round {round_num}. Respond with ACCEPT or COUNTER."
             )
 
-            print(f"\n→ Sending to SELLER: {seller_prompt[:80]}...")
+            print(f"\n→ Sending to SELLER:\n{seller_prompt}")
             seller_task, seller_context_id = await send_a2a_message(
                 seller_client, seller_prompt, seller_context_id
             )
+            messages_sent += 1
             seller_response_text = extract_agent_text(seller_task)
-            print(f"← Seller says: {seller_response_text[:200]}...")
+            print(f"← Seller says:\n{seller_response_text}")
             print(f"  (contextId: {seller_context_id})")
 
-            # ── Check for acceptance ──────────────────────────────────────
-            import re
-            has_counter = bool(re.search(r'\bCOUNTER\b', seller_response_text, re.IGNORECASE))
-            has_accept = bool(re.search(r'\bACCEPT\b', seller_response_text, re.IGNORECASE))
+            # ── Check for acceptance (exactly one keyword expected) ───
+            has_counter = bool(re.search(r"\bCOUNTER\b", seller_response_text, re.IGNORECASE))
+            has_accept = bool(re.search(r"\bACCEPT\b", seller_response_text, re.IGNORECASE))
             if has_accept and not has_counter:
+                agreed_price = extract_price(seller_response_text)
                 print(f"\n{'=' * 60}")
                 print(f"DEAL REACHED in round {round_num}!")
                 print(f"{'=' * 60}")
-                print(f"Buyer's final offer was accepted by the seller.")
+                deal_msg = "Buyer's final offer was accepted by the seller."
+                if agreed_price:
+                    deal_msg += f" Agreed price: {agreed_price}."
+                print(deal_msg)
+                outcome = "deal"
                 break
         else:
             print(f"\n{'=' * 60}")
             print(f"MAX ROUNDS ({args.max_rounds}) reached — no agreement.")
             print(f"{'=' * 60}")
+            outcome = "max_rounds"
 
         # ── Summary ──────────────────────────────────────────────────
         print(f"\nA2A Protocol Summary:")
+        print(f"  Outcome:          {outcome}")
         print(f"  Buyer  contextId: {buyer_context_id}")
         print(f"  Seller contextId: {seller_context_id}")
-        print(f"  Total A2A messages sent: {round_num * 2}")
+        print(f"  Total A2A messages sent: {messages_sent}")
         print(f"  Each agent maintained its own conversation thread.")
 
 

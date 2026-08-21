@@ -12,7 +12,7 @@
   "skills": [
     {
       "id": "property_valuation",
-      "name": "Property Valuation",
+      "name": "Property Valuation & Offer Negotiation",
       "description": "Evaluates property value using MCP pricing tools and makes purchase offers",
       "tags": ["real_estate", "buyer", "negotiation", "mcp"],
       "examples": ["What is 742 Evergreen Terrace worth?", "Make an offer on this property"]

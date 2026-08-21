@@ -26,6 +26,7 @@ from google.adk.tools.mcp_tool.mcp_toolset import (
     StdioServerParameters,
 )
 from google.adk.tools.tool_context import ToolContext
+from google.genai import types
 
 import os
 
@@ -41,6 +42,7 @@ _BUYER_ALLOWED_TOOLS = {
     "get_market_price",
     "calculate_discount",
     "get_property_tax_estimate",
+    "submit_offer",  # structured offer signal
 }
 
 _SELLER_ALLOWED_TOOLS = {
@@ -68,7 +70,41 @@ def _enforce_seller_allowlist(
     return None
 
 
-# --- Decision tool (structured signal, not text parsing) ---
+# --- Decision tools (structured signals, not text parsing) ---
+
+
+_BUYER_MAX_BUDGET = 460000
+
+
+def _append_history(
+    tool_context: ToolContext, role: str, action: str, price: int | None
+) -> None:
+    """Append one entry to the shared offer_history list in state (UI-visible)."""
+    entry = {"role": role, "action": action, "price": price}
+    history = tool_context.state.get("offer_history", [])
+    tool_context.state["offer_history"] = history + [entry]
+
+
+def submit_offer(
+    price: int, walk_away: bool, tool_context: ToolContext
+) -> dict:
+    """Record the buyer's offer for this round.
+
+    Args:
+        price: Offer price in dollars. Must be <= 460000. Ignored if walk_away is True.
+        walk_away: True to end the negotiation because the seller won't meet the buyer's terms.
+    """
+    if walk_away:
+        tool_context.state["buyer_walk_away"] = True
+        _append_history(tool_context, "buyer", "WALK_AWAY", None)
+        return {"recorded": "WALK_AWAY"}
+    if price > _BUYER_MAX_BUDGET:
+        return {
+            "error": f"offer {price} exceeds the ${_BUYER_MAX_BUDGET} maximum budget"
+        }
+    tool_context.state["buyer_offer_price"] = price
+    _append_history(tool_context, "buyer", "OFFER", price)
+    return {"recorded": price}
 
 
 def submit_decision(
@@ -87,6 +123,7 @@ def submit_decision(
         "action": action_upper,
         "price": price,
     }
+    _append_history(tool_context, "seller", action_upper, price)
     return {"recorded": action_upper, "price": price}
 
 
@@ -101,6 +138,24 @@ def _check_agreement(callback_context: CallbackContext):
     return None
 
 
+def _check_walk_away(callback_context: CallbackContext):
+    """After the buyer responds, end the negotiation if the buyer walked away."""
+    if callback_context.state.get("buyer_walk_away"):
+        callback_context.actions.escalate = True
+    return None
+
+
+def _skip_if_walked_away(callback_context: CallbackContext):
+    """Skip the seller's turn and end the loop if the buyer already walked away."""
+    if callback_context.state.get("buyer_walk_away"):
+        callback_context.actions.escalate = True
+        return types.Content(
+            role="model",
+            parts=[types.Part(text="SELLER: The buyer walked away — negotiation ended.")],
+        )
+    return None
+
+
 def _init_round_state(callback_context: CallbackContext):
     """Ensure seller_response exists in state before round 1."""
     if "seller_response" not in callback_context.state:
@@ -112,20 +167,36 @@ buyer = LlmAgent(
     name="buyer",
     model=MODEL,
     instruction=(
-        "You are an expert real estate buyer agent representing a client "
-        "purchasing 742 Evergreen Terrace, Austin, TX 78701 (listed at $485,000).\n\n"
-        "YOUR CLIENT'S CONSTRAINTS:\n"
-        "- Maximum budget: $460,000 (NEVER offer above this)\n"
-        "- Target acquisition price: $445,000–$455,000\n"
-        "- Pre-approved for financing, can close in 30–45 days\n\n"
-        "STRATEGY:\n"
-        "- Call your MCP pricing tools BEFORE every offer to get market data\n"
-        "- Round 1: offer ~12%% below asking (~$425,000)\n"
-        "- Each subsequent round: increase by 2–4%%\n"
-        "- If the seller has responded, read {seller_response} and adjust.\n"
-        "- Walk away if seller won't go below $460,000\n\n"
-        "Always justify your offers with data from your tools.\n"
-        "Write your offer as a dollar amount with brief justification."
+        "You ARE the buyer's agent in a LIVE negotiation — not an assistant "
+        "waiting on anyone. You represent a client purchasing 742 Evergreen "
+        "Terrace, Austin, TX 78701 (listed at $485,000).\n\n"
+        "CLIENT CONSTRAINTS:\n"
+        "- Maximum budget: $460,000 — the submit_offer tool REJECTS anything higher.\n"
+        "- Target acquisition price: $445,000–$455,000.\n"
+        "- Pre-approved for financing, can close in 30–45 days.\n\n"
+        "EACH ROUND you MUST, in order:\n"
+        "1. Call your MCP pricing tools to get fresh market data.\n"
+        "2. Decide exactly ONE new offer for this round:\n"
+        "   - Round 1 (seller has not responded yet): ~12% below asking (~$425,000).\n"
+        "   - Later rounds: raise your PREVIOUS offer by 2–4% toward the seller, "
+        "never above $460,000.\n"
+        "3. Call submit_offer(price=<int>, walk_away=False) to record it. "
+        "Use walk_away=True ONLY if the seller refuses to go below $460,000.\n\n"
+        "The seller's last response was:\n{seller_response}\n\n"
+        "Then reply with ONE short paragraph: your new offer amount plus a "
+        "data-backed justification. Begin the paragraph with the literal prefix "
+        "'BUYER: '. Output ONLY that single 'BUYER: ...' paragraph — no preamble, "
+        "no step-by-step thinking, no 'submitting offer' narration.\n\n"
+        "CONFIDENTIAL — the seller must NEVER learn these, so never state them in your "
+        "reply: your maximum budget ($460,000), your target range, your walk-away "
+        "threshold, or any private client constraints. Reveal only the single offer number.\n"
+        "- Never signal you are at or near your ceiling. Do NOT say things like 'the "
+        "maximum I can accommodate', 'my highest/best/final offer', or 'the most I can pay'. "
+        "Present each offer as a considered, market-based figure.\n"
+        "- Never reference or guess the seller's minimum, floor, or 'minimum acceptable "
+        "price' — you do NOT have that information.\n\n"
+        "Do NOT write meta commentary such as "
+        "'we will wait for the seller' or reminders/checklists — you ARE negotiating now."
     ),
     tools=[
         MCPToolset(
@@ -136,33 +207,45 @@ buyer = LlmAgent(
                 ),
                 timeout=30.0,
             )
-        )
+        ),
+        submit_offer,
     ],
     before_tool_callback=_enforce_buyer_allowlist,
     output_key="buyer_offer",
     before_agent_callback=_init_round_state,
+    after_agent_callback=_check_walk_away,
 )
 
 seller = LlmAgent(
     name="seller",
     model=MODEL,
     instruction=(
-        "You are an expert listing agent for 742 Evergreen Terrace, "
+        "You ARE the listing agent in a LIVE negotiation — not an assistant "
+        "waiting on anyone. You represent the seller of 742 Evergreen Terrace, "
         "Austin, TX 78701 (listed at $485,000).\n\n"
         "PROPERTY HIGHLIGHTS:\n"
         "  • Kitchen renovated 2023 ($45k), new roof 2022 ($18k), HVAC 2021 ($12k)\n"
         "  • Total upgrades: $75,000+\n"
         "  • Austin ISD (rated 8/10), zero HOA fees\n\n"
-        "STRATEGY:\n"
-        "- Call your MCP tools BEFORE every response (market price, inventory, floor price)\n"
-        "- Start counter at $477,000, drop $5k–$8k per round only\n"
-        "- NEVER go below your minimum (from get_minimum_acceptable_price tool)\n"
-        "- If buyer offers at or above your minimum, accept immediately\n"
-        "- Emphasize $75,000 in upgrades to justify premium pricing\n\n"
-        "Read {buyer_offer}.\n"
-        "IMPORTANT: After writing your response, you MUST call the submit_decision "
-        "tool with action='ACCEPT' or action='COUNTER' and the price. "
-        "This is required — the negotiation cannot proceed without it."
+        "EACH ROUND you MUST, in order:\n"
+        "1. Call your MCP tools (market price, inventory, minimum acceptable price).\n"
+        "2. Decide: if the buyer's offer is AT or ABOVE your minimum, ACCEPT it. "
+        "Otherwise COUNTER — start at $477,000 and drop only $5k–$8k per round, "
+        "NEVER below your minimum from get_minimum_acceptable_price.\n"
+        "3. Call submit_decision(action='ACCEPT' or 'COUNTER', price=<int>). "
+        "This is REQUIRED every single round — the negotiation cannot proceed without it.\n\n"
+        "The buyer's current offer is ${buyer_offer_price?}.\n"
+        "Full buyer message:\n{buyer_offer}\n\n"
+        "Then reply with ONE short paragraph justifying your decision, emphasizing "
+        "the $75,000 in upgrades. Begin the paragraph with the literal prefix "
+        "'SELLER: '. Output ONLY that single 'SELLER: ...' paragraph — no preamble, "
+        "no step-by-step thinking, no 'submitting decision' narration.\n\n"
+        "CONFIDENTIAL — the buyer must NEVER learn these, so never state them in your "
+        "reply: your minimum acceptable price / floor, your ideal price, the fact that "
+        "you have a floor, or any output from get_minimum_acceptable_price. Justify your "
+        "counter only with upgrades and market conditions — never with your floor.\n\n"
+        "Do NOT write meta commentary such as "
+        "'we will wait for the buyer' or reminders/checklists — you ARE negotiating now."
     ),
     tools=[
         MCPToolset(
@@ -187,6 +270,7 @@ seller = LlmAgent(
     ],
     before_tool_callback=_enforce_seller_allowlist,
     output_key="seller_response",
+    before_agent_callback=_skip_if_walked_away,
     after_agent_callback=_check_agreement,
 )
 
