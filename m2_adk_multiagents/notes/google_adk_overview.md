@@ -1420,6 +1420,12 @@ carries:
 - `is_final_response()` — convenience predicate: this is the last text
   the agent will emit for the current invocation.
 
+**Demo:** `python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py`
+drives an agent with `InMemoryRunner.run_async()` and prints each of these
+fields for every event. Note that the user's message is appended to the
+session but is **not** yielded by `run_async()` — only agent-authored
+events are.
+
 **Escalation** is how you break out of containers. Setting
 `actions.escalate = True` tells the nearest parent workflow agent
 (`LoopAgent` is the typical target) to stop iterating after this event.
@@ -1654,7 +1660,7 @@ These pieces land in our module as follows:
 | `AgentTool`                  | `adk_demos/d07_agent_as_tool`                                    |
 | `ToolContext` scoped state   | `adk_demos/d03_sessions_state`                                   |
 | Callbacks (PII / allowlist / logging) | `adk_demos/d08_callbacks`                               |
-| Event stream + state deltas  | `adk_demos/d09_event_stream`                                     |
+| Event stream + state deltas  | `adk_demos/d09_event_stream` (`run_event_stream.py` prints each `Event`) |
 | Agent discovery convention   | `__init__.py` + `agent.py` + `root_agent` in every package       |
 | ADK ↔ A2A bridge             | `adk web --a2a negotiation_agents/`                              |
 

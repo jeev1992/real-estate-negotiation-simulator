@@ -178,7 +178,7 @@ print(card["name"], card["description"], card["capabilities"])
 
 ## 9. A2A Client — "Client side discovery + messaging"
 
-For demos 09–10, use `a2a-sdk` or raw `httpx` to talk to `adk web --a2a` endpoints.
+For demos 10–13, use `a2a-sdk` or raw `httpx` to talk to `adk web --a2a` endpoints.
 
 ```python
 from a2a.client import A2AClient, A2ACardResolver
@@ -192,7 +192,7 @@ client = A2AClient(httpx_client=http, agent_card=card)
 response = await client.send_message(request)
 ```
 
-Or raw HTTP (demo 09):
+Or raw HTTP (what the SDK sends under the hood):
 ```python
 body = {
     "jsonrpc": "2.0",
@@ -204,13 +204,13 @@ body = {
 resp = await httpx.AsyncClient().post("http://localhost:8000/a2a/seller_agent", json=body)
 ```
 
-> **Intuition:** Two steps: discover (fetch the card), then send (POST the message). Demo 09 shows raw HTTP; demo 10 uses the SDK.
+> **Intuition:** Two steps: discover (fetch the card), then send (POST the message). Demo 10 prints the exact wire format the SDK sends.
 
 ---
 
 ## 10. Task Lifecycle — "submitted → working → completed"
 
-When a client sends `message/send`, the A2A server creates a Task. Demo 09 shows the states:
+When a client sends `message/send`, the A2A server creates a Task. Demo 10 shows the states:
 
 ```
 Client sends message  →  Task status: "submitted"
@@ -219,7 +219,7 @@ Client sends message  →  Task status: "submitted"
                          (or error        →  status: "failed")
 ```
 
-> **Intuition:** `adk web --a2a` handles this lifecycle automatically. Demo 09 lets you see it from the client side.
+> **Intuition:** `adk web --a2a` handles this lifecycle automatically. Demo 10 lets you see it from the client side.
 
 ---
 

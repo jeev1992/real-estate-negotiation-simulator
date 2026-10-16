@@ -182,7 +182,7 @@ Session 3 (no tool call):
 
 The Runner reads state FROM the session at the start of each turn, and writes state BACK at the end. You could run the same Runner against different sessions (different conversations).
 
-In d01–d09, you never write session or runner code. `adk web` handles it all:
+In the `adk web` demos (d01–d09), you never write session or runner code. `adk web` handles it all:
 
 | What | Who does it | Where |
 |------|------------|-------|
@@ -210,7 +210,7 @@ async for event in runner.run_async(
         print(event.content.parts[0].text)
 ```
 
-**You don't need this in the workshop.** It's here so you can answer "how would I do this without `adk web`?" if a student asks. The A2A terminal scripts (10–12) also don't show this — they're HTTP clients talking to `adk web --a2a`, which handles sessions server-side.
+**You don't need this in the workshop.** It's here so you can answer "how would I do this without `adk web`?" if a student asks. For a complete runnable version, see Demo 09's terminal script `adk_demos/d09_event_stream/run_event_stream.py`. The A2A terminal scripts (10–12) don't show this — they're HTTP clients talking to `adk web --a2a`, which handles sessions server-side.
 
 ---
 
@@ -1127,18 +1127,25 @@ Query 3 — normal allowed tool:
 
 ## Demo 09 — Event Stream (`d09_event_stream`)
 
-**File:** `adk_demos/d09_event_stream/agent.py` (~65 lines)
+**Files:**
+- `adk_demos/d09_event_stream/agent.py` (~75 lines) — the agent (`adk web`)
+- `adk_demos/d09_event_stream/run_event_stream.py` (~140 lines) — terminal script that drives the same agent with `Runner.run_async()` and prints every `Event`
 
 ### What it teaches
-How tools write to session state via `ToolContext`, and how those writes show up as state deltas in events. This demo combines d03's state concepts with visibility into what the Runner produces.
+How tools write to session state via `ToolContext`, and how those writes show up as state deltas in events. This demo combines d03's state concepts with visibility into what the Runner produces — first through the web UI, then by printing the raw event stream yourself.
 
 ### How to run
 
 ```bash
+# Option A — web UI
 adk web m2_adk_multiagents/adk_demos/
+
+# Option B — terminal: print every Event the Runner yields
+python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py
+python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py --raw   # + raw Event JSON
 ```
 
-Open http://localhost:8000, select `d09_event_stream` from the dropdown.
+For option A, open http://localhost:8000, select `d09_event_stream` from the dropdown.
 
 ### Questions to try in order
 
@@ -1216,6 +1223,59 @@ offer_count: 1
 4. **Compare to d03**: d03 used `offer_history` (array accumulation). d09 uses `offer_count` (incremental counter) + `latest_offer` (overwrite). Both use `tool_context.state` — different patterns for different needs.
 
 > **Note on parallel tool calls:** Some models may call both tools in parallel (deciding arguments BEFORE seeing results), which can cause `estimate_offer` to receive a hallucinated `comp_avg`. If you see a wrong offer price, this is why — the fix is to use a SequentialAgent (d04) when tool B depends on tool A's output.
+
+### Terminal version — `run_event_stream.py`
+
+The web UI renders events for you. The terminal script shows what is underneath: an explicit `InMemoryRunner`, an explicit session, and a plain `async for event in runner.run_async(...)` loop that prints each field of every `Event`. It sends two turns in the same session by default.
+
+```python
+runner = InMemoryRunner(agent=root_agent, app_name="d09_event_stream")
+session = await runner.session_service.create_session(app_name=..., user_id=...)
+
+async for event in runner.run_async(user_id=..., session_id=session.id, new_message=message):
+    event.author                    # who produced it
+    event.content.parts             # function_call / function_response / text
+    event.actions.state_delta       # state keys changed by this step
+    event.actions.escalate          # loop-exit signal (None here)
+    event.is_final_response()       # True only for the turn's last text answer
+```
+
+**Actual output (gpt-4o, turn 1 — trimmed):**
+
+```
+TURN 1  user: What should I offer on 742 Evergreen Terrace, Austin, TX 78701?
+
+  [Event 1] author=event_stream_demo  final_response=False
+    function_call      lookup_comps({"address": "742 Evergreen Terrace, Austin, TX 78701"})
+
+  [Event 2] author=event_stream_demo  final_response=False
+    function_response  lookup_comps -> {"address": ..., "comps": [...], "avg_comp_price": 465000}
+    state_delta        {"last_comp_lookup": "742 Evergreen Terrace, Austin, TX 78701"}
+
+  [Event 3] author=event_stream_demo  final_response=False
+    function_call      estimate_offer({"comp_avg": 465000, "discount_pct": 5})
+
+  [Event 4] author=event_stream_demo  final_response=False
+    function_response  estimate_offer -> {"comp_avg": 465000, "discount_pct": 5, "offer_price": 441750}
+    state_delta        {"latest_offer": 441750, "offer_count": 1}
+
+  [Event 5] author=event_stream_demo  final_response=True
+    text               ... The average comp price is $465,000. After considering a 5% discount,
+                       I recommend making an offer of $441,750.
+
+  -> run_async yielded 5 events this turn. The session now stores 6 events in total
+     (your user messages are stored too, but are not yielded).
+  -> session state: {"last_comp_lookup": "...", "latest_offer": 441750, "offer_count": 1}
+```
+
+Turn 2 ("Now do the same for 123 Main St, Austin, TX.") yields the same 5-event shape; `offer_count` becomes 2 and the session holds 12 events.
+
+**What to notice in the terminal output:**
+
+1. **5 yielded vs 6 stored.** The web UI shows 6 events because it reads the session; `run_async()` yields only the 5 agent-authored ones. Your message is appended to the session before the agent runs.
+2. **State deltas ride on the tool-result events** (2 and 4), not on the tool-call events — the delta is recorded when the tool actually runs.
+3. **`final_response=True` appears exactly once per turn**, on the text answer. This is the predicate you use in your own code to pick "the answer" out of the stream.
+4. **No hidden magic.** This loop is all `adk web` does on each chat message — plus persisting the session to SQLite and rendering the events.
 
 ### Key teaching points for class
 

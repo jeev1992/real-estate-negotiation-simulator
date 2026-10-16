@@ -57,7 +57,7 @@ DEFAULT_TURNS = [
 ]
 
 
-def _compact(value, limit: int = 200) -> str:
+def _compact(value, limit: int = 320) -> str:
     text = json.dumps(value, default=str)
     return text if len(text) <= limit else text[: limit - 3] + "..."
 

@@ -43,6 +43,7 @@ m2_adk_multiagents/
     d07_agent_as_tool/agent.py     AgentTool wrapper
     d08_callbacks/agent.py         before_model / before_tool / after_tool
     d09_event_stream/agent.py      ADK event stream: tool calls, state deltas, markers
+    d09_event_stream/run_event_stream.py  Terminal script: Runner.run_async() + print every Event
     a2a_10_wire_lifecycle.py       Terminal script: raw JSON-RPC + task states
     a2a_11_context_threading.py    Terminal script: contextId across rounds
     a2a_12_parts_and_artifacts.py  Terminal script: multi-part messages + artifacts
@@ -113,6 +114,14 @@ adk web m2_adk_multiagents/adk_demos/
 # Open http://localhost:8000, pick a demo from the dropdown, chat with it
 ```
 
+Demo 09 also has a terminal version that drives the same agent with an explicit `Runner` and prints every `Event` it yields (author, tool calls, tool results, state deltas, final-response flag):
+
+```bash
+python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py          # 2 default turns
+python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py "What should I offer on 742 Evergreen Terrace?"
+python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py --raw    # also dump each Event as JSON
+```
+
 ### Agents (buyer, seller, negotiation) — interactive web UI
 
 ```bash
@@ -173,7 +182,7 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 | 06 | `LoopAgent` | Iterate until `callback_context.actions.escalate = True` |
 | 07 | `AgentTool` | Wrap an agent as a callable tool — hierarchical delegation |
 | 08 | Callbacks | `before_model` (PII redaction), `before_tool` (allowlist), `after_tool` (logging) |
-| 09 | Event stream | See ADK events: tool calls, state deltas, final response markers |
+| 09 | Event stream | See ADK events: tool calls, state deltas, final response markers — in the UI, or printed by `run_event_stream.py` |
 | 10 | A2A wire format | Hand-craft JSON-RPC, see Agent Card discovery, task state transitions |
 | 11 | A2A context threading | `contextId` ties multiple rounds into one conversation |
 | 12 | A2A parts & artifacts | Multi-part Messages (TextPart + DataPart), inspect Artifacts |

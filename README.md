@@ -206,6 +206,7 @@ python m1_mcp/demos/05_streamable_http_transport.py
 
 # MODULE 2: Google ADK + A2A protocol (needs OPENAI_API_KEY)
 adk web m2_adk_multiagents/adk_demos/               # ADK demos d01–d09 in dropdown
+python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py  # d09 in the terminal: print every ADK Event
 adk web m2_adk_multiagents/negotiation_agents/       # buyer, seller, negotiation in dropdown
 adk web --a2a m2_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Agent Cards
 # A2A protocol demos (run in a second terminal against adk web --a2a):
@@ -270,7 +271,7 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 | d06 | `d06_loop` | `LoopAgent` that iterates until a callback sets `actions.escalate = True`. |
 | d07 | `d07_agent_as_tool` | `AgentTool` — wrap a whole agent as a callable tool for hierarchical delegation. |
 | d08 | `d08_callbacks` | `before_model` / `before_tool` / `after_tool` hooks — PII redaction, allowlists, logging. |
-| d09 | `d09_event_stream` | Inspect ADK's raw event stream — tool calls, state deltas, final-response markers. |
+| d09 | `d09_event_stream` | Inspect ADK's event stream — tool calls, state deltas, final-response markers. Terminal version: `python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py` prints every `Event` from `Runner.run_async()`. |
 
 **A2A protocol demos — terminal scripts** (start `adk web --a2a m2_adk_multiagents/negotiation_agents/` first)
 
