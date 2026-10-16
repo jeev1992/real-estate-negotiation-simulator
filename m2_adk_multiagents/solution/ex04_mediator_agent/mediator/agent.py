@@ -95,7 +95,8 @@ seller_specialist = LlmAgent(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_INVENTORY_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         )
     ],

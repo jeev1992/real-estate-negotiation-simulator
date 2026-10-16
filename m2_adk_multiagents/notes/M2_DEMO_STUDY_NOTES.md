@@ -262,7 +262,8 @@ root_agent = LlmAgent(
                 server_params=StdioServerParameters(
                     command=sys.executable,   # python
                     args=[_PRICING_SERVER],   # m1_mcp/pricing_server.py
-                )
+                ),
+                timeout=30.0,                 # allow for slow cold starts (Windows)
             )
         )
     ],

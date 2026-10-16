@@ -48,7 +48,8 @@ def _mcp_toolset(server_path: str) -> MCPToolset:
             server_params=StdioServerParameters(
                 command=sys.executable,
                 args=[server_path],
-            )
+            ),
+            timeout=30.0,
         )
     )
 

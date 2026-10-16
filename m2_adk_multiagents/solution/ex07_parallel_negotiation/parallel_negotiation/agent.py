@@ -266,7 +266,8 @@ def _mcp(server_path: str) -> MCPToolset:
         connection_params=StdioConnectionParams(
             server_params=StdioServerParameters(
                 command=sys.executable, args=[server_path],
-            )
+            ),
+            timeout=30.0,
         )
     )
 

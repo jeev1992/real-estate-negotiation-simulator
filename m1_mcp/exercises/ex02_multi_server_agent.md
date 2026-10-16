@@ -29,7 +29,7 @@ Requirements:
 1. Create the folder and `__init__.py` (single line: `from . import agent`).
 2. Write `agent.py`:
    - Compute the absolute paths to `pricing_server.py` and `inventory_server.py` using `Path(__file__).resolve().parents[N]`.
-   - Construct two `MCPToolset` objects with `StdioConnectionParams` + `StdioServerParameters`.
+   - Construct two `MCPToolset` objects with `StdioConnectionParams` + `StdioServerParameters`. Pass `timeout=30.0` to `StdioConnectionParams` — the default startup timeout is too short for a cold start on Windows.
    - Pass both to `LlmAgent(tools=[...])`.
 3. Run:
    ```bash

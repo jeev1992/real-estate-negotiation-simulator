@@ -253,7 +253,8 @@ buyer = LlmAgent(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         )
     ],
@@ -286,14 +287,16 @@ seller = LlmAgent(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         ),
         MCPToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_INVENTORY_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         ),
         submit_decision,

@@ -38,7 +38,8 @@ root_agent = LlmAgent(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         )
     ],

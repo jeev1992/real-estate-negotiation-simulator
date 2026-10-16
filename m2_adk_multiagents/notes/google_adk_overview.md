@@ -998,7 +998,8 @@ root_agent = LlmAgent(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,  # MCP startup timeout — the default is too short for Windows cold starts
             )
         )
     ],
@@ -1541,7 +1542,8 @@ MCPToolset(
             command=sys.executable,
             args=["my_server.py"],
             env={"API_KEY": os.environ["API_KEY"]},  # injected
-        )
+        ),
+        timeout=30.0,
     )
 )
 ```

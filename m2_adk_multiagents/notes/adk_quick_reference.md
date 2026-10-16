@@ -93,7 +93,8 @@ root_agent = LlmAgent(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=["m1_mcp/pricing_server.py"],
-                )
+                ),
+                timeout=30.0,  # MCP startup timeout (default is too short on Windows)
             )
         )
     ],
