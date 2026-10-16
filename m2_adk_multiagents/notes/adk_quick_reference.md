@@ -194,7 +194,7 @@ print(card["name"], card["description"], card["capabilities"])
 
 ## 9. A2A Client — "Client side discovery + messaging"
 
-For demos 10–15, use `a2a-sdk` or raw `httpx` to talk to `adk web --a2a` endpoints (and, for push in demo 14, `negotiation_a2a_server.py`).
+For demos 10–14, use `a2a-sdk` or raw `httpx` to talk to `adk web --a2a` endpoints (and, for push in demo 13, `negotiation_a2a_server.py`).
 
 ```python
 from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
@@ -218,7 +218,7 @@ async for task, update in client.send_message(message):
 task = await client.get_task(TaskQueryParams(id=task.id))
 ```
 
-Errors: transport → `A2AClientHTTPError` / `A2AClientTimeoutError`; JSON-RPC → `A2AClientJSONRPCError` (`.error.code`); a failed task raises nothing — check `task.status.state` (demo 15).
+Errors: transport → `A2AClientHTTPError` / `A2AClientTimeoutError`; JSON-RPC → `A2AClientJSONRPCError` (`.error.code`); a failed task raises nothing — check `task.status.state` (demo 14).
 
 Or raw HTTP (what the SDK sends under the hood):
 ```python

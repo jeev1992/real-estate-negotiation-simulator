@@ -55,13 +55,12 @@ real-estate-negotiation-simulator/
 │   │   ├── seller_agent/agent.py        # Seller LlmAgent + MCPToolset (pricing + inventory)
 │   │   └── negotiation/agent.py         # LoopAgent + SequentialAgent + MCP tools + submit_decision
 │   ├── adk_demos/                      # adk web-launchable demos (d01–d09)
-│   ├── a2a_demos/                      # A2A terminal scripts (10–15), run against adk web --a2a
+│   ├── a2a_demos/                      # A2A terminal scripts (10–14), run against adk web --a2a
 │   │   ├── a2a_10_wire_lifecycle.py       # Agent Card + the HTTP bytes of message/send + the Task
 │   │   ├── a2a_11_context_threading.py    # contextId across rounds; taskId vs contextId
 │   │   ├── a2a_12_parts_and_artifacts.py  # multi-part messages; history vs artifacts
-│   │   ├── a2a_13_orchestrated_negotiation.py  # buyer↔seller negotiation (buyer polled, seller streamed)
-│   │   ├── a2a_14_result_delivery.py      # polling (buyer) / streaming (seller) / push (negotiation)
-│   │   ├── a2a_15_error_handling.py       # transport / protocol / task / application errors
+│   │   ├── a2a_13_orchestrated_negotiation.py  # negotiation: buyer polled, seller streamed, negotiation agent pushes
+│   │   ├── a2a_14_error_handling.py       # transport / protocol / task / application errors
 │   │   └── negotiation_a2a_server.py      # negotiation agent's own A2A server, with push (:8003)
 │   ├── exercises/                      # Hands-on coding exercises for Module 2
 │   ├── solution/                       # Worked solutions for Module 2 exercises
@@ -104,7 +103,7 @@ you'll see is whether it's the right one for you right now.
 |---|---|---|
 | **While running M1 demos** | [`m1_mcp/notes/M1_DEMO_STUDY_NOTES.md`](m1_mcp/notes/M1_DEMO_STUDY_NOTES.md) | Per-demo narration of all 5 MCP demos plus the GitHub + SSE clients |
 | **After M1** | [`m1_mcp/notes/mcp_deep_dive.md`](m1_mcp/notes/mcp_deep_dive.md) | Full MCP protocol reference — primitives, transports, design patterns |
-| **While running M2 demos** | [`m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md`](m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md) | Per-demo narration of all 9 ADK demos + the A2A demos (10–15) + the negotiation system |
+| **While running M2 demos** | [`m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md`](m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md) | Per-demo narration of all 9 ADK demos + the A2A demos (10–14) + the negotiation system |
 | **After M2 (start here)** | [`m2_adk_multiagents/notes/adk_quick_reference.md`](m2_adk_multiagents/notes/adk_quick_reference.md) | One-page lookup for every ADK + A2A construct |
 | **After M2 (go deep)** | [`m2_adk_multiagents/notes/google_adk_overview.md`](m2_adk_multiagents/notes/google_adk_overview.md) | Full ADK reference — every agent type, callbacks, sessions, event stream |
 | **After M2 (network layer)** | [`m2_adk_multiagents/notes/a2a_protocols.md`](m2_adk_multiagents/notes/a2a_protocols.md) | Full A2A reference — wire format, contextId, parts, artifacts, streaming, production patterns |
@@ -225,13 +224,12 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Ag
 python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
-# A2A orchestrated negotiation (buyer ↔ seller via Agent Cards):
-python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
-# Polling (buyer) / streaming (seller) / push (negotiation) — push needs the negotiation server too:
+# A2A orchestrated negotiation — buyer polled, seller streamed, then the
+# negotiation agent pushes updates to a webhook (needs its server; else step 3 is skipped):
 python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
-python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode all
+python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 # Error handling at four layers:
-python m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py
+python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py
 ```
 
 ### 9. Module Exercises
@@ -297,9 +295,8 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 | 10 | `python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py --seller-url …/a2a/seller_agent` | Agent Card discovery, the actual HTTP request/response of `message/send`, and the returned **Task** taken apart (id, contextId, status, history, artifacts). |
 | 11 | `python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py --seller-url …/a2a/seller_agent` | Reuse `contextId` across rounds — multiple A2A calls become **one threaded conversation**; each round is a new Task (`tasks/get` fetches any of them). |
 | 12 | `python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py --seller-url …/a2a/seller_agent` | Multi-part Messages (`TextPart` + `DataPart`); where content lives in a Task — history (tool calls as DataParts), status message, **Artifacts**. |
-| 13 | `python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py` | Full **buyer ↔ seller multi-round negotiation** over A2A — the orchestrator reads each card: buyer **polled**, seller **streamed**. |
-| 14 | `python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode polling\|streaming\|push` | Three ways to get results, one per agent card: buyer → **polling** (`tasks/get`), seller → **streaming** (`message/stream`), negotiation → **push** (webhook; start `negotiation_a2a_server.py` first). |
-| 15 | `python m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py` | **Error handling** at four layers: transport and protocol errors raise; a `failed` task and a useless `completed` answer don't — check the state and the content. |
+| 13 | `python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py` | Full **buyer ↔ seller multi-round negotiation** over A2A — the client reads each card: buyer **polled** (`tasks/get`), seller **streamed** (`message/stream`); then the negotiation agent runs it and **pushes** every update to a webhook (start `negotiation_a2a_server.py` first). |
+| 14 | `python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py` | **Error handling** at four layers: transport and protocol errors raise; a `failed` task and a useless `completed` answer don't — check the state and the content. |
 
 **Negotiation agents — interactive Web UI** (`adk web m2_adk_multiagents/negotiation_agents/`)
 

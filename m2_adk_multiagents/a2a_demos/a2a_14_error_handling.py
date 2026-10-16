@@ -1,5 +1,5 @@
 """
-Demo 15 — A2A Error Handling
+Demo 14 — A2A Error Handling
 ===============================
 Things go wrong at four different layers in A2A, and each one shows up
 differently in your client code. This script triggers each one against the
@@ -24,7 +24,7 @@ Prereq:
     adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 Run:
-    python m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py
+    python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py
 """
 
 import argparse

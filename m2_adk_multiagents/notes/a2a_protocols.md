@@ -3,7 +3,7 @@
 
 > **Audience:** Engineers who have built one agent and need to connect it to *other* agents — built by other teams, in other languages, on other clouds — without sharing code or memory.
 > **Prerequisites:** Comfort with HTTP and JSON. Familiarity with [`mcp_deep_dive.md`](../../m1_mcp/notes/mcp_deep_dive.md) helps because A2A reuses the same JSON-RPC envelope as MCP.
-> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_15_error_handling.py` in `m2_adk_multiagents/a2a_demos/`. Seeing the wire frames first is essential.
+> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_14_error_handling.py` in `m2_adk_multiagents/a2a_demos/`. Seeing the wire frames first is essential.
 > **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) for how ADK exposes A2A endpoints automatically via `adk web --a2a`.
 >
 > **TL;DR:**
@@ -703,11 +703,11 @@ error_msg = A2AMessage(
 )
 ```
 
-### What errors look like on the wire (demo 15)
+### What errors look like on the wire (demo 14)
 
 The categories above are about the *negotiation*. Underneath, the A2A call
 itself can fail at four layers, and each reaches the client differently
-(a2a-sdk 0.3 `Client`; all observed in `a2a_15_error_handling.py`):
+(a2a-sdk 0.3 `Client`; all observed in `a2a_14_error_handling.py`):
 
 | Layer | How it arrives | Examples observed |
 |---|---|---|
@@ -827,11 +827,12 @@ python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py \
 # Terminal 3 — negotiation agent's A2A server (push notifications), port 8003
 python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
 
-# Terminal 2 — polling (buyer), streaming (seller), push (negotiation)
-python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode all
+# Terminal 2 — negotiation: buyer polled, seller streamed, then the
+# negotiation agent pushes updates to a webhook
+python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 
 # Terminal 2 — errors at four layers (transport, protocol, task, application)
-python m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py
+python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py
 
 ```
 
@@ -842,8 +843,8 @@ Key files:
 - `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` (raw A2A wire format)
 - `m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py` (contextId threading)
 - `m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py` (multi-part messages)
-- `m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py` (polling / streaming / push)
-- `m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py` (transport, protocol, task and application errors)
+- `m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py` (polling / streaming / push, one agent each)
+- `m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py` (transport, protocol, task and application errors)
 - `m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py` (ADK agent behind a custom A2A server with a push sender)
 
 ---
@@ -1043,8 +1044,8 @@ Then run:
 python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py
 python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py
 python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py
-python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode polling   # also: streaming, push
-python m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py
+python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py   # polling, streaming, push
+python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py
 ```
 
 ---
@@ -1234,10 +1235,12 @@ The request envelope is plain JSON-RPC 2.0:
 this envelope by hand — no SDK helpers — so you can see the exact wire
 shape.
 
-**Demo (`tasks/get`):** `a2a_14_result_delivery.py --mode polling` sends
-`message/send` with `configuration.blocking: false` to the buyer — the
+**Demo (`tasks/get`):** `a2a_13_orchestrated_negotiation.py` polls the
+buyer: it sends `message/send` with `configuration.blocking: false` — the
 response comes back immediately with the task `submitted` — then calls
-`tasks/get`, pausing a second between calls, until the task reaches a final state.
+`tasks/get`, pausing a second between calls, until the task reaches a final
+state. `a2a_11_context_threading.py` also calls `tasks/get` on an earlier
+round's finished task.
 
 ---
 
@@ -1267,11 +1270,13 @@ The server advances the state by calling `TaskUpdater` methods:
 
 ADK's A2A executor emits a `submitted` and then a `working` status update
 *before* the slow LLM/MCP run starts, so streaming clients see the agent is
-alive (visible in `a2a_14_result_delivery.py --mode streaming`).
+alive.
 
 **Demos:** `a2a_10_wire_lifecycle.py` takes a `completed` Task apart;
-`a2a_14_result_delivery.py` shows `submitted → working → completed` live;
-`a2a_15_error_handling.py` produces a `failed` task (a FilePart the model
+`a2a_13_orchestrated_negotiation.py` shows the lifecycle as it happens (the
+buyer's task comes back `submitted` and is polled to `completed`; the
+seller's streamed updates are `working` events until `completed`);
+`a2a_14_error_handling.py` produces a `failed` task (a FilePart the model
 can't read) — no exception, the reason is in `status.message`.
 
 ---
@@ -1329,11 +1334,11 @@ on a feature. (How strictly a server checks varies: the a2a-sdk handler
 checks `capabilities.pushNotifications` on `tasks/pushNotificationConfig/set`,
 but not on a `message/send` that carries a push config inline.)
 
-**Demo:** `a2a_14_result_delivery.py --mode streaming` streams from the
-seller (whose card has `streaming: true`) and prints each event: `submitted`,
-`working`, the seller's MCP tool calls and results (as DataParts), its reply
-text, a `TaskArtifactUpdateEvent` with the same text, then `completed` with
-`final: true`. `a2a_15_error_handling.py` sends `message/stream` to the
+**Demo:** `a2a_13_orchestrated_negotiation.py` streams from the seller
+(whose card has `streaming: true`): the seller's MCP tool calls arrive as
+DataParts in `working` updates and print as they happen, then a
+`TaskArtifactUpdateEvent` with the reply, then `completed` with
+`final: true`. `a2a_14_error_handling.py` sends `message/stream` to the
 buyer (`streaming: false`) and prints the error above.
 
 ### 17.2 Push notifications (webhooks)
@@ -1353,10 +1358,10 @@ aren't from the server it registered with.
 `to_a2a()`) stores push configs but never sends them — it has no push
 sender — so negotiation runs on its own small server,
 `a2a_demos/negotiation_a2a_server.py` (port 8003), which wires in a2a-sdk's
-`BasePushNotificationSender`. `a2a_14_result_delivery.py --mode push` starts
-a local webhook, sends one non-blocking `message/send` with the webhook in
-`configuration.pushNotificationConfig`, and then just receives POSTs — one
-per task update — until the negotiation completes.
+`BasePushNotificationSender`. Step 3 of `a2a_13_orchestrated_negotiation.py`
+starts a local webhook, sends one non-blocking `message/send` with the
+webhook in `configuration.pushNotificationConfig`, and then just receives
+POSTs — one per task update — until the negotiation completes.
 
 ---
 

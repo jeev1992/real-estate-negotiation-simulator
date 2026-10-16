@@ -1732,8 +1732,8 @@ Compare with the traditional approach (what we deleted):
 - `a2a_demos/a2a_10_wire_lifecycle.py` — client talking to `adk web --a2a`
 - `a2a_demos/a2a_11_context_threading.py` — multi-turn via contextId
 - `a2a_demos/a2a_12_parts_and_artifacts.py` — multi-part messages
-- `a2a_demos/a2a_14_result_delivery.py` — polling (buyer), streaming (seller), push (negotiation, via `negotiation_a2a_server.py`)
-- `a2a_demos/a2a_15_error_handling.py` — transport, protocol, task and application errors from a client talking to `adk web --a2a`
+- `a2a_demos/a2a_13_orchestrated_negotiation.py` — buyer polled, seller streamed, then the negotiation agent (via `negotiation_a2a_server.py`) pushes updates to a webhook
+- `a2a_demos/a2a_14_error_handling.py` — transport, protocol, task and application errors from a client talking to `adk web --a2a`
 
 ---
 

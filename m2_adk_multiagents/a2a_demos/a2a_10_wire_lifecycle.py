@@ -101,7 +101,7 @@ def print_task_anatomy(task: Task) -> None:
         print(f"    artifactId={artifact.artifact_id}  {parts}")
     print()
     print("  Note: message/send blocked until the task finished, so we only see the")
-    print("  final state. Demo 14 shows submitted → working → completed as it happens.")
+    print("  final state. Demo 13 polls and streams, so you see submitted → working → completed.")
 
 
 async def main() -> None:
@@ -136,7 +136,7 @@ async def main() -> None:
 
         # streaming=False: ask for plain message/send so the whole answer comes
         # back as ONE JSON body you can read. (The seller's card does allow
-        # streaming — demo 14 uses it.)
+        # streaming — demo 13 uses it.)
         client = ClientFactory(ClientConfig(httpx_client=http, streaming=False)).create(card)
 
         # ── Step 2: message/send — the JSON-RPC frames on the wire ────
