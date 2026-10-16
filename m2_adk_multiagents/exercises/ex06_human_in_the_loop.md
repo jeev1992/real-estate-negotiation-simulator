@@ -64,6 +64,7 @@ Requirements:
        price = decision["price"]
        if price <= AUTO_APPROVE_CEILING:
            print(f"[AUTO-APPROVED] Deal at ${price:,}")
+           callback_context.state["loop_exit_reason"] = "AUTO_APPROVED"
            callback_context.actions.escalate = True
            return None
 
@@ -77,6 +78,7 @@ Requirements:
 
        if answer == "y":
            print(f"[APPROVED] Human approved deal at ${price:,}")
+           callback_context.state["loop_exit_reason"] = "HUMAN_APPROVED"
            callback_context.actions.escalate = True
        else:
            print(f"[REJECTED] Human rejected. Continuing negotiation.")
@@ -86,6 +88,7 @@ Requirements:
            }
        return None
    ```
+   > **ADK gotcha:** an `after_agent_callback` only emits an event when it returns content or **changes state**. Setting `actions.escalate = True` on its own is silently dropped and the loop keeps going — so always pair it with a state write (here, `loop_exit_reason`).
 3. Wire the callback on the seller agent: `after_agent_callback=_check_agreement_with_approval`.
 4. Run:
    ```bash

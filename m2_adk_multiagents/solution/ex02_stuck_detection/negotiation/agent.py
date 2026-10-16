@@ -132,6 +132,8 @@ def _track_and_check_stall(callback_context: CallbackContext):
     # ─ Job 1: acceptance check (same as canonical orchestrator) ──────────
     decision = state.get("seller_decision")
     if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        # ADK drops a bare escalate: a callback only emits an event if it changes state.
+        state["loop_exit_reason"] = f"ACCEPT at ${decision.get('price', 0):,}"
         callback_context.actions.escalate = True
         return None
 
@@ -170,6 +172,7 @@ def _track_and_check_stall(callback_context: CallbackContext):
                     f"(threshold ${STALL_THRESHOLD:,})"
                 )
                 print(f"[stall-check] STALL DETECTED — {state['stall_reason']}")
+                state["loop_exit_reason"] = "STALL"
                 callback_context.actions.escalate = True
 
     return None

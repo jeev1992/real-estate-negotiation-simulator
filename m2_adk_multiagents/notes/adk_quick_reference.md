@@ -264,6 +264,8 @@ def bump_offer_counter(tool_context: ToolContext) -> dict:
   - `app:` → app-scoped (shared across all users)
   - `temp:` → invocation-only, not persisted
 - `tool_context.actions.escalate = True` — break out of the nearest LoopAgent
+  (from a `callback_context` in an agent callback, also write a state key —
+  a bare escalate there emits no event and is silently dropped)
 - `tool_context.actions.transfer_to_agent = "other"` — hand control off
 - `await tool_context.save_artifact(name, ...)` / `load_artifact(name)` — binary blobs
 

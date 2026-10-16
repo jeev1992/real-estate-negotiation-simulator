@@ -741,7 +741,7 @@ Open http://localhost:8000, select `d06_loop` from the dropdown.
 | # | Question | Expected behavior | What it teaches |
 |---|----------|-------------------|------------------|
 | 1 | "start" | Haggler proposes prices. Loop breaks when price hits $450K–$470K range or max 5 iterations | LoopAgent + escalation |
-| 2 | After run, check **State tab** | See `proposal` key with the last price | output_key overwrites each iteration |
+| 2 | After run, check **State tab** | See `proposal` (the last price) and `loop_exit_reason` (set only if the loop stopped early) | output_key overwrites each iteration |
 | 3 | Run again (New Session) | Different prices each time (LLM varies) but always stops ≤5 iterations | Bounded termination |
 
 > Watch the Events panel for iteration count. If 1 iteration, escalation fired immediately. If 5, the range was never hit.
@@ -758,6 +758,7 @@ def stop_when_in_range(callback_context: CallbackContext):
     digits = "".join(c for c in str(raw) if c.isdigit())
     price = int(digits)
     if 450_000 <= price <= 470_000:
+        callback_context.state["loop_exit_reason"] = f"{price:,} is in range"  # ← required (see gotcha)
         callback_context.actions.escalate = True    # ← THIS breaks the loop
     return None
 
@@ -782,8 +783,10 @@ root_agent = LoopAgent(
 | **`LoopAgent`** | Re-runs `sub_agents` each iteration. Stops when `max_iterations` is hit OR a callback escalates. Not an LlmAgent — a workflow primitive |
 | **`max_iterations`** | Hard upper bound. Guarantees termination even if the callback never fires. Same guarantee as an FSM's `max_turns` |
 | **`after_agent_callback`** | Runs after each sub-agent completes. Receives `CallbackContext` with access to session state and actions |
-| **`callback_context.actions.escalate = True`** | The ONE line that breaks the loop. Sets an escalation signal that the parent `LoopAgent` reads. Like setting `is_terminal = True` in an FSM |
+| **`callback_context.actions.escalate = True`** | The line that breaks the loop. Sets an escalation signal that the parent `LoopAgent` reads. Like setting `is_terminal = True` in an FSM. **Must be paired with a state write** — see the gotcha below |
 | **`output_key` in a loop** | Each iteration overwrites the same key (`proposal`). Only the last value survives in state |
+
+> **ADK gotcha — a bare escalate in a callback is silently dropped.** ADK only turns an agent callback into an `Event` when the callback returns content **or changes state**. The `LoopAgent` checks `event.actions.escalate` on the events it receives, so a callback that *only* sets `escalate = True` produces no event and the loop keeps going. Writing `loop_exit_reason` to state makes ADK emit the event that carries the escalation. (Verified on ADK 1.39: with the bare escalate, a proposal of 462000 — in range — did not stop the loop and all 5 iterations ran; with the state write, the loop stops on the first in-range proposal.)
 
 ### What happens under the hood
 
@@ -791,8 +794,8 @@ root_agent = LoopAgent(
 User: "start"
   → LoopAgent starts, iteration 1
     → haggler produces "465000" → state["proposal"] = "465000"
-    → after_agent_callback: 465K is in range → escalate = True
-    → LoopAgent sees escalation → STOP
+    → after_agent_callback: 465K is in range → write loop_exit_reason + escalate = True
+    → ADK emits the callback's event (it changed state) → LoopAgent sees escalation → STOP
   Total: 1 iteration (early exit)
 
 OR (different run):
@@ -811,42 +814,42 @@ OR (worst case):
 
 | Table | Contents |
 |-------|----------|
-| **sessions** | 2 rows (2 runs). Each has `proposal` with the LAST price proposed |
-| **events** | 12 events total across 2 sessions |
+| **sessions** | 1 row per run. State has `proposal` (last price) and, if the loop stopped early, `loop_exit_reason` |
+| **events** | 3 events for a run that stops on iteration 1 (user, haggler text, callback escalation) |
 | **app_states** | Empty |
 | **user_states** | Empty |
 
-**Full event flow (12 events, 2 runs):**
+**Event flow — early exit (actual run, gpt-4o):**
 
 ```
-Session 1 (5 iterations — hit max_iterations, never landed in range):
+  Event 1 | user:    "start"
+  Event 2 | haggler: "465000"            state_delta: {proposal: "465000"}   (output_key)
+  Event 3 | haggler: (no text)           state_delta: {loop_exit_reason: "465,000 is in range"}
+                                         actions.escalate = True  → LoopAgent STOPS
+  Final state: proposal = "465000", loop_exit_reason = "465,000 is in range"
+```
 
-  Event 1  | user:    "start"
-  Event 2  | haggler: "465000"  → in range BUT...
-  Event 3  | haggler: "454000"  → in range BUT...
-  Event 4  | haggler: "476000"  → out of range
-  Event 5  | haggler: "473000"  → out of range
-  Event 6  | haggler: "441000"  → out of range — hit max_iterations=5, STOP
-  Final state: proposal = "441000"
+Event 3 is emitted by the `after_agent_callback`. It exists **only because the callback wrote state** — that event is what carries `escalate` to the `LoopAgent`.
 
-Session 2 (5 iterations):
+**Event flow — the bug this demo used to have (bare escalate, no state write):**
 
-  Event 7  | user:    "start"
-  Event 8  | haggler: "459000"  → in range (escalate!)... but continued?
-  Event 9  | haggler: "475000"
-  Event 10 | haggler: "445000"
-  Event 11 | haggler: "460000"
-  Event 12 | haggler: "471000"
-  Final state: proposal = "471000"
+```
+  Event 1 | user:    "start"
+  Event 2 | haggler: "462000"  → in range, callback sets escalate... but no event is emitted
+  Event 3 | haggler: "478000"
+  Event 4 | haggler: "474000"
+  Event 5 | haggler: "471000"
+  Event 6 | haggler: "466000"  → hit max_iterations=5, STOP
+  Final state: proposal = "466000"  (no loop_exit_reason)
 ```
 
 **Key observations:**
 
-1. **Non-deterministic**: The LLM proposed different prices each run. Session 1 had 5 iterations, session 2 had 5 iterations. The prices varied randomly as instructed ("vary your answer each time").
+1. **Non-deterministic**: The LLM proposes different prices each run ("vary your answer each time"). gpt-4o often lands in range on the first try, so expect many 1-iteration runs; widen or narrow the range in `stop_when_in_range` to see longer loops.
 
 2. **`proposal` gets overwritten each iteration**: State only shows the LAST value. Unlike d03 where `offer_history` accumulated as an array, `output_key` with LoopAgent overwrites on each iteration.
 
-3. **Escalation behavior**: Some prices that appear to be in range (e.g., 465000, 454000) might have been parsed differently by the callback (string parsing of LLM output can be imprecise). The callback extracts digits from the raw text — if the LLM included extra text, parsing might not match cleanly. This is a realistic edge case.
+3. **Escalation needs an event**: The `LoopAgent` reacts to `event.actions.escalate` on events it receives. A callback that only sets `escalate` produces no event, so the signal never arrives — the "in range but the loop continued" behaviour above. Writing `loop_exit_reason` is what makes the callback visible.
 
 4. **`max_iterations=5` is the safety net**: Even when escalation doesn't fire, the loop always stops at 5. This is the same bounded termination guarantee as an FSM — but for multi-agent orchestration.
 
@@ -855,7 +858,7 @@ Session 2 (5 iterations):
 ### Key teaching points for class
 
 1. **"LoopAgent = bounded iteration."** `max_iterations` guarantees termination. Same FSM principle — the loop MUST stop.
-2. **"`escalate = True` breaks the loop."** One line in a callback. The parent LoopAgent reads this and stops iterating. Like setting `is_terminal = True` in an FSM.
+2. **"`escalate = True` breaks the loop — if it reaches the loop."** In a callback, pair it with a state write so ADK emits an event carrying it. The parent LoopAgent reads that event and stops iterating. Like setting `is_terminal = True` in an FSM.
 3. **"This is the negotiation loop."** `negotiation/agent.py` uses `LoopAgent(sub_agents=[SequentialAgent(buyer, seller)], max_iterations=5)`. Each iteration is one negotiation round. The seller's `after_agent_callback` checks for ACCEPT and escalates.
 4. **"Compare to the naive `while True` problem."** A naive baseline has `while True` with no termination guarantee. LoopAgent replaces that with bounded iteration + explicit escalation. No while True, no emergency exits.
 5. **"output_key overwrites in loops."** Each iteration writes the same key. Only the last value survives. If you need history, use `ToolContext.state` like d03 to accumulate an array.
@@ -1786,6 +1789,8 @@ def _check_agreement(callback_context):
     """Reads structured state — NOT free text."""
     decision = callback_context.state.get("seller_decision")
     if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        # State write required — a bare escalate is dropped (see Demo 06).
+        callback_context.state["loop_exit_reason"] = f"ACCEPT at ${decision['price']:,}"
         callback_context.actions.escalate = True
     return None
 

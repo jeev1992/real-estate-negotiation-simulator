@@ -107,6 +107,8 @@ def _check_agreement_with_approval(callback_context: CallbackContext):
     Tier 3: (handled by buyer's budget callback, not here)
     """
     if callback_context.state.get("deal_finalized"):
+        # ADK drops a bare escalate: a callback only emits an event if it changes state.
+        callback_context.state["loop_exit_reason"] = "DEAL_FINALIZED"
         callback_context.actions.escalate = True
         return None
 

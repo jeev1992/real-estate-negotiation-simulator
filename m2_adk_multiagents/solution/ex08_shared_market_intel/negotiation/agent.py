@@ -172,6 +172,8 @@ def _seed_comps(callback_context: CallbackContext):
 def _check_agreement(callback_context: CallbackContext):
     decision = callback_context.state.get("seller_decision")
     if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        # ADK drops a bare escalate: a callback only emits an event if it changes state.
+        callback_context.state["loop_exit_reason"] = f"ACCEPT at ${decision.get('price', 0):,}"
         callback_context.actions.escalate = True
     return None
 

@@ -8,7 +8,8 @@ is in the target range and escalates (breaks the loop) when it is.
 ADK CONCEPTS:
   - LoopAgent: iterates sub-agents until a stop condition
   - after_agent_callback: runs after each agent turn
-  - callback_context.actions.escalate = True: breaks the loop
+  - callback_context.actions.escalate = True: breaks the loop — but only
+    when the callback also writes state (a bare escalate is dropped)
   - output_key: captures each iteration's output in state
 
 Run:
@@ -32,6 +33,8 @@ def stop_when_in_range(callback_context: CallbackContext):
     except ValueError:
         return None
     if 450_000 <= price <= 470_000:
+        # ADK drops a bare escalate: a callback only emits an event if it changes state.
+        callback_context.state["loop_exit_reason"] = f"{price:,} is in range"
         callback_context.actions.escalate = True
     return None
 

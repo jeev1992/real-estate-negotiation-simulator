@@ -133,6 +133,8 @@ def _check_agreement(callback_context: CallbackContext):
     """After the seller responds, check the structured decision. Escalate on ACCEPT."""
     decision = callback_context.state.get("seller_decision")
     if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        # ADK drops a bare escalate: a callback only emits an event if it changes state.
+        callback_context.state["loop_exit_reason"] = f"ACCEPT at ${decision.get('price', 0):,}"
         callback_context.actions.escalate = True
     return None
 
@@ -140,6 +142,7 @@ def _check_agreement(callback_context: CallbackContext):
 def _check_walk_away(callback_context: CallbackContext):
     """After the buyer responds, end the negotiation if the buyer walked away."""
     if callback_context.state.get("buyer_walk_away"):
+        callback_context.state["loop_exit_reason"] = "BUYER_WALK_AWAY"
         callback_context.actions.escalate = True
     return None
 

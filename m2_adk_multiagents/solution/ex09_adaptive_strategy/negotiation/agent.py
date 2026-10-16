@@ -133,6 +133,8 @@ def _accumulate_memory_and_check(callback_context: CallbackContext):
     # ─ Job 1: acceptance check ───────────────────────────────────────────
     decision = state.get("seller_decision")
     if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        # ADK drops a bare escalate: a callback only emits an event if it changes state.
+        state["loop_exit_reason"] = f"ACCEPT at ${decision.get('price', 0):,}"
         callback_context.actions.escalate = True
         return None
 

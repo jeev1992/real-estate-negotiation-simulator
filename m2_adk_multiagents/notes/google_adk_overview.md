@@ -1195,6 +1195,15 @@ In the demo, the haggler's `after_agent_callback` parses the proposed
 price and sets `callback_context.actions.escalate = True` once the price
 is in the target range.
 
+> **Gotcha — a bare escalate in a callback is dropped.** ADK only turns an
+> `after_agent_callback` / `before_agent_callback` into an Event when the
+> callback returns content **or changes state**. Setting
+> `actions.escalate = True` with nothing else produces no event, so the
+> `LoopAgent` never sees it and keeps iterating. Always pair it with a
+> state write, e.g. `callback_context.state["loop_exit_reason"] = "..."`.
+> (Escalating from inside a *tool* via `tool_context.actions` is fine —
+> the tool's response event always carries it.)
+
 Use it for: iterate-until-good-enough loops (refine, retry, sample).
 
 **Demo:** `m2_adk_multiagents/adk_demos/d06_loop/agent.py`.
@@ -1374,6 +1383,8 @@ def _check_agreement(callback_context: CallbackContext):
     """Read structured state, not free text."""
     decision = callback_context.state.get("seller_decision")
     if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        # State write is required — a bare escalate is dropped (see 14.3).
+        callback_context.state["loop_exit_reason"] = f"ACCEPT at ${decision['price']:,}"
         callback_context.actions.escalate = True
     return None
 ```
@@ -1429,6 +1440,8 @@ events are.
 **Escalation** is how you break out of containers. Setting
 `actions.escalate = True` tells the nearest parent workflow agent
 (`LoopAgent` is the typical target) to stop iterating after this event.
+From an agent callback, the escalate only reaches the loop if the callback
+also changes state (otherwise no event is emitted — see 14.3).
 
 State deltas attached to events become the canonical record of how state
 changed during the invocation — the `negotiation_agents/negotiation/agent.py`
