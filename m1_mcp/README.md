@@ -93,14 +93,14 @@ This is the first custom MCP server. It wraps simulated real estate pricing data
 **Two transport modes (same server, different usage):**
 
 ```bash
-# stdio — default, client spawns this as a subprocess (used by Modules 3 + 4)
+# stdio — default, client spawns this as a subprocess (used by Module 2's ADK agents)
 python m1_mcp/pricing_server.py
 
 # SSE — HTTP server, multiple clients can connect at once
 python m1_mcp/pricing_server.py --sse --port 8001
 ```
 
-In Modules 3 and 4, the agents start this server automatically as a subprocess. You don't need to run it manually — but you *can* to inspect it.
+In Module 2, the ADK agents (via `MCPToolset`) start this server automatically as a subprocess. You don't need to run it manually — but you *can* to inspect it.
 
 ---
 
@@ -190,7 +190,7 @@ python m1_mcp/sse_agent_client.py --both              # includes inventory queri
 **What to expect from the pricing/inventory servers:**
 - They start and wait for a client to connect
 - On their own they don't print much — they're servers
-- In Modules 3 and 4, the agents connect to them automatically
+- In Module 2, the ADK agents connect to them automatically
 
 ---
 
@@ -299,4 +299,4 @@ Each solution lives in `solution/<exercise_name>/` as a self-contained, runnable
 ## Quick mental model
 - If you want to see *how to build* an MCP server, read `pricing_server.py` (simpler, 2 tools) then `inventory_server.py` (adds the seller-only tool).
 - The `@mcp.tool()` decorator is all you need to expose a Python function as an MCP tool.
-- In Modules 3 and 4, both agents use these servers — you don't need to start them manually.
+- In Module 2, both agents use these servers — you don't need to start them manually.
