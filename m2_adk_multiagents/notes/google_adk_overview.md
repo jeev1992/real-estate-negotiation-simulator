@@ -1273,19 +1273,17 @@ Through `tool_context` a tool can:
 **`user:` vs `app:` in practice:** If Alice and Bob both use the app,
 `user:total_offers` has a different value for each (per-buyer). But
 `app:total_offers` is global — both see the same counter. `adk web` always
-uses `user_id="user"`, so the UI alone can't show the difference;
-`adk_demos/d03_sessions_state/run_multi_user.py` drives the agent as alice
-and bob on the same `session.db` and prints the `sessions`, `user_states`,
-and `app_states` tables side by side.
+uses `user_id="user"`, so in the UI the two move together; a real app
+creates its own `Runner` and passes each person's `user_id`, and then they
+diverge.
 
 In our agents, `negotiation_agents/buyer_agent/agent.py` uses
 `before_tool_callback=_enforce_buyer_allowlist` to scope the buyer's
 allowed tools. The seller has a similar allowlist that additionally
 permits `get_minimum_acceptable_price`.
 
-**Demo:** `m2_adk_multiagents/adk_demos/d03_sessions_state/` — `agent.py`
-writes session, `user:`, and `app:` state; `run_multi_user.py` shows several
-users sharing one database.
+**Demo:** `m2_adk_multiagents/adk_demos/d03_sessions_state/agent.py` —
+writes session, `user:`, and `app:` state from one tool.
 
 ---
 
@@ -1718,7 +1716,7 @@ These pieces land in our module as follows:
 | `after_agent_callback` escalation | Seller callback checks for ACCEPT, breaks the loop          |
 | Workflow agents (Seq/Par/Loop) | `adk_demos/d04–d06`                                            |
 | `AgentTool`                  | `adk_demos/d07_agent_as_tool`                                    |
-| `ToolContext` scoped state (session / `user:` / `app:`) | `adk_demos/d03_sessions_state` (+ `run_multi_user.py`) |
+| `ToolContext` scoped state (session / `user:` / `app:`) | `adk_demos/d03_sessions_state` |
 | Callbacks (guardrails / allowlist / result filtering) | `adk_demos/d08_callbacks`                 |
 | Event stream + state deltas  | `adk_demos/d09_event_stream` (`run_event_stream.py` prints each `Event`) |
 | Agent discovery convention   | `__init__.py` + `agent.py` + `root_agent` in every package       |

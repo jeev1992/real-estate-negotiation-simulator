@@ -206,7 +206,6 @@ python m1_mcp/demos/05_streamable_http_transport.py
 
 # MODULE 2: Google ADK + A2A protocol (needs OPENAI_API_KEY)
 adk web m2_adk_multiagents/adk_demos/               # ADK demos d01–d09 in dropdown
-python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py  # d03 as several users on one session DB
 python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py  # d09 in the terminal: print every ADK Event
 adk web m2_adk_multiagents/negotiation_agents/       # buyer, seller, negotiation in dropdown
 adk web --a2a m2_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Agent Cards
@@ -266,7 +265,7 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 |---|---|---|
 | d01 | `d01_basic_agent` | Bare `LlmAgent` + a Python function tool — the simplest possible ADK agent. |
 | d02 | `d02_mcp_tools` | `LlmAgent` + `MCPToolset` — ADK auto-spawns the MCP server and discovers its tools. |
-| d03 | `d03_sessions_state` | `ToolContext` state at three scopes — session, `user:`, and `app:`. `python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py` runs it as several users on one `session.db` and prints the tables. |
+| d03 | `d03_sessions_state` | `ToolContext` state at three scopes — session (this conversation), `user:` (this user), and `app:` (everyone). |
 | d04 | `d04_sequential` | `SequentialAgent` pipeline — each step's `output_key` feeds the next via `{placeholder}`. |
 | d05 | `d05_parallel` | `ParallelAgent` fan-out — concurrent agents writing to different state keys. |
 | d06 | `d06_loop` | `LoopAgent` that iterates until a callback sets `actions.escalate = True`. |

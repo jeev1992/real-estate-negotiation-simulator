@@ -92,7 +92,7 @@ If Alice and Bob both use the app:
 | `user:total_offers` | Alice's lifetime total (e.g., 5) | Bob's lifetime total (e.g., 3) |
 | `app:total_offers` | 42 (same for everyone) | 42 (same for everyone) |
 
-In `adk web`, the `user_id` is always `"user"` — the UI has no way to switch users — so on its own it can't show the difference between `user:` and `app:`. Demo 03's `run_multi_user.py` drives the agent as alice and bob on the same `session.db` and prints these tables; see the Demo 03 section below.
+In `adk web`, the `user_id` is always `"user"` — the UI has no way to switch users — so on its own it can't show the difference between `user:` and `app:`. A real app gets multiple users by creating its own `Runner` and passing each person's `user_id`; the Demo 03 section below walks through what would differ.
 
 **d01 specific data:**
 
@@ -373,9 +373,7 @@ Session 2 (1 query — demonstrates missing tool capability):
 
 ## Demo 03 — Sessions & State (`d03_sessions_state`)
 
-**Files:**
-- `adk_demos/d03_sessions_state/agent.py` (~100 lines) — the agent (`adk web`)
-- `adk_demos/d03_sessions_state/run_multi_user.py` (~140 lines) — terminal script that runs the same agent as several users on the same database
+**File:** `adk_demos/d03_sessions_state/agent.py` (~100 lines)
 
 ### What it teaches
 How tools read and write state via `ToolContext`, and how the **key prefix picks the scope** — who the value is shared with and which table of `session.db` it lands in:
@@ -388,17 +386,12 @@ How tools read and write state via `ToolContext`, and how the **key prefix picks
 
 (`temp:` keys exist too — visible only during the current invocation and never saved.)
 
-### How to run (class flow)
+### How to run
 
-The demo has two parts. **Part A** is the main demo in `adk web` with one user. **Part B** is optional (if time allows): a script plays other users against the *same* database, because the `adk web` UI always runs as one user, `"user"`, with no login or user switcher.
+1. **Before class** (with `adk web` stopped): delete `m2_adk_multiagents/adk_demos/d03_sessions_state/.adk/` so the counters start at 1.
+2. `adk web m2_adk_multiagents/adk_demos/` → pick `d03_sessions_state` → keep the **State tab** open.
 
-| | When | Command |
-|---|---|---|
-| Before class | Start from an empty database (with `adk web` stopped) | Delete `m2_adk_multiagents/adk_demos/d03_sessions_state/.adk/` (or run the script with `--reset`, which also adds alice/bob data) |
-| Part A | Main demo | `adk web m2_adk_multiagents/adk_demos/` → pick `d03_sessions_state`, keep the **State tab** open |
-| Part B | Optional | Stop `adk web` → `python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py` (**no `--reset`**) → restart `adk web` |
-
-### Part A — one user in `adk web` (actual run, gpt-4o, empty database)
+### Walkthrough (actual run, gpt-4o, empty database)
 
 | # | Type | Tool result | State tab afterwards | Point to make |
 |---|------|-------------|----------------------|---------------|
@@ -408,66 +401,25 @@ The demo has two parts. **Part A** is the main demo in `adk web` with one user. 
 | 4 | "How many offers have I made?" | `get_offer_history` → `this_session: []`, `this_buyer: 2`, `all_buyers: 2` | Unchanged | Reading all three scopes |
 | 5 | "I offer $450,000" | `offers_this_session: 1`, `your_total_offers: 3`, `all_buyers_total_offers: 3` | `offer_history: [450000]`, `user:total_offers: 3`, `app:total_offers: 3` | User state keeps counting in the new session |
 
-With one user, `user:` and `app:` always move together — they *look* the same. That is the cue for Part B.
+### Why `user:` and `app:` look the same here
 
-### Part B — several users, one database (optional)
+The `adk web` UI always runs as one user, `user_id="user"` — it has no login or user switcher. With a single user, `user:` and `app:` counters move together. Explain the difference with a second user:
 
-Stop `adk web`, then run the script **without `--reset`**. It plays alice (two conversations) and bob into the same `session.db` that already holds the class's `"user"` data, then prints the tables. Actual run, continuing from Part A:
+| | After alice's 3 offers | Then bob makes 1 offer |
+|---|---|---|
+| alice's `user:total_offers` | 3 | 3 (unchanged — bob has his own row) |
+| bob's `user:total_offers` | — | 1 |
+| `app:total_offers` (everyone) | 3 | **4** (one shared row) |
+| `app:buyers` | `["alice"]` | `["alice", "bob"]` |
 
-```
-alice: new session 1
-  I offer $430,000.    -> offers_this_session: 1, your_total_offers: 1, all_buyers_total_offers: 4
-  I offer $445,000.    -> offers_this_session: 2, your_total_offers: 2, all_buyers_total_offers: 5
-bob: new session 1
-  I offer $440,000.    -> offers_this_session: 1, your_total_offers: 1, all_buyers_total_offers: 6
-alice: new session 2
-  I offer $450,000.    -> offers_this_session: 1, your_total_offers: 3, all_buyers_total_offers: 7
-
-ONE DATABASE FOR EVERY USER: .../d03_sessions_state/.adk/session.db
-
-sessions  (no prefix — one row per user per conversation)
-  alice    c7ae81aa  {"offer_history":[430000,445000]}
-  alice    62a76c41  {"offer_history":[450000]}
-  bob      92c2dde0  {"offer_history":[440000]}
-  user     2c338b22  {"offer_history":[430000,445000]}
-  user     d03bb069  {"offer_history":[450000]}
-
-user_states  (user: prefix — one row per user, prefix stripped)
-  alice    {"total_offers":3}
-  bob      {"total_offers":1}
-  user     {"total_offers":3}
-
-app_states  (app: prefix — ONE row shared by all users, prefix stripped)
-  {"total_offers":7,"buyers":["user","alice","bob"],"highest_offer":{"price":450000,"user_id":"user"}}
-
-events per user (full conversation history, same table for everyone)
-  alice    12 events
-  bob      4 events
-  user     16 events
-```
-
-Read it row by row:
-- **`sessions`**: five rows — the two conversations from Part A (`user`) sit next to alice's two and bob's one, each with its own `offer_history`.
-- **`user_states`**: one row per person. alice's 3 and the class's 3 are separate counts; bob has 1. Nobody sees anyone else's.
-- **`app_states`**: **one** row with all 7 offers from `["user", "alice", "bob"]`. alice's first offer already reported `all_buyers_total_offers: 4` — the 3 from Part A were in this row.
-
-Then restart `adk web`, pick `d03_sessions_state`, click **New Session**, and type "I offer $452,000". Actual result:
-
-```
-record_offer -> offers_this_session: 1, your_total_offers: 4, all_buyers_total_offers: 8
-State tab    -> offer_history: [452000], user:total_offers: 4,
-                app:total_offers: 8, app:buyers: ["user", "alice", "bob"], app:highest_offer: $452,000 by user
-```
-
-The class's user continues its **own** count (4) but the app-wide count (8) includes alice's and bob's offers — they reached this user only through `app:` state.
+All of this lives in the **same** `session.db`: `sessions` and `user_states` rows are keyed by `user_id`, while `app_states` has a single row for the agent. A real app gets multiple users by creating its own `Runner` and passing each person's `user_id` to `runner.run_async(...)` — `adk web` just always passes `"user"`.
 
 ### If something goes wrong
 
 | Symptom | Fix |
 |---|---|
 | State doesn't change after an offer | The model answered without calling `record_offer`. Repeat with an explicit amount: "I offer $430,000" |
-| Script or `--reset` fails with "file in use" / database locked | `adk web` is still running — stop it first |
-| Counts don't start at 1 in Part A | Old rehearsal data. Stop `adk web` and delete the `.adk/` folder |
+| Counts don't start at 1 | Old data in the database. Stop `adk web` and delete the `.adk/` folder |
 
 ### Key code elements
 
@@ -488,42 +440,33 @@ def record_offer(price: int, tool_context: ToolContext) -> dict:
     ...
 ```
 
-The script uses the same storage class and file as `adk web`:
-
-```python
-runner = Runner(agent=root_agent, app_name="d03_sessions_state",
-                session_service=SqliteSessionService(db_path=".../d03_sessions_state/.adk/session.db"))
-await runner.run_async(user_id="alice", session_id=..., new_message=...)
-```
-
 ### Concepts introduced
 
 | Concept | Detail |
 |---------|--------|
 | **`ToolContext`** | ADK injects this into any tool that declares `tool_context: ToolContext`. ADK hides it from the LLM's JSON schema — the LLM never sees it |
 | **One `state` view, three scopes** | Tools read and write `tool_context.state` like one dict; ADK routes each key by prefix to the `sessions`, `user_states`, or `app_states` table, and merges them back when loading the session |
-| **`tool_context.user_id`** | Identifies the caller. `adk web` always passes `"user"`; your own app (or the script) passes real user IDs |
+| **`tool_context.user_id`** | Identifies the caller. `adk web` always passes `"user"`; a real app passes real user IDs |
 | **Prefix stripped in storage** | `user:total_offers` is stored as `total_offers` in the `user_states` row — the table itself is the scope |
 | **Update shared state from its own value** | `user:` and `app:` counters are incremented, never derived from session data. Setting `user:total_offers = len(offer_history)` would reset it in every new session, because `offer_history` starts empty there |
-| **App state is shared and unguarded** | Every user can read and write `app:` keys. Here that exposes the highest offer and buyer IDs to everyone — fine for a demo, but a privacy decision in a real app |
+| **App state is shared and unguarded** | Every user can read and write `app:` keys. Here that would expose the highest offer and buyer IDs to everyone — fine for a demo, but a privacy decision in a real app |
 
 ### Key observations
 
-1. **One file, every user.** The `sessions`, `user_states`, `app_states`, and `events` tables are all keyed by `app_name` (and `user_id` where relevant). Many users don't need many databases — the keys keep their data apart.
+1. **One tool call, three tables.** The same `record_offer` call writes `offer_history`, `user:total_offers`, and the `app:` keys — the prefix, not the tool, decides where each lands.
 
-2. **Scope decides who sees a value, not which tool wrote it.** The same `record_offer` call writes to three tables at once.
+2. **New Session proves the scopes.** Step 3's State tab already shows `user:` and `app:` keys before any message, while `offer_history` is gone.
 
-3. **The UI is one user among many.** Back in `adk web` after the script, the class's `"user"` continues its own count (`your_total_offers: 4`) while `all_buyers_total_offers` jumps to 8 — alice's and bob's activity reaching it through `app:` state.
+3. **The State tab shows the merged view.** It lists session keys plus `user:` and `app:` keys (with prefixes) for the current user — the same merged dict the tools see.
 
-4. **The State tab shows the merged view.** It lists session keys plus `user:` and `app:` keys (with prefixes) for the current user — the same merged dict the tools see.
+4. **One database serves every user.** The `sessions`, `user_states`, `app_states`, and `events` tables are all keyed by `app_name` (and `user_id` where relevant). Many users don't need many databases — the keys keep their data apart.
 
 ### Key teaching points for class
 
 1. **"ToolContext is the magic parameter."** Add `tool_context: ToolContext` to any tool function and ADK injects it.
 2. **"The prefix is the scope."** No prefix → this conversation. `user:` → this user, forever. `app:` → everyone. `temp:` → this invocation only.
-3. **"One database serves every user."** Show the script's table dump: the class's own `user` rows sit next to alice's and bob's, separated only by key columns.
-4. **"`adk web` is single-user."** It always uses `user_id="user"`. To demo multiple users, drive the agent yourself with a `Runner` — exactly what a production app (FastAPI, Slack bot, …) does with real user IDs.
-5. **"This is how the negotiation agents track rounds."** The `negotiation/agent.py` orchestrator writes session state through tools (`submit_offer`, `submit_decision`) and `output_key`, and reads it back with `{placeholder}`. Exercise 08 uses `app:` state for shared market data.
+3. **"`adk web` is single-user."** It always uses `user_id="user"`, so `user:` and `app:` look identical here. A production app (FastAPI, Slack bot, …) creates its own `Runner` and passes real user IDs — then they diverge.
+4. **"This is how the negotiation agents track rounds."** The `negotiation/agent.py` orchestrator writes session state through tools (`submit_offer`, `submit_decision`) and `output_key`, and reads it back with `{placeholder}`. Exercise 08 uses `app:` state for shared market data.
 
 ---
 

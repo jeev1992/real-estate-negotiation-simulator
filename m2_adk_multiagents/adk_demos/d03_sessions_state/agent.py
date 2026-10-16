@@ -20,11 +20,9 @@ ADK CONCEPTS:
 
 Run:
     adk web m2_adk_multiagents/adk_demos/
-        The web UI always runs as user "user" and can't switch users.
-
-    python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py
-        Drives this agent as several users (alice, bob) and writes to the
-        SAME .adk/session.db that adk web uses, then prints its tables.
+        The web UI always runs as user "user", so user: and app: counters
+        move together there. A real app creates its own Runner and passes
+        each person's user_id — then they diverge.
 """
 
 import os
