@@ -1376,7 +1376,7 @@ The seller agent:
 - Spawned MCP tools (pricing + inventory servers)
 - Got market price: $462K estimated value
 - Got minimum acceptable price: $445K (seller-only tool)
-- Counter-offered at $477K with justification from $75K in upgrades
+- Recorded its decision with `submit_decision` (which enforces the floor in code) and counter-offered at $477K with justification from $75K in upgrades
 - **Task status: `completed`** — the agent processed the request successfully
 
 **Step 3 — Broken Envelope → Still Completed (not failed):**
@@ -1398,7 +1398,7 @@ Response:
 
 **`completed` means "the agent processed the request" — not "the negotiation succeeded."**
 
-> **Security observation:** The broken envelope got the seller to volunteer its floor price ($445K) without even asking. In an adversarial scenario, vague or confusing messages could trick an agent into over-sharing. This is why the `before_tool_callback` allowlist from Demo 08 matters — even if the LLM decides to be helpful, the callback can block access to sensitive tools.
+> **Security observation:** The broken envelope got the seller to volunteer its floor price ($445K) without even asking. In an adversarial scenario, vague or confusing messages could trick an agent into over-sharing. The seller's `before_tool_callback` allowlist does **not** help here — the seller is *allowed* to call `get_minimum_acceptable_price`; the allowlist only keeps that tool away from the buyer. Defenses for this case are the confidentiality rules in the seller's instruction and input screening such as Exercise 05's `before_model_callback` (prompt-injection defense). Responses vary run to run; a current run may decline instead of over-sharing.
 
 ### Concepts introduced
 
@@ -1458,37 +1458,36 @@ Round 4: POST /a2a/seller_agent  (NO contextId — server assigns NEW one)
          → Seller has ZERO memory — treats $440K as first-ever message
 ```
 
-### Actual results
+### Actual results (gpt-4o, current seller with `submit_decision`)
 
-| Round | Offer | contextId | Seller's Response | Why |
-|-------|-------|-----------|------------------|-----|
-| 1 | $432K | `46cc0efb` (new) | "Below floor ($445K). Counter at $477K." | MCP tools returned min price = $445K |
-| 2 | $440K | `46cc0efb` (reused) | "Still below $445K. As previously mentioned..." | Remembered round 1, still below floor |
-| 3 | $446K | `46cc0efb` (reused) | **"Meets the minimum. We ACCEPT! Congratulations!"** | $446K > $445K floor → accepted immediately |
-| **4** | **$440K** | **`dccf15c3` (new)** | **"Below our minimum of $445K. Would you increase?"** | **No memory — same price as round 2, completely different response** |
+Tool calls are read from each round's Task `history` (they appear as DataParts):
 
-**Rounds 1-3 contextId:** `46cc0efb-d3db-40ad-a638-142828a3c06e`
-**Round 4 contextId:** `dccf15c3-99c2-4887-957c-421793aa0201` (different — new conversation)
+| Round | Offer | contextId | Tool calls in this round | `submit_decision` result | Seller's reply |
+|-------|-------|-----------|--------------------------|--------------------------|----------------|
+| 1 | $432K | `3c114cc0` (new) | `get_market_price`, `get_inventory_level`, `get_minimum_acceptable_price`, `submit_decision` | COUNTER $477,000 | "We appreciate your offer but will COUNTER with $477,000..." |
+| 2 | $440K | `3c114cc0` (reused) | `submit_decision` **only** | COUNTER $469,000 | "...we will need to COUNTER at $469,000" |
+| 3 | $446K | `3c114cc0` (reused) | `submit_decision` **only** — model sent **COUNTER $461,000** | **ACCEPT $446,000** (+ note) | "We are pleased to ACCEPT your offer of $446,000" |
+| **4** | **$440K** | **`6776a3c2` (new)** | **all three MCP tools again**, then `submit_decision` | COUNTER $456,000 | "We COUNTER your offer at $456,000..." |
 
-> **The contrast between round 2 and round 4 is the proof.** Same price ($440K), same seller, same MCP tools — but round 2 says *"as previously mentioned"* (memory) while round 4 treats it as a first-ever offer (no memory). The only difference is contextId.
+> **The contrast between round 2 and round 4 is the proof.** Same price ($440K), same seller — but round 2 makes no MCP calls (it already knows the market data and floor from round 1's history), while round 4 calls all three MCP tools again because it has zero memory. The only difference is contextId.
 
-> **Bonus evidence in the history arrays:** Round 2's history contains only TextParts (user message + agent response) — **no tool call DataParts** — because the seller remembered the floor from round 1's MCP calls. Round 4's history contains **DataParts for `get_market_price` and `get_inventory_level`** — the seller had to call MCP tools fresh because it had zero memory. Tool calls reappear when memory is lost.
+> **Round 3 shows the floor enforced in code.** $446K is above the $445K floor, yet the model sent `COUNTER $461,000`. `submit_decision` recorded `ACCEPT $446,000` and its note told the model to accept, so the reply said ACCEPT. It didn't need to re-check the floor: the floor was saved to session state in round 1, and with the same contextId that state is still there.
 
 ### Concepts introduced
 
 | Concept | Detail |
 |---------|--------|
 | **`contextId`** | A string that ties multiple Tasks into one conversation. Assigned by the server on round 1, reused by the client on rounds 2+. Round 4 proves: drop contextId → drop memory |
-| **Conversation memory via protocol** | Without contextId, the seller counters at $477K every time (no memory). With it, the seller adjusts based on prior offers. Round 2 vs round 4 is the direct proof — same $440K, opposite responses |
-| **A2A threading vs ADK sessions** | `contextId` in A2A = `session_id` in ADK. Same concept (conversation continuity), different level (HTTP vs in-process) |
-| **Acceptance logic** | The seller instruction says "if offer >= minimum, ACCEPT immediately." Round 3 ($446K > $445K) triggered this — the seller remembered the floor from MCP tools |
+| **Conversation memory via protocol** | With the same contextId the seller reuses what it learned (no repeat MCP calls). Without it, it starts over and calls every tool again |
+| **A2A threading vs ADK sessions** | `contextId` in A2A = `session_id` in ADK. Same concept (conversation continuity), different level (HTTP vs in-process). ADK session state — like the saved floor — persists per contextId too |
+| **Acceptance enforced in code** | The seller's `submit_decision` records any offer at or above the floor as ACCEPT, whatever the model sent. Round 3 is a live example: COUNTER $461K → recorded ACCEPT $446K |
 
 ### Key teaching points for class
 
 1. **"contextId = session_id for HTTP."** In d03, session state persisted across turns within `adk web`. Here, `contextId` does the same across HTTP requests. Without it, every POST is a brand new conversation.
-2. **"The seller's response changed across rounds."** Round 1: "$432K is below floor." Round 2: "STILL below." Round 3: "ACCEPT." The seller remembered the negotiation history because all 3 rounds shared the same contextId.
-3. **"$446K crossed the $445K floor."** The acceptance was immediate — the seller didn't try to counter higher. This is the MCP-driven floor enforcement from `get_minimum_acceptable_price` combined with conversation context.
-4. **"Round 4 is the proof by contradiction."** Same $440K as round 2, but no contextId → the seller treats it as a first-ever offer. Compare round 2 ("as previously mentioned") to round 4 ("Thank you for your offer") — memory vs amnesia. **contextId is the ONLY difference.**
+2. **"The seller's behavior changed across rounds."** Round 1: full MCP research. Rounds 2–3: no research, just a decision — it remembered. Round 4: full research again.
+3. **"$446K crossed the $445K floor — and code made sure it was accepted."** The model tried to counter; `submit_decision` overrode it. A rule that must hold lives in code, not in the prompt.
+4. **"Round 4 is the proof by contradiction."** Same $440K as round 2, but no contextId → the seller re-runs every MCP tool as if it were the first offer. **contextId is the ONLY difference.**
 5. **"This is what a real multi-round negotiation looks like over A2A."** Each round is an independent HTTP request, but contextId ties them together into one coherent negotiation.
 
 ---
@@ -1519,13 +1518,15 @@ parts[1]: DataPart  → {"hint": "machine-readable copy", "offer": {...}}
 ```
 Same offer in two formats — human-readable text AND structured JSON. The agent can parse either.
 
-**Response message history showed 5 messages:**
-1. `role=user, 2 parts` — the multi-part offer we sent
-2. `role=agent, 3 DataParts` — MCP tool CALLS (get_market_price, get_minimum_acceptable_price, calculate_discount)
-3. `role=agent, 3 DataParts` — MCP tool RESULTS (structured responses from each tool)
-4. `role=agent, 1 TextPart` — the final acceptance text
+**Response message history (actual run, gpt-4o):**
+1. `role=user, 2 parts` — the multi-part offer we sent (it appears twice in the history)
+2. `role=agent, 3 DataParts` — MCP tool CALLS (`id`, `name`, `args`)
+3. `role=agent, 3 DataParts` — MCP tool RESULTS (`id`, `name`, `response`)
+4. `role=agent, 1 DataPart` — `submit_decision` CALL
+5. `role=agent, 1 DataPart` — `submit_decision` RESULT
+6. `role=agent, 1 TextPart` — "SELLER: We ACCEPT your offer of $445,000..."
 
-**The seller ACCEPTED at $445K** — exactly at the floor price.
+**The seller ACCEPTED at $445K** — exactly at the floor price. The decision went through `submit_decision`, which records any offer at or above the floor as ACCEPT.
 
 ### Concepts introduced
 
@@ -1533,14 +1534,14 @@ Same offer in two formats — human-readable text AND structured JSON. The agent
 |---------|--------|
 | **Multi-part Messages** | One Message can carry multiple Parts of different types. TextPart for humans, DataPart for machines |
 | **DataPart** | Structured JSON content: `{"kind": "data", "data": {...}}`. Unlike TextPart (free text), DataPart is machine-parseable without LLM inference |
-| **Tool calls as DataParts** | MCP tool calls and results appear as DataParts in the message history — structured, not text. Same mechanism we saw in Demo 11 round 4 |
+| **Tool calls as DataParts** | MCP tool calls and results — and the `submit_decision` call — appear as DataParts in the message history: structured, not text. Same mechanism we saw in Demo 11 |
 
 ### Key teaching points for class
 
 1. **"Use DataPart when you need both human and machine representations."** The offer was sent as TextPart (LLM reads it) AND DataPart (code parses it). Both travel in the same Message.
 2. **"Tool calls show up as DataParts in history."** The MCP tool calls and results are structured data, not text — you can programmatically inspect what tools were called without parsing text.
-3. **"$445K = exact floor = immediate acceptance."** The seller instruction says "if offer >= minimum, ACCEPT immediately." $445K = $445K floor → accepted.
-4. **"This connects back to Demo 11."** Remember round 4's history had tool-call DataParts because the seller had no contextId? Same mechanism here — DataParts are how A2A exposes tool usage in the history.
+3. **"$445K = exact floor = guaranteed acceptance."** `submit_decision` records any offer at or above the floor as ACCEPT — the instruction asks for it, the code guarantees it.
+4. **"This connects back to Demo 11."** Round 1 and round 4 there showed MCP tool calls as DataParts in the history — same mechanism here. DataParts are how A2A exposes tool usage, including the decision tool.
 
 ---
 
@@ -1548,12 +1549,12 @@ Same offer in two formats — human-readable text AND structured JSON. The agent
 
 ### buyer_agent
 
-**File:** `negotiation_agents/buyer_agent/agent.py` (~70 lines)
+**File:** `negotiation_agents/buyer_agent/agent.py` (~90 lines)
 
 **How to run:**
 
 ```bash
-adk web m2_adk_multiagents/negotiation_agents/buyer_agent/
+adk web m2_adk_multiagents/negotiation_agents/
 ```
 
 Open http://localhost:8000, select `buyer_agent` from the dropdown.
@@ -1621,17 +1622,17 @@ Query 2: "I want to make an offer. What do you recommend?"
 
 ### seller_agent
 
-**File:** `negotiation_agents/seller_agent/agent.py` (~85 lines)
+**File:** `negotiation_agents/seller_agent/agent.py` (~200 lines)
 
 **How to run:**
 
 ```bash
-adk web m2_adk_multiagents/negotiation_agents/seller_agent/
+adk web m2_adk_multiagents/negotiation_agents/
 ```
 
 Open http://localhost:8000, select `seller_agent` from the dropdown.
 
-**What it is:** A standalone `LlmAgent` with TWO `MCPToolset`s (pricing + inventory) and a `before_tool_callback` allowlist. Has access to `get_minimum_acceptable_price` — the seller's secret floor.
+**What it is:** A standalone `LlmAgent` with TWO `MCPToolset`s (pricing + inventory), a `before_tool_callback` allowlist, and a `submit_decision` tool that enforces the seller's floor in code. Has access to `get_minimum_acceptable_price` — the seller's secret floor. This is also the agent the A2A demos (10–13) talk to.
 
 **Key code elements:**
 
@@ -1641,19 +1642,29 @@ _SELLER_ALLOWED_TOOLS = {
     "calculate_discount",
     "get_inventory_level",
     "get_minimum_acceptable_price",  # seller-only secret
+    "submit_decision",               # structured decision, floor enforced in code
 }
+
+def submit_decision(action: str, price: int, buyer_offer: int, tool_context: ToolContext) -> dict:
+    """Records ACCEPT/COUNTER; an offer at or above the floor is always recorded as ACCEPT."""
+    decision = _apply_floor_policy(action, price, buyer_offer, tool_context.state.get("seller_floor_price"))
+    ...
 
 root_agent = LlmAgent(
     name="seller_agent",
     model="openai/gpt-4o",
-    instruction="... never go below minimum from get_minimum_acceptable_price ...",
+    instruction="... call submit_decision every round; your reply MUST follow what it recorded ...",
     tools=[
         MCPToolset(pricing_server),
         MCPToolset(inventory_server),    # ← second MCP server
+        submit_decision,
     ],
     before_tool_callback=_enforce_seller_allowlist,
+    after_tool_callback=_remember_seller_floor,   # saves the floor into session state
 )
 ```
+
+Unlike the orchestrator's version, this `submit_decision` takes `buyer_offer` as an argument — a standalone seller has no `submit_offer` from a buyer in its session.
 
 **Concepts used:** LlmAgent (d01), MCPToolset ×2 (d02), before_tool_callback (d08), information asymmetry
 
@@ -1671,12 +1682,12 @@ root_agent = LlmAgent(
 
 | Table | Contents |
 |-------|----------|
-| **sessions** | 2 rows |
-| **events** | 6 events across 2 queries |
+| **sessions** | 1 row — state has `seller_floor_price: 445000` and `seller_decision: {"action": "ACCEPT", "price": 446000}` |
+| **events** | 10 events across 2 queries |
 | **app_states** | Empty |
 | **user_states** | Empty |
 
-**Full event flow (6 events):**
+**Full event flow (actual run, gpt-4o):**
 
 ```
 Query 1: "Buyer offers $440,000 with 30-day close"
@@ -1685,33 +1696,37 @@ Query 1: "Buyer offers $440,000 with 30-day close"
   Event 2 | seller_agent: tool_call: get_market_price(...)
                           tool_call: get_inventory_level(...)
                           tool_call: get_minimum_acceptable_price(...)   ← ALL 3 IN PARALLEL
-  Event 3 | seller_agent: tool_results: [market=$462K, inventory=hot, floor=$445K]
-  Event 4 | seller_agent: "$440,000 is below our minimum of $445,000. COUNTER at $477,000."
+  Event 3 | seller_agent: tool_results (market, inventory, floor=$445K → saved to state)
+  Event 4 | seller_agent: tool_call: submit_decision(COUNTER, 477000, buyer_offer=440000)
+  Event 5 | seller_agent: tool_result: {recorded: COUNTER, price: 477000}
+  Event 6 | seller_agent: "SELLER: We must COUNTER at $477,000..."
 
 Query 2: "Buyer increases to $446,000"
 
-  Event 5 | user:         "Buyer increases to $446,000"
-  Event 6 | seller_agent: "$446,000 is above $445,000. ACCEPT."   ← NO tool calls (remembered)
+  Event 7  | user:         "Buyer increases to $446,000"
+  Event 8  | seller_agent: tool_call: submit_decision(COUNTER, 470000, buyer_offer=446000)   ← model tried to counter
+  Event 9  | seller_agent: tool_result: {recorded: ACCEPT, price: 446000, note: "...Your reply MUST accept it..."}
+  Event 10 | seller_agent: "SELLER: We ACCEPT the offer of $446,000..."
 ```
 
 **Key observations:**
 
-1. **3 tools in ONE turn (parallel)**: The LLM called `get_market_price`, `get_inventory_level`, and `get_minimum_acceptable_price` simultaneously. Unlike d09's parallel pitfall, these are truly independent — no data dependencies, so parallel is correct here.
+1. **3 tools in ONE turn (parallel)**: The LLM called `get_market_price`, `get_inventory_level`, and `get_minimum_acceptable_price` simultaneously. These are truly independent — no data dependencies, so parallel is correct here. (If one tool needed another's output, parallel calls would force the LLM to guess arguments — use a SequentialAgent (d04) to enforce ordering.)
 
-2. **No tool calls on query 2**: The seller remembered the floor price ($445K) from query 1's session history. It didn't need to re-call the tool. This shows session memory working correctly.
+2. **No MCP calls on query 2**: The seller remembered the market data and floor from query 1. Only `submit_decision` ran — and it didn't need the floor tool again, because `_remember_seller_floor` had saved it to session state.
 
-3. **Immediate acceptance at $446K**: The instruction says "if offer >= minimum, ACCEPT immediately." $446K > $445K → accepted, no counter-offer.
+3. **The model tried to counter $446K — code accepted it.** The instruction says to accept anything at or above the minimum, but the model sent `COUNTER $470,000`. `submit_decision` recorded `ACCEPT $446,000` and its note made the reply accept. This is why the floor rule lives in code.
 
 4. **Two MCPToolset instances**: The seller connects to two separate MCP servers — `pricing_server.py` and `inventory_server.py`. ADK merges their tools into one unified set for the LLM.
 
 ### negotiation orchestrator
 
-**File:** `negotiation_agents/negotiation/agent.py` (~100 lines)
+**File:** `negotiation_agents/negotiation/agent.py` (~375 lines)
 
 **How to run:**
 
 ```bash
-adk web m2_adk_multiagents/negotiation_agents/negotiation/
+adk web m2_adk_multiagents/negotiation_agents/
 ```
 
 Open http://localhost:8000, select `negotiation` from the dropdown. Type "Start negotiation for 742 Evergreen Terrace" to kick off a full buyer ↔ seller loop.
@@ -1796,56 +1811,63 @@ Fix: `before_agent_callback=_init_round_state` on the buyer. It checks if the ke
 
 | Table | Contents |
 |-------|----------|
-| **sessions** | 1 row — state has `buyer_offer`, `seller_response`, and `seller_decision` |
-| **events** | 20 events: MCP tool calls + LLM responses + submit_decision calls |
+| **sessions** | 1 row — state has `offer_history`, `buyer_offer_price`, `seller_floor_price`, `seller_decision`, `loop_exit_reason`, plus `buyer_offer` / `seller_response` (output_key text) |
+| **events** | One user message, then per round: buyer MCP calls + `submit_offer` + offer text, seller MCP calls + `submit_decision` + reply text, and the escalation event at the end |
 | **app_states** | Empty |
 | **user_states** | Empty |
 
-**Full event flow (20 events, 2 negotiation rounds + post-acceptance):**
+**Event flow (actual run, gpt-4o — 3 rounds):**
 
 ```
-  Event 1  | user:   "Start negotiation for 742 Evergreen Terrace"
+  user:   "Start the negotiation."
 
-Round 1 (buyer calls MCP tools, seller calls MCP tools + submit_decision):
-  Event 3  | buyer:  tool_call: get_market_price + calculate_discount
-  Event 4  | buyer:  tool_results (market data: $462K estimated, $485K list)
-  Event 5  | buyer:  "Offer: $425,800. Based on market data..."
-  Event 6  | seller: tool_call: get_minimum_acceptable_price + get_inventory_level
-  Event 7  | seller: tool_results (floor=$445K, hot market)
-  Event 8  | seller: "COUNTER $477,000" + tool_call: submit_decision(COUNTER, 477000)
-  Event 9  | seller: tool_result: {recorded: COUNTER, price: 477000}
-  Event 10 | seller: "I've recorded the counter-offer at $477,000."
+Round 1:
+  buyer:  get_market_price + calculate_discount  →  submit_offer(425000) → {recorded: 425000}
+  buyer:  "BUYER: ... $425,000 ..."
+  seller: get_market_price + get_inventory_level + get_minimum_acceptable_price
+          (_remember_seller_floor saves seller_floor_price = 445000)
+  seller: submit_decision(COUNTER, 477000) → {recorded: COUNTER, price: 477000}
+  seller: "SELLER: ... $477,000 ..."
 
-Round 2 (buyer jumps to target, seller accepts):
-  Event 11 | buyer:  "Offer: $445,000..."
-  Event 12 | seller: "Accepted" + tool_call: submit_decision(ACCEPT, 445000)
-  Event 13 | seller: tool_result: {recorded: ACCEPT, price: 445000}  ← ESCALATE fires!
-  Event 14 | seller: "The offer of $445,000 has been accepted."
+Round 2:
+  buyer:  submit_offer(438000) → {recorded: 438000}
+  seller: submit_decision(COUNTER, 470000) → {recorded: COUNTER, price: 470000}
 
-Post-acceptance (current iteration completes):
-  Event 15-20 | buyer/seller congratulatory messages
+Round 3:
+  buyer:  submit_offer(447000) → {recorded: 447000}
+  seller: submit_decision(ACCEPT, 447000) → {recorded: ACCEPT, price: 447000}
+  seller: after_agent_callback → state["loop_exit_reason"] = "ACCEPT at $447,000", escalate
+          ← LoopAgent stops here. No round 4, no extra messages.
 ```
 
 **State tab after completion:**
 ```json
 {
-  "seller_decision": {"action": "ACCEPT", "price": 445000},
-  "buyer_offer": "...(last congratulatory message)...",
-  "seller_response": "...(last congratulatory message)..."
+  "offer_history": [
+    {"role": "buyer",  "action": "OFFER",   "price": 425000},
+    {"role": "seller", "action": "COUNTER", "price": 477000},
+    {"role": "buyer",  "action": "OFFER",   "price": 438000},
+    {"role": "seller", "action": "COUNTER", "price": 470000},
+    {"role": "buyer",  "action": "OFFER",   "price": 447000},
+    {"role": "seller", "action": "ACCEPT",  "price": 447000}
+  ],
+  "buyer_offer_price": 447000,
+  "seller_floor_price": 445000,
+  "seller_decision": {"action": "ACCEPT", "price": 447000},
+  "loop_exit_reason": "ACCEPT at $447,000",
+  "buyer_offer": "BUYER: ...", "seller_response": "SELLER: ..."
 }
 ```
 
 **Key observations:**
 
-1. **MCP tools grounded every decision**: The buyer used `get_market_price` ($462K estimated) to justify $425K. The seller used `get_minimum_acceptable_price` ($445K floor) and `get_inventory_level` (hot market) to justify $477K counter.
+1. **MCP tools grounded every decision**: The buyer used `get_market_price` ($462K estimated) and `calculate_discount` to justify $425K. The seller used `get_minimum_acceptable_price` ($445K floor) and `get_inventory_level` to justify the $477K counter.
 
-2. **`submit_decision` is the structured signal**: Events 8–9 show `submit_decision(COUNTER, 477000)` → `{recorded: COUNTER}`. Events 12–13 show `submit_decision(ACCEPT, 445000)` → `{recorded: ACCEPT}` → escalation fires. No text parsing.
+2. **Both sides decide through tools**: `submit_offer` records the buyer's price (and rejects anything over $460K); `submit_decision` records the seller's ACCEPT/COUNTER (and enforces the floor). `offer_history` is built from those tool calls, not from parsing text.
 
-3. **Buyer jumped from $425K to $445K in round 2**: With MCP data, the buyer had enough market context to skip incremental increases and go straight to the target range.
+3. **The loop ends on the ACCEPT round.** The seller is the last agent in the round, so after its `after_agent_callback` escalates there is nothing left to run — no post-acceptance chatter. (An earlier version of this demo did show an extra round of "congratulations" messages: its callback set `escalate` without writing state, so ADK never emitted the escalation event and the loop kept going. See the gotcha in Demo 06.)
 
-4. **Post-acceptance chatter still occurs**: Escalation stops the NEXT iteration, not the current one — the remaining sub-agents in the SequentialAgent complete.
-
-5. **`seller_decision` dict survives in state**: Unlike `seller_response` (overwritten by chatter), the `seller_decision` dict retains the final structured answer: `{"action": "ACCEPT", "price": 445000}`.
+4. **The floor is checked in code every round.** Here the model accepted $447K on its own, but `submit_decision` would have turned a COUNTER into ACCEPT anyway — as it did in the seller_agent run above and in Demo 11 round 3.
 
 ### A2A Orchestrated Negotiation (Demo 13)
 
@@ -1888,7 +1910,8 @@ STEP 2: Multi-Round Negotiation
 **Key details:**
 - **Separate contextIds**: Each agent has its own conversation thread. The script bridges them.
 - **Neither agent knows about the other**: They only see messages from the script.
-- **Each agent calls its own MCP tools**: Buyer calls pricing, seller calls pricing + inventory.
+- **Each agent calls its own MCP tools**: Buyer calls pricing, seller calls pricing + inventory, then records its decision with `submit_decision` (floor enforced in code).
+- **The script still reads the seller's reply text** for ACCEPT/COUNTER — over A2A it only sees the reply, not the seller's session state. The seller's prompt makes the reply match what `submit_decision` recorded.
 - **4 A2A messages total**: 2 to buyer, 2 to seller.
 
 ### Key teaching points
@@ -1897,11 +1920,11 @@ STEP 2: Multi-Round Negotiation
 
 2. **"The orchestrator composes everything."** LoopAgent (d06) + SequentialAgent (d04) + MCPToolset (d02) + output_key (d04) + callbacks (d08) + submit_decision tool. Students can identify every piece from the demos.
 
-3. **"Use structured signals, not text parsing."** `submit_decision` writes `{"action": "ACCEPT", "price": 445000}` to state. The callback reads a dict field. The seller's MCP tool returns "minimum acceptable price" — text parsing would match "ACCEPT" in "acceptable" and false-trigger.
+3. **"Use structured signals, not text parsing — and enforce rules in the tool."** `submit_decision` writes `{"action": "ACCEPT", "price": 445000}` to state. The callback reads a dict field. The seller's MCP tool returns "minimum acceptable price" — text parsing would match "ACCEPT" in "acceptable" and false-trigger. The same tool also enforces the floor, so a must-accept offer can't be countered.
 
 4. **"Watch for `{placeholder}` initialization."** If agent B reads `{key}` from agent A's output, but A hasn't run yet (round 1), ADK throws. Fix: `before_agent_callback` to initialize the key.
 
-5. **"Escalation stops the NEXT iteration, not the current one."** After ACCEPT, the current SequentialAgent's remaining sub-agents still complete. This produces congratulatory chatter.
+5. **"Escalate from the last agent, and make the escalation visible."** The seller runs last in each round, so escalating from its `after_agent_callback` ends the loop with no extra messages. The callback must also write state (`loop_exit_reason`) — a bare `escalate` is silently dropped and the loop keeps running.
 
 6. **"The A2A demo shows the production pattern."** Agents discovered via Agent Cards, communicating via JSON-RPC, each with separate contextIds. The script is just a matchmaker — swap it for another agent, and you have agent-to-agent negotiation over HTTP.
 
@@ -1915,11 +1938,11 @@ STEP 2: Multi-Round Negotiation
 | `root_agent` convention | d01 | Every adk web demo |
 | Function tools | d01 | d03, d08, d09 |
 | `MCPToolset` | d02 | buyer_agent, seller_agent, negotiation orchestrator |
-| `ToolContext` + state | d03 | d09 |
+| `ToolContext` + state | d03 | d09, negotiation (`submit_offer`, `submit_decision`) |
 | `output_key` + `{placeholder}` | d04 | d05, negotiation |
 | `SequentialAgent` | d04 | negotiation |
 | `ParallelAgent` | d05 | — |
-| `LoopAgent` + escalation | d06 | negotiation |
+| `LoopAgent` + escalation (with a state write) | d06 | negotiation |
 | `AgentTool` | d07 | — |
 | Callbacks (before/after) | d08 | buyer_agent, seller_agent, negotiation |
 | Event stream | d09 | — |
@@ -1929,5 +1952,5 @@ STEP 2: Multi-Round Negotiation
 | Artifacts | a2a_12 | — |
 | Information asymmetry | buyer vs seller | negotiation orchestrator |
 | `before_tool_callback` allowlist | d08 | buyer_agent, seller_agent, negotiation |
-| Structured decision tool | negotiation | a2a_13 (detection) |
+| Structured decision tool (+ floor enforced in code) | negotiation | seller_agent, a2a_10–13 |
 | A2A orchestration | a2a_13 | — |
