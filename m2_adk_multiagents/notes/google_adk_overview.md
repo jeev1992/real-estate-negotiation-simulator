@@ -1398,6 +1398,14 @@ The tool's response tells the model what was recorded, and the instruction
 says its reply must follow it. This is the seller-side twin of the buyer's
 $460K cap in `submit_offer`.
 
+**Limitation:** the policy only runs when the seller calls `submit_decision`.
+The instruction makes that mandatory, but the model can still skip the call
+and answer in prose, leaving that turn unchecked. A full fix forces a tool
+call until the decision is recorded — ADK's `tool_config` mode `ANY` set per
+request from a `before_model_callback`. ADK 1.x's LiteLLM bridge does not
+forward `tool_config` to OpenAI's `tool_choice`, so with OpenAI models this
+needs a small `LiteLlm` subclass.
+
 ### How the loop reads the decision
 
 The `LoopAgent` then escalates based on the typed dict, not on prose:

@@ -1839,6 +1839,8 @@ The seller's instruction says "if the offer is at or above your minimum, you MUS
 
 The floor comes from the seller's own MCP call: `_remember_seller_floor` (an `after_tool_callback`) copies it into `state["seller_floor_price"]`. No buyer prompt templates that key, so the buyer never sees it. The same pattern is used by the standalone `seller_agent` (A2A demos) and by every exercise solution with a seller.
 
+> **Known limitation:** the policy runs *inside* `submit_decision`, so it only applies when the seller actually calls the tool. The instructions make the call mandatory every turn and gpt-4o follows that in practice, but nothing forces it — if the model answers in prose without calling `submit_decision`, that turn's decision is unchecked (and in the orchestrators, an acceptance written only in prose won't end the loop). Closing this fully would mean forcing a tool call until the decision is recorded (OpenAI's `tool_choice="required"` / ADK's `tool_config` mode `ANY`, applied per request from a `before_model_callback`). ADK 1.x's LiteLLM bridge ignores `tool_config`, so with OpenAI models that needs a small `LiteLlm` subclass — a good stretch exercise.
+
 The `submit_decision` tool writes a structured dict: `{"action": "ACCEPT", "price": 445000}`. The callback reads `state["seller_decision"]["action"]` — a dict field, not prose. No substring matching, no regex, no false positives.
 
 **The `{seller_response}` pitfall and fix:**
