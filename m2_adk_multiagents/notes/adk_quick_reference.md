@@ -194,7 +194,7 @@ print(card["name"], card["description"], card["capabilities"])
 
 ## 9. A2A Client — "Client side discovery + messaging"
 
-For demos 10–14, use `a2a-sdk` or raw `httpx` to talk to `adk web --a2a` endpoints (and, for push in demo 13, `negotiation_a2a_server.py`).
+For demos 10–14, use `a2a-sdk` or raw `httpx` to talk to `adk web --a2a` endpoints.
 
 ```python
 from a2a.client import A2ACardResolver, ClientConfig, ClientFactory

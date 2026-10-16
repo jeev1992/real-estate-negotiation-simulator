@@ -1722,7 +1722,7 @@ Compare with the traditional approach (what we deleted):
 ### When you need a custom server
 
 `adk web --a2a` covers most cases. You'd write a custom A2A server when:
-- You need **push notifications** — ADK's built-in A2A server (`adk web --a2a` and `to_a2a()`) stores push configs but has no push sender, so it never POSTs to a webhook. `a2a_demos/negotiation_a2a_server.py` is the workshop's example: the same `Runner` + `A2aAgentExecutor`, plus a2a-sdk's `DefaultRequestHandler` with a `BasePushNotificationSender` (about 20 lines)
+- You need **push notifications** — ADK's built-in A2A server (`adk web --a2a` and `to_a2a()`) stores push configs but has no push sender, so it never POSTs to a webhook. You'd build the server from the same `Runner` + `A2aAgentExecutor`, plus a2a-sdk's `DefaultRequestHandler` with a `BasePushNotificationSender`
 - You need custom HTTP middleware (rate limiting, custom auth)
 - You need to transform messages before they reach the agent
 - You need to run multiple agents behind a single endpoint with custom routing
@@ -1732,7 +1732,7 @@ Compare with the traditional approach (what we deleted):
 - `a2a_demos/a2a_10_wire_lifecycle.py` — client talking to `adk web --a2a`
 - `a2a_demos/a2a_11_context_threading.py` — multi-turn via contextId
 - `a2a_demos/a2a_12_parts_and_artifacts.py` — multi-part messages
-- `a2a_demos/a2a_13_orchestrated_negotiation.py` — buyer polled, seller streamed, then the negotiation agent (via `negotiation_a2a_server.py`) pushes updates to a webhook
+- `a2a_demos/a2a_13_orchestrated_negotiation.py` — buyer polled, seller streamed, chosen from each Agent Card
 - `a2a_demos/a2a_14_error_handling.py` — transport, protocol, task and application errors from a client talking to `adk web --a2a`
 
 ---

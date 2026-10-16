@@ -1,11 +1,11 @@
 {
   "name": "negotiation",
-  "description": "Multi-round buyer-seller negotiation orchestrator for 742 Evergreen Terrace. Runs LoopAgent with SequentialAgent(buyer, seller) until agreement or max rounds. Long-running: register a webhook and receive task updates by push notification.",
-  "url": "http://localhost:8003/",
+  "description": "Multi-round buyer-seller negotiation orchestrator for 742 Evergreen Terrace. Runs LoopAgent with SequentialAgent(buyer, seller) until agreement or max rounds.",
+  "url": "http://localhost:8000/a2a/negotiation",
   "version": "1.0.0",
   "capabilities": {
     "streaming": false,
-    "pushNotifications": true
+    "pushNotifications": false
   },
   "defaultInputModes": ["text/plain"],
   "defaultOutputModes": ["text/plain"],

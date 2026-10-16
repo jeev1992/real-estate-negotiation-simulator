@@ -1,6 +1,6 @@
 # Module 2 — Demo Walkthrough & Concept Notes
 
-> **Audience:** Learners working through the 9 ADK demos (`d01`–`d09`) and the 3 A2A demos (`a2a_10`–`a2a_12`) plus the orchestrated negotiation with polling, streaming and push (`a2a_13`) and error handling (`a2a_14`). Use as a guided tour while you run.
+> **Audience:** Learners working through the 9 ADK demos (`d01`–`d09`) and the 3 A2A demos (`a2a_10`–`a2a_12`) plus the orchestrated negotiation with polling and streaming (`a2a_13`) and error handling (`a2a_14`). Use as a guided tour while you run.
 > **Prerequisites:** Python + `OPENAI_API_KEY` set. Familiarity with `mcp_deep_dive.md` helps once you reach demo 02.
 > **Read this *while* running:** the demos in `m2_adk_multiagents/adk_demos/` and the negotiation system in `m2_adk_multiagents/negotiation_agents/`. Sections are numbered to match the demos.
 > **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) and [`a2a_protocols.md`](a2a_protocols.md) for the conceptual deep-dives. [`adk_quick_reference.md`](adk_quick_reference.md) is the one-page lookup.
@@ -1234,8 +1234,7 @@ python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py
 > **Before running the script**, try browsing the Agent Cards directly in your browser. `adk web --a2a` reads each agent's `agent.json` and serves it automatically:
 > - http://127.0.0.1:8000/a2a/buyer_agent/.well-known/agent-card.json
 > - http://127.0.0.1:8000/a2a/seller_agent/.well-known/agent-card.json
->
-> (The `negotiation` agent is served by its own A2A server with push notifications — see Demo 13 — at http://127.0.0.1:8003/.well-known/agent-card.json.)
+> - http://127.0.0.1:8000/a2a/negotiation/.well-known/agent-card.json
 >
 > These are the same Agent Cards the script fetches programmatically in Step 1. The JSON you see in the browser comes from `agent.json` in each agent's folder (e.g., `negotiation_agents/buyer_agent/agent.json`).
 
@@ -1899,25 +1898,23 @@ Round 3:
 
 ### A2A Orchestrated Negotiation (Demo 13)
 
-**Files:** `m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py` (client), `m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py` (negotiation agent's A2A server, for step 3)
+**File:** `m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py`
 
-**What it teaches:** How to orchestrate a full buyer ↔ seller negotiation using Agent Card discovery — and how a client **reads each card's capabilities and gets results the way that agent supports**. Each agent advertises one of A2A's three mechanisms, so one run shows all three:
+**What it teaches:** How to orchestrate a full buyer ↔ seller negotiation using Agent Card discovery — and how a client **reads each card's capabilities and gets results the way that agent supports**. The two agents advertise different mechanisms, so one run shows both:
 
 | Agent | Card `capabilities` | How the client gets results | `ClientConfig` |
 |---|---|---|---|
 | `buyer_agent` | `streaming: false`, `pushNotifications: false` | **Polling** — `message/send` with `blocking: false`, then `tasks/get` until a final state | `streaming=False, polling=True` |
 | `seller_agent` | `streaming: true` | **Streaming** — `message/stream`; events arrive as the seller works | `streaming=True` |
-| `negotiation` | `pushNotifications: true` | **Push** — `message/send` with a webhook; the server POSTs every task update | `streaming=False, polling=True, push_notification_configs=[...]` |
+
+A2A's third mechanism, push notifications (the server POSTs task updates to a client webhook), isn't demonstrated: ADK's built-in A2A server stores a client's webhook but never calls it. See `a2a_protocols.md` §17.2.
 
 **How to run:**
 ```bash
-# Terminal 1 — buyer + seller on :8000
+# Terminal 1:
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
-# Terminal 2 — negotiation agent on :8003 (needed for step 3; without it step 3 is skipped)
-python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
-
-# Terminal 3:
+# Terminal 2:
 python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 ```
 
@@ -1929,7 +1926,6 @@ The buyer and seller cards say `http://localhost:8000/...`, so stop any other se
 3. Sends "make an offer" to buyer_agent → task comes back `submitted` → polls `tasks/get` until `completed` → reads the offer from the artifact
 4. Forwards the buyer's offer to seller_agent → streams events (the seller's tool calls appear live) → reads COUNTER or ACCEPT from the artifact
 5. If COUNTER: sends the counter back to the buyer for next round; repeats until ACCEPT, WALK AWAY, a task that doesn't complete, or max rounds
-6. **Step 3:** hands the *same* negotiation to the `negotiation` agent (a `LoopAgent` over buyer + seller). It starts a small webhook server, sends one `message/send` carrying the webhook URL and a token, and then just receives POSTs until the task ends
 
 **Actual output (gpt-4o, abridged — prices and timings vary run to run):**
 ```
@@ -1972,58 +1968,18 @@ A2A Protocol Summary:
   Seller contextId: 138d3bc6-...  (reached by streaming)
   A2A tasks created: 6 (one per message)
 
-STEP 3: The same negotiation, run by ONE agent — results by push
-Negotiation Agent Card:
-  Name:   negotiation
-  URL:    http://localhost:8003/
-  Capabilities: streaming=False, pushNotifications=True  → use push notifications
-
-→ message/send with webhook http://127.0.0.1:9010/webhook
-    returned at once: task f49c2526 working — no open connection, no polling; waiting for POSTs
-
-    [negotiation ⇠ push #3] working: calling get_market_price, calculate_discount
-    [negotiation ⇠ push #5] working: calling submit_offer
-    [negotiation ⇠ push #7] working: BUYER: We are offering $425,000 for 742 Evergreen Terrace. ...
-    [negotiation ⇠ push #8] working: calling get_market_price, get_inventory_level, get_minimum_acceptable_price
-    [negotiation ⇠ push #10] working: calling submit_decision
-    [negotiation ⇠ push #12] working: SELLER: Thank you for your offer. ...
-    [negotiation ⇠ push #15] working: BUYER: Our revised offer is $433,000, ...
-    ...
-    [negotiation ⇠ push #27] working: BUYER: We are proposing $446,000 ...
-    [negotiation ⇠ push #28] working: calling submit_decision
-    [negotiation ⇠ push #30] working: SELLER: Thank you for your offer of $446,000. ...
-
-← Final result (pushed, 32 POSTs) — task completed:
-SELLER: Thank you for your offer of $446,000. We appreciate your understanding of the property's enhancements and the value these upgrades add. ...
 ```
-(Captured with buyer/seller served on a different port; URLs shown as they appear with the default `:8000`. Only POSTs with a tool call or text are printed; the others carry tool results or bare status changes.)
+(Captured with buyer/seller served on a different port; URLs shown as they appear with the default `:8000`.)
 
 **Key details:**
 - **The card decides the mechanism**: the client never hard-codes "poll the buyer"; it reads `card.capabilities`.
 - **Separate contextIds**: Each agent has its own conversation thread. The script bridges them.
-- **One Task per message**: 3 rounds × 2 agents = 6 tasks in step 2, each with its own id and artifact. Step 3 is a single task.
+- **One Task per message**: 3 rounds × 2 agents = 6 tasks, each with its own id and artifact.
 - **Neither agent knows about the other**: They only see messages from the script.
 - **Each agent calls its own MCP tools**: Buyer calls pricing, seller calls pricing + inventory, then records its decision with `submit_decision` (floor enforced in code). The seller only researches in round 1 — its context remembers.
 - **The script still reads the seller's reply text** for ACCEPT/COUNTER — over A2A it only sees the reply, not the seller's session state. The seller's prompt makes the reply match what `submit_decision` recorded.
 - **A task that doesn't complete stops the negotiation**: the script checks `task.status.state` before reading the reply (see Demo 14 for why).
 - **Streaming shows the artifact twice**: the seller's final text arrives once as a status message and once as a `TaskArtifactUpdateEvent`; the `Client` merges each update into the task it yields, so the final task has the artifact attached.
-- **Push is fire-and-forget**: in step 3, `message/send` returned at once and the client held no connection at all. The server POSTed the full Task on every update, with the token in an `X-A2A-Notification-Token` header; the webhook rejects POSTs without it.
-
-**Why the negotiation agent has its own server.** `adk web --a2a` stores a client's push-notification config but never sends notifications — ADK 1.39 creates the A2A request handler without a push sender. `negotiation_a2a_server.py` builds the same server from parts and adds the sender:
-
-```python
-runner = Runner(app_name=root_agent.name, agent=root_agent, session_service=InMemorySessionService(), ...)
-push_configs = InMemoryPushNotificationConfigStore()
-handler = DefaultRequestHandler(
-    agent_executor=A2aAgentExecutor(runner=runner),        # ADK: A2A request → Runner → A2A events
-    task_store=InMemoryTaskStore(),
-    push_config_store=push_configs,
-    push_sender=BasePushNotificationSender(httpx.AsyncClient(timeout=30.0), push_configs),   # ← what adk web leaves out
-)
-app = A2AStarletteApplication(agent_card=card, http_handler=handler).build()   # card from a2a_card.json
-```
-
-Its card lives in `negotiation_agents/negotiation/a2a_card.json` — not `agent.json` — so `adk web --a2a` doesn't also publish the agent without push support. (`adk web` without `--a2a` still shows it in the dropdown.) The a2a-sdk server checks the push capability on `tasks/pushNotificationConfig/set`, but not on a `message/send` that carries a push config inline (what step 3 sends) — whether anything is ever POSTed depends on the server having a push sender.
 
 ### Key teaching points
 
@@ -2037,9 +1993,9 @@ Its card lives in `negotiation_agents/negotiation/a2a_card.json` — not `agent.
 
 5. **"Escalate from the last agent, and make the escalation visible."** The seller runs last in each round, so escalating from its `after_agent_callback` ends the loop with no extra messages. The callback must also write state (`loop_exit_reason`) — a bare `escalate` is silently dropped and the loop keeps running.
 
-6. **"The A2A demo shows the production pattern."** Agents discovered via Agent Cards, each reached the way its card says (polling, streaming or push), each with separate contextIds. The script is just a matchmaker — swap it for another agent, and you have agent-to-agent negotiation over HTTP.
+6. **"The A2A demo shows the production pattern."** Agents discovered via Agent Cards, each reached the way its card says (polling or streaming), each with separate contextIds. The script is just a matchmaker — swap it for another agent, and you have agent-to-agent negotiation over HTTP.
 
-7. **"How long is the job?"** Seconds → just wait or poll (buyer). Want progress → stream (seller). Minutes, or the client may go away → push (negotiation). The card says which ones an agent offers.
+7. **"How long is the job?"** Seconds → just wait or poll (buyer). Want progress → stream (seller). Minutes, or the client may go away → push notifications (not demoed: ADK's built-in A2A server doesn't send them). The card says which ones an agent offers.
 
 ---
 
@@ -2149,7 +2105,7 @@ LAYER 4 — APPLICATION (no exception, state=completed — check the content)
 
 1. **"Four layers, two of them silent."** Transport and protocol errors raise. Task failures and application failures don't — check `task.status.state`, then the content.
 2. **"Retry what's transient, fix what's wrong."** Connection errors and 5xx: retry with backoff. 4xx and JSON-RPC errors: retrying sends the same mistake again.
-3. **"For long work, don't block."** A timeout on a blocking call leaves you without a taskId. Non-blocking send + polling (or streaming, or push — Demo 13) keeps you in control.
+3. **"For long work, don't block."** A timeout on a blocking call leaves you without a taskId. Non-blocking send + polling (or streaming — Demo 13) keeps you in control.
 4. **"Read the card first."** Most protocol errors in practice are clients asking for something the card never offered.
 
 ---
@@ -2171,7 +2127,7 @@ LAYER 4 — APPLICATION (no exception, state=completed — check the content)
 | Callbacks (before/after) | d08 | buyer_agent, seller_agent, negotiation |
 | Event stream | d09 | — |
 | Agent Card | a2a_10 | a2a_11, a2a_12, a2a_13, a2a_14 |
-| Task (id, status, history, artifacts) | a2a_10 | a2a_11 (taskId vs contextId, `tasks/get`), a2a_12, a2a_13 (lifecycle via polling/streaming/push), a2a_14 (`failed`) |
+| Task (id, status, history, artifacts) | a2a_10 | a2a_11 (taskId vs contextId, `tasks/get`), a2a_12, a2a_13 (lifecycle via polling/streaming), a2a_14 (`failed`) |
 | `contextId` threading | a2a_11 | a2a_13 |
 | Parts (Text/Data/File) | a2a_10 | a2a_12, a2a_14 (FilePart) |
 | Artifacts | a2a_10 | a2a_12, a2a_13 |
@@ -2180,6 +2136,5 @@ LAYER 4 — APPLICATION (no exception, state=completed — check the content)
 | `before_tool_callback` allowlist | d08 | buyer_agent, seller_agent, negotiation |
 | Structured decision tool (+ floor enforced in code) | negotiation | seller_agent, a2a_10–13 |
 | A2A orchestration | a2a_13 | — |
-| Polling / streaming / push | a2a_13 | a2a_14 (refusals when the card doesn't offer it) |
+| Polling / streaming | a2a_13 | a2a_14 (refusals when the card doesn't offer it) |
 | Error handling (transport / protocol / task / application) | a2a_14 | a2a_13 (stops on a task that doesn't complete) |
-| `A2aAgentExecutor` + `Runner` (custom A2A server) | a2a_13 (negotiation_a2a_server.py) | — |

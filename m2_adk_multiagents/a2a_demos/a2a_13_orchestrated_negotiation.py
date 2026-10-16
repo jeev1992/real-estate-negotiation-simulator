@@ -5,19 +5,15 @@ Full multi-round buyer ↔ seller negotiation where BOTH agents are
 discovered via Agent Cards and communicate through A2A messages.
 
 THIS IS THE PAYOFF DEMO. It shows:
-  1. Agent Card discovery for buyer, seller and the negotiation agent
+  1. Agent Card discovery for BOTH buyer and seller
   2. The client reading each card's capabilities and getting results the
-     way that agent supports — one of A2A's three mechanisms each:
-       buyer_agent   streaming: false        → POLLING: message/send (non-blocking) + tasks/get
-       seller_agent  streaming: true         → STREAMING: message/stream (live events)
-       negotiation   pushNotifications: true → PUSH: the server POSTs updates to our webhook
+     way that agent supports:
+       buyer_agent   streaming: false → POLLING: message/send (non-blocking) + tasks/get
+       seller_agent  streaming: true  → STREAMING: message/stream (live events)
   3. Multi-round negotiation: buyer offers → script relays to seller → seller responds
   4. contextId threads each side's conversation independently; every
      round is a new Task, and the agent's reply is read from its Artifact
   5. The script acts as a "matchmaker" — neither agent knows about the other
-  6. Then the same negotiation run by ONE agent (negotiation: LoopAgent over
-     buyer + seller) — a long job, so we don't wait on it: we register a
-     webhook and get every task update pushed to us
 
 HOW IT WORKS:
   The script is NOT an agent itself — it's a simple orchestrator that:
@@ -33,19 +29,13 @@ HOW IT WORKS:
   them by extracting text from one response and sending it to the other.
 
 WHAT LEARNERS SEE:
-  - Agent Card fetches, with the capability each one advertises
+  - Two Agent Card fetches, with the capability each one advertises
   - Buyer turns: task submitted → polled → completed
   - Seller turns: the seller's MCP tool calls streamed as they happen
   - Agreement, walk-away, or max rounds reached
-  - Step 3: one message/send that returns at once, then webhook POSTs —
-    one per task update — until the negotiation agent finishes
 
-Prereqs (two terminals):
-    adk web --a2a m2_adk_multiagents/negotiation_agents/              # buyer + seller on :8000
-    python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py     # negotiation on :8003
-  (ADK's built-in A2A server stores push settings but never sends them, so
-  the negotiation agent runs on its own server that does. Without it, step 3
-  is skipped.)
+Prereq:
+    adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 Run:
     python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
@@ -54,18 +44,14 @@ Run:
 import argparse
 import asyncio
 import re
-import secrets
 import uuid
 
 import httpx
-import uvicorn
 from a2a.client import A2ACardResolver, Client, ClientConfig, ClientFactory
-from a2a.client.errors import A2AClientHTTPError
 from a2a.types import (
     AgentCard,
     DataPart,
     Message,
-    PushNotificationConfig,
     Role,
     Task,
     TaskArtifactUpdateEvent,
@@ -74,14 +60,8 @@ from a2a.types import (
     TaskStatusUpdateEvent,
     TextPart,
 )
-from starlette.applications import Starlette
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-from starlette.routing import Route
 
 BASE_URL = "http://127.0.0.1:8000"
-NEGOTIATION_URL = "http://127.0.0.1:8003"
-WEBHOOK_PORT = 9010
 MAX_ROUNDS = 5
 TERMINAL = {TaskState.completed, TaskState.failed, TaskState.canceled, TaskState.rejected}
 
@@ -169,91 +149,10 @@ async def ask(client: Client, agent_name: str, text: str, context_id: str | None
     return task
 
 
-async def negotiate_by_push(http: httpx.AsyncClient, negotiation_url: str, webhook_port: int) -> None:
-    """Hand the whole negotiation to one agent and get its updates by push."""
-    print("\n" + "=" * 60)
-    print("STEP 3: The same negotiation, run by ONE agent — results by push")
-    print("=" * 60)
-    try:
-        card = await A2ACardResolver(httpx_client=http, base_url=negotiation_url).get_agent_card()
-    except A2AClientHTTPError as e:
-        print(f"\nNegotiation agent not reachable at {negotiation_url} (HTTP {e.status_code}) — skipping.")
-        print("Start it with: python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py")
-        return
-    print("\nNegotiation Agent Card:")
-    print(f"  Name:   {card.name}")
-    print(f"  URL:    {card.url}")
-    print(f"  Capabilities: streaming={card.capabilities.streaming}, "
-          f"pushNotifications={card.capabilities.push_notifications}  → use push notifications")
-    if not card.capabilities.push_notifications:
-        print("  The card doesn't offer push notifications — skipping.")
-        return
-
-    # A small webhook server inside this script. The token is shared with the
-    # agent's server, which sends it back in X-A2A-Notification-Token on every
-    # POST, so we can reject POSTs that didn't come from it.
-    token = secrets.token_urlsafe(16)
-    done = asyncio.Event()
-    posts = 0
-    final_task: Task | None = None
-
-    async def webhook(request: Request) -> JSONResponse:
-        nonlocal posts, final_task
-        posts += 1
-        if request.headers.get("X-A2A-Notification-Token") != token:
-            return JSONResponse({"ok": False}, status_code=401)
-        task = Task.model_validate(await request.json())     # each POST is the whole Task
-        message = task.status.message
-        if tool_calls(message):
-            print(f"    [negotiation ⇠ push #{posts}] {task.status.state.value}: calling {', '.join(tool_calls(message))}")
-        elif message and message.parts and isinstance(message.parts[0].root, TextPart):
-            print(f"    [negotiation ⇠ push #{posts}] {task.status.state.value}: {message.parts[0].root.text.strip()[:100]}")
-        if task.status.state in TERMINAL:
-            final_task = task
-            done.set()
-        return JSONResponse({"ok": True})
-
-    server = uvicorn.Server(uvicorn.Config(
-        Starlette(routes=[Route("/webhook", webhook, methods=["POST"])]),
-        host="127.0.0.1", port=webhook_port, log_level="warning",
-    ))
-    server_task = asyncio.create_task(server.serve())
-    while not server.started:
-        await asyncio.sleep(0.05)
-    webhook_url = f"http://127.0.0.1:{webhook_port}/webhook"
-
-    try:
-        client = ClientFactory(ClientConfig(
-            httpx_client=http,
-            streaming=False,
-            polling=True,                     # blocking=false: don't wait for the result
-            push_notification_configs=[PushNotificationConfig(url=webhook_url, token=token)],
-        )).create(card)
-        message = Message(
-            message_id=f"msg_{uuid.uuid4().hex[:8]}",
-            role=Role.user,
-            parts=[TextPart(text="Start the negotiation.")],
-        )
-        async for event in client.send_message(message):
-            task = event[0] if isinstance(event, tuple) else None
-        print(f"\n→ message/send with webhook {webhook_url}")
-        print(f"    returned at once: task {task.id[:8]} {task.status.state.value} — "
-              "no open connection, no polling; waiting for POSTs\n")
-        await asyncio.wait_for(done.wait(), timeout=600)
-    finally:
-        server.should_exit = True
-        await server_task
-
-    print(f"\n← Final result (pushed, {posts} POSTs) — task {final_task.status.state.value}:")
-    print(extract_agent_text(final_task))
-
-
 async def main() -> None:
     parser = argparse.ArgumentParser(description="A2A orchestrated multi-round negotiation")
     parser.add_argument("--base-url", default=BASE_URL, help="Base URL of adk web --a2a")
     parser.add_argument("--max-rounds", type=int, default=MAX_ROUNDS, help="Max negotiation rounds")
-    parser.add_argument("--negotiation-url", default=NEGOTIATION_URL, help="negotiation_a2a_server.py")
-    parser.add_argument("--webhook-port", type=int, default=WEBHOOK_PORT)
     args = parser.parse_args()
 
     # Direct configuration: we know where the agents live. With a registry
@@ -377,9 +276,6 @@ async def main() -> None:
         print(f"  Seller contextId: {seller_context_id}  (reached by streaming)")
         print(f"  A2A tasks created: {tasks_created} (one per message)")
         print("  Each agent maintained its own conversation thread.")
-
-        # ── Step 3: one agent runs the whole negotiation (push) ───────
-        await negotiate_by_push(http, args.negotiation_url, args.webhook_port)
 
 
 if __name__ == "__main__":

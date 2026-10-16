@@ -59,9 +59,8 @@ real-estate-negotiation-simulator/
 │   │   ├── a2a_10_wire_lifecycle.py       # Agent Card + the HTTP bytes of message/send + the Task
 │   │   ├── a2a_11_context_threading.py    # contextId across rounds; taskId vs contextId
 │   │   ├── a2a_12_parts_and_artifacts.py  # multi-part messages; history vs artifacts
-│   │   ├── a2a_13_orchestrated_negotiation.py  # negotiation: buyer polled, seller streamed, negotiation agent pushes
-│   │   ├── a2a_14_error_handling.py       # transport / protocol / task / application errors
-│   │   └── negotiation_a2a_server.py      # negotiation agent's own A2A server, with push (:8003)
+│   │   ├── a2a_13_orchestrated_negotiation.py  # buyer↔seller negotiation: buyer polled, seller streamed
+│   │   └── a2a_14_error_handling.py       # transport / protocol / task / application errors
 │   ├── exercises/                      # Hands-on coding exercises for Module 2
 │   ├── solution/                       # Worked solutions for Module 2 exercises
 │   └── notes/
@@ -84,7 +83,7 @@ Modules 1 and 2 ship a `demos/` folder of small, single-purpose, runnable script
 
 - [m1_mcp/demos/](m1_mcp/demos/) — MCP handshake, tool loop trace, primitives, content types, Streamable HTTP
 - [m2_adk_multiagents/adk_demos/](m2_adk_multiagents/adk_demos/) — ADK concept demos (basic agent, MCP tools, sessions, sequential, parallel, loop, agent-as-tool, callbacks, event stream)
-- [m2_adk_multiagents/a2a_demos/](m2_adk_multiagents/a2a_demos/) — A2A protocol scripts (wire format, context threading, parts/artifacts, orchestrated negotiation, polling/streaming/push)
+- [m2_adk_multiagents/a2a_demos/](m2_adk_multiagents/a2a_demos/) — A2A protocol scripts (wire format, context threading, parts/artifacts, orchestrated negotiation with polling/streaming, error handling)
 
 ### Notes live inside each module
 
@@ -219,14 +218,12 @@ python m1_mcp/demos/05_streamable_http_transport.py
 adk web m2_adk_multiagents/adk_demos/               # ADK demos d01–d09 in dropdown
 python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py  # d09 in the terminal: print every ADK Event
 adk web m2_adk_multiagents/negotiation_agents/       # buyer, seller, negotiation in dropdown
-adk web --a2a m2_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Agent Cards (buyer, seller)
+adk web --a2a m2_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Agent Cards
 # A2A protocol demos (run in a second terminal against adk web --a2a):
 python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
-# A2A orchestrated negotiation — buyer polled, seller streamed, then the
-# negotiation agent pushes updates to a webhook (needs its server; else step 3 is skipped):
-python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
+# A2A orchestrated negotiation — buyer polled, seller streamed (via Agent Cards):
 python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 # Error handling at four layers:
 python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py
@@ -295,7 +292,7 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 | 10 | `python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py --seller-url …/a2a/seller_agent` | Agent Card discovery, the actual HTTP request/response of `message/send`, and the returned **Task** taken apart (id, contextId, status, history, artifacts). |
 | 11 | `python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py --seller-url …/a2a/seller_agent` | Reuse `contextId` across rounds — multiple A2A calls become **one threaded conversation**; each round is a new Task (`tasks/get` fetches any of them). |
 | 12 | `python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py --seller-url …/a2a/seller_agent` | Multi-part Messages (`TextPart` + `DataPart`); where content lives in a Task — history (tool calls as DataParts), status message, **Artifacts**. |
-| 13 | `python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py` | Full **buyer ↔ seller multi-round negotiation** over A2A — the client reads each card: buyer **polled** (`tasks/get`), seller **streamed** (`message/stream`); then the negotiation agent runs it and **pushes** every update to a webhook (start `negotiation_a2a_server.py` first). |
+| 13 | `python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py` | Full **buyer ↔ seller multi-round negotiation** over A2A — the client reads each card: buyer **polled** (`tasks/get`), seller **streamed** (`message/stream`). |
 | 14 | `python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py` | **Error handling** at four layers: transport and protocol errors raise; a `failed` task and a useless `completed` answer don't — check the state and the content. |
 
 **Negotiation agents — interactive Web UI** (`adk web m2_adk_multiagents/negotiation_agents/`)
@@ -328,14 +325,12 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
           └── root_agent = LoopAgent(sub_agents=[SequentialAgent(buyer, seller)])
 
 A2A endpoints (cards from each agent.json):
-  GET  /a2a/buyer_agent/.well-known/agent-card.json     (results by polling: tasks/get)
+  GET  /a2a/buyer_agent/.well-known/agent-card.json     (streaming: false → poll tasks/get)
   POST /a2a/buyer_agent                                 (message/send)
   GET  /a2a/seller_agent/.well-known/agent-card.json    (streaming: true)
   POST /a2a/seller_agent                                (message/send, message/stream)
-
-negotiation over A2A — own server with push notifications:
-  python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
-  GET  http://localhost:8003/.well-known/agent-card.json  (pushNotifications: true)
+  GET  /a2a/negotiation/.well-known/agent-card.json
+  POST /a2a/negotiation                                 (message/send)
 ```
 
 ### MCP Data Flow

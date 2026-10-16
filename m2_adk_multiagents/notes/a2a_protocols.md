@@ -824,11 +824,7 @@ python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py \
 python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py \
     --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
-# Terminal 3 — negotiation agent's A2A server (push notifications), port 8003
-python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
-
 # Terminal 2 — negotiation: buyer polled, seller streamed, then the
-# negotiation agent pushes updates to a webhook
 python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 
 # Terminal 2 — errors at four layers (transport, protocol, task, application)
@@ -843,9 +839,8 @@ Key files:
 - `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` (raw A2A wire format)
 - `m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py` (contextId threading)
 - `m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py` (multi-part messages)
-- `m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py` (polling / streaming / push, one agent each)
+- `m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py` (buyer polled, seller streamed — chosen from each Agent Card)
 - `m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py` (transport, protocol, task and application errors)
-- `m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py` (ADK agent behind a custom A2A server with a push sender)
 
 ---
 
@@ -1044,7 +1039,7 @@ Then run:
 python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py
 python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py
 python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py
-python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py   # polling, streaming, push
+python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py   # polling + streaming
 python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py
 ```
 
@@ -1353,15 +1348,12 @@ artifacts), and if the client supplied a `token` it comes back in an
 `X-A2A-Notification-Token` header so the webhook can reject POSTs that
 aren't from the server it registered with.
 
-**In this workshop:** the `negotiation` agent's card advertises
-`pushNotifications: true`. ADK's built-in A2A server (`adk web --a2a`,
-`to_a2a()`) stores push configs but never sends them — it has no push
-sender — so negotiation runs on its own small server,
-`a2a_demos/negotiation_a2a_server.py` (port 8003), which wires in a2a-sdk's
-`BasePushNotificationSender`. Step 3 of `a2a_13_orchestrated_negotiation.py`
-starts a local webhook, sends one non-blocking `message/send` with the
-webhook in `configuration.pushNotificationConfig`, and then just receives
-POSTs — one per task update — until the negotiation completes.
+**In this workshop:** push isn't demonstrated, and every agent card says
+`pushNotifications: false`. ADK's built-in A2A server (`adk web --a2a`,
+`to_a2a()` in ADK 1.39) stores push configs but has no push sender, so it
+never POSTs to a webhook. To push from an ADK agent you'd build the server
+yourself — the same `Runner` + `A2aAgentExecutor`, plus a2a-sdk's
+`DefaultRequestHandler` with a `BasePushNotificationSender`.
 
 ---
 
