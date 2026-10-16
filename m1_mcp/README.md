@@ -23,30 +23,33 @@ The agent doesn't need to know if the data comes from a database, an API, or a s
 
 ### `github_agent_client.py` — An LLM agent that uses GitHub via MCP
 
-This file connects to **GitHub's official MCP server** and lets GPT-4o decide which tools to call based on your natural language query.
+This file connects to **GitHub's official MCP server** — hosted by GitHub at `https://api.githubcopilot.com/mcp/readonly` — and lets the LLM decide which tools to call based on your natural language query.
 
 Why GitHub? Because you already know what GitHub does. Seeing an LLM agent use MCP with a familiar tool makes the protocol click before you write your own servers.
 
 **What it demonstrates:**
-- Connecting to an MCP server over `stdio` transport
-- Auto-discovering tools via `list_tools` and converting schemas to OpenAI function-calling format
-- The LLM **choosing** which tools to call (agentic, not scripted)
+- Connecting to a **remote** MCP server over **Streamable HTTP** with a Bearer token (no local server process)
+- Discovering **all three primitives**: tools (29, read-only), resource templates (`repo://{owner}/{repo}/contents{/path*}`, ...), and prompts
+- The **host** reading a resource (a repo's README) and attaching it as context — resources are never "called" by the model
+- Converting tool schemas to OpenAI function-calling format, and the LLM **choosing** which tools to call (agentic, not scripted)
 - The ReAct-style tool loop: LLM calls tools, gets results, calls more tools or answers
 - This is the **same pattern** used by our ADK buyer/seller agents in Module 2 (via `MCPToolset`)
 
 **Prerequisites:**
-- Node.js 18+ installed (`node --version`)
-- A GitHub Personal Access Token (`repo` or `public_repo` scope)
+- A real GitHub Personal Access Token in `.env` as `GITHUB_TOKEN` (classic or fine-grained; read access to public repos is enough)
 - An OpenAI API key
 
 ```bash
-export GITHUB_TOKEN=ghp_your_token_here
-export OPENAI_API_KEY=sk-your_key_here
-python m1_mcp/github_agent_client.py
+python m1_mcp/github_agent_client.py      # two sample queries: tools only, then resource + tools
 
-# Or with a custom query:
+# Custom query (tools only):
 python m1_mcp/github_agent_client.py "Find popular MCP server implementations"
+
+# Custom query with a resource attached by the host:
+python m1_mcp/github_agent_client.py --attach repo://modelcontextprotocol/python-sdk/contents/README.md "Summarize what this SDK provides"
 ```
+
+> The older `npx @modelcontextprotocol/server-github` package is deprecated and only exposed tools, so it couldn't demonstrate resources or prompts.
 
 ---
 
@@ -159,9 +162,7 @@ The agent never imports your Python functions directly. It talks to the server o
 ## How to run
 
 ```bash
-# GitHub MCP agent (needs GITHUB_TOKEN + OPENAI_API_KEY + Node.js)
-export GITHUB_TOKEN=ghp_your_token_here
-export OPENAI_API_KEY=sk-your_key_here
+# GitHub MCP agent (needs GITHUB_TOKEN + OPENAI_API_KEY in .env)
 python m1_mcp/github_agent_client.py
 
 # Inspect pricing server tools (no API key needed)
@@ -181,9 +182,10 @@ python m1_mcp/sse_agent_client.py --both              # includes inventory queri
 ```
 
 **What to expect from the GitHub agent:**
-- It connects to GitHub's server via `npx`
-- Lists all available tools (there are ~20+)
-- GPT-4o decides which tools to call based on your query
+- It connects to GitHub's hosted MCP server over HTTP
+- Lists the server's tools (29 read-only), resource templates (5 `repo://` URIs), and prompts (2)
+- For the second sample query, the host reads the python-sdk README as a resource and attaches it
+- The LLM decides which tools to call based on your query
 - Executes the tool calls via MCP and feeds results back
 - Produces a natural language summary
 

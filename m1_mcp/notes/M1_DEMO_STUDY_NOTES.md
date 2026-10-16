@@ -1,7 +1,7 @@
 # Module 1 — Demo Walkthrough & Concept Notes
 
 > **Audience:** Learners working through the M1 MCP demos in `m1_mcp/demos/` (01–05) plus the GitHub MCP and SSE agent demos. Use this as a guided tour while you run.
-> **Prerequisites:** Python environment set up; `OPENAI_API_KEY` available; for the GitHub demo, also Node.js + `GITHUB_TOKEN`.
+> **Prerequisites:** Python environment set up; `OPENAI_API_KEY` available; for the GitHub demo, also a real `GITHUB_TOKEN` (the server is hosted by GitHub — no Node.js needed).
 > **Read this *while* running:** the five demo scripts in `m1_mcp/demos/` and the two clients (`github_agent_client.py`, `sse_agent_client.py`). Each section corresponds to one demo.
 > **Read this next:** [`mcp_deep_dive.md`](mcp_deep_dive.md) for the conceptual deep-dive on every primitive, transport, and design pattern these demos exercise.
 >
@@ -203,9 +203,10 @@ server caps: tools=True resources=True prompts=True
 ### Key teaching points for class
 
 1. **"Tools are 90% of MCP usage."** Most integrations only use tools. Resources and prompts are bonus capabilities, not requirements.
-2. **"Resources are like files, prompts are like templates."** Resources: read-only data the agent can pull. Prompts: parameterized text the host can expand.
+2. **"Resources are like files, prompts are like templates."** Resources: read-only data the host reads and attaches. Prompts: parameterized text the host can expand.
 3. **"Sampling is the fourth primitive."** It lets the server ask the LLM to generate text. We don't demo it because our hosts aren't sampling-capable, but students should know it exists.
 4. **"Both servers in one script."** Show how the `inspect()` function connects to each server independently — the client doesn't care how many servers exist.
+5. **"Real servers use resources too."** GitHub's official MCP server exposes resource templates like `repo://{owner}/{repo}/contents{/path*}` — `github_agent_client.py` lists them and reads a repo's README as a resource.
 
 ### Questions to try
 
@@ -276,35 +277,98 @@ python m1_mcp/demos/04_content_types.py   # no API key needed
 
 ## github_agent_client.py — The Agentic MCP Client
 
+**File:** `m1_mcp/github_agent_client.py` (~380 lines)
+
 ### What it teaches
-A full LLM-powered agent that connects to GitHub's MCP server and lets GPT-4o decide which tools to call. This is the same ReAct-style tool loop used by the buyer/seller agents in M2.
+A full LLM-powered agent that connects to **GitHub's official MCP server** and lets the model decide which tools to call — the same ReAct-style tool loop used by the buyer/seller agents in M2. It also shows the two primitives the model does *not* drive: it lists GitHub's **resource templates** and **prompts**, and the host **reads a resource** and attaches it to the conversation.
+
+### The server
+GitHub hosts its official MCP server at `https://api.githubcopilot.com/mcp/` (Streamable HTTP; your token is sent as `Authorization: Bearer ...`). The client uses the **`/readonly`** endpoint, so a class demo can never modify anything on GitHub. No Node.js or Docker needed.
+
+> The older `npx @modelcontextprotocol/server-github` package is deprecated and only ever exposed **tools** — `resources/list` and `prompts/list` return "Method not found" — so it couldn't show the resource primitive at all.
 
 ### How to run
 ```bash
-python m1_mcp/github_agent_client.py "Find popular MCP server implementations"
-# requires OPENAI_API_KEY + GITHUB_TOKEN + Node.js
+python m1_mcp/github_agent_client.py                # the two sample queries below
+python m1_mcp/github_agent_client.py "Find popular MCP server implementations"     # tools only
+python m1_mcp/github_agent_client.py --attach repo://modelcontextprotocol/python-sdk/contents/README.md "Summarize what this SDK provides"
+# requires OPENAI_API_KEY + a real GITHUB_TOKEN (read access to public repos is enough)
 ```
+
+### Actual output (gpt-4o-mini, sample query 2)
+
+```
+[Agent] Connecting to https://api.githubcopilot.com/mcp/readonly ...
+
+[Agent] TOOLS (29) — model-controlled: the LLM decides when to call them
+        e.g. get_commit, get_copilot_job_status, get_file_contents, get_label, get_latest_release, get_me, ...
+[Agent] RESOURCE TEMPLATES (5) — application-controlled: the host reads them
+        repo://{owner}/{repo}/contents{/path*}
+        repo://{owner}/{repo}/refs/heads/{branch}/contents{/path*}
+        repo://{owner}/{repo}/refs/pull/{prNumber}/head/contents{/path*}
+        repo://{owner}/{repo}/refs/tags/{tag}/contents{/path*}
+        repo://{owner}/{repo}/sha/{sha}/contents{/path*}
+[Agent] PROMPTS (2) — user-controlled: picked by a person, not the model
+        AssignCodingAgent, issue_to_fix_workflow
+
+[Host]  resources/read repo://modelcontextprotocol/python-sdk/contents/README.md
+[Host]  attached 4,561 chars as context for the LLM
+
+[Agent] Iteration 1: calling gpt-4o-mini...
+[Agent]   -> Calling: list_issues({"owner": "modelcontextprotocol", "repo": "python-sdk", "state": "OPEN", "perPage": 3, ...})
+[Agent]   -> Calling: get_file_contents({"owner": "modelcontextprotocol", "repo": "python-sdk", "path": "README.md"})
+
+[Agent] Iteration 2: calling gpt-4o-mini...
+AGENT ANSWER: "The MCP Python SDK provides a framework for building servers and clients ... Open issues mentioning resources: #3718 ..., #3715 ..., #3714 ..."
+```
+
+Sample query 1 ("Find popular real estate Python projects on GitHub") attaches nothing; the model calls `search_repositories` and summarizes the results.
 
 ### The agentic loop pattern
 
 ```python
-# 1. Connect + discover
-tools = await session.list_tools()
-openai_tools = mcp_tools_to_openai_functions(tools)
+# 1. Connect + discover all three primitives
+async with streamablehttp_client(GITHUB_MCP_URL, headers={"Authorization": f"Bearer {token}"}) as (r, w, _):
+    async with ClientSession(r, w) as session:
+        init = await session.initialize()
+        tools = (await session.list_tools()).tools
+        templates = (await session.list_resource_templates()).resourceTemplates   # if init.capabilities.resources
+        prompts = (await session.list_prompts()).prompts                          # if init.capabilities.prompts
 
-# 2. Agent loop — LLM decides what to call
-for iteration in range(max_iterations):
-    response = await openai.create(messages=messages, tools=openai_tools)
-    if response.tool_calls:
-        for call in response.tool_calls:
-            result = await session.call_tool(call.name, call.args)
-            messages.append({"role": "tool", "content": result})
-    else:
-        return response.content  # done
+        # 2. HOST step — read a resource and attach it as context (the model never calls this)
+        readme = await session.read_resource("repo://modelcontextprotocol/python-sdk/contents/README.md")
+        messages.append({"role": "user", "content": f"Context attached from MCP resource ...:\n\n{readme_text}"})
+
+        # 3. Agent loop — the LLM decides which tools to call
+        for iteration in range(max_iterations):
+            response = await openai.create(messages=messages, tools=mcp_tools_to_openai_functions(tools))
+            if response.tool_calls:
+                for call in response.tool_calls:
+                    result = await session.call_tool(call.name, call.args)
+                    messages.append({"role": "tool", "content": result})
+            else:
+                return response.content  # done
 ```
+
+### Key observations
+
+1. **One server, three primitives, three controllers.** Tools are *model-controlled* (the LLM picked `list_issues`), resources are *application-controlled* (this script decided to read the README), and prompts are *user-controlled* (a person would pick `issue_to_fix_workflow` from a menu — the script only lists them).
+
+2. **Resources are addressed by URI templates.** `repo://{owner}/{repo}/contents{/path*}` lets the host read any file in any repo it has access to — the same idea as `inventory://floor-prices` in Demo 03, but parameterized.
+
+3. **The same data can arrive both ways.** In the run above the model also called `get_file_contents` on the README even though the host had attached it. A resource is the host *pushing* context up front; a tool is the model *pulling* it on demand.
+
+4. **Remote server, no install.** Streamable HTTP plus a Bearer token — the transport from Demo 05, against a production server.
 
 ### Key insight
 This is the **manual version** of what ADK's `MCPToolset` automates. Understanding this loop means understanding what ADK does under the hood.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `ERROR: GITHUB_TOKEN not set (or is a placeholder)` | Put a real token in `.env` — the `.env.example` value is a placeholder |
+| `ERROR: GitHub rejected GITHUB_TOKEN (401 Unauthorized)` | The token is invalid or expired — create a new one |
 
 ---
 
@@ -487,7 +551,7 @@ async with streamablehttp_client(url) as (read, write, _):
 **File:** `m1_mcp/sse_agent_client.py` (~350 lines)
 
 ### What it teaches
-The same agentic tool loop as `github_agent_client.py`, but connecting to our real estate MCP servers over SSE (HTTP) instead of stdio. Proves the agent code is transport-agnostic — only the connection setup changes.
+The same agentic tool loop as `github_agent_client.py`, but connecting to our own real estate MCP servers over SSE instead of GitHub's hosted server over Streamable HTTP. Proves the agent code is transport-agnostic — only the connection setup changes.
 
 ### How to run
 ```bash
@@ -591,12 +655,13 @@ for iteration in range(1, max_iterations + 1):
 
 | | github_agent_client.py | sse_agent_client.py |
 |---|---|---|
-| **Transport** | stdio (subprocess) | SSE (HTTP endpoint) |
-| **Server** | GitHub's MCP server (`npx @modelcontextprotocol/server-github`) | Our `pricing_server.py` + `inventory_server.py` |
-| **Connection** | `stdio_client(params)` | `sse_client(url)` |
+| **Transport** | Streamable HTTP (remote) | SSE (HTTP endpoint) |
+| **Server** | GitHub's official hosted MCP server (`https://api.githubcopilot.com/mcp/readonly`) | Our `pricing_server.py` + `inventory_server.py` |
+| **Connection** | `streamablehttp_client(url, headers={"Authorization": ...})` | `sse_client(url)` |
+| **Primitives shown** | Tools + resource templates + prompts; the host reads a resource | Tools |
 | **Multi-server** | No (single GitHub server) | Yes (`--both` connects to pricing + inventory) |
 | **Tool loop** | Identical | Identical |
-| **LLM calls** | GPT-4o | GPT-4o |
+| **LLM calls** | gpt-4o-mini | GPT-4o |
 
 ### Key observations
 
@@ -612,7 +677,7 @@ for iteration in range(1, max_iterations + 1):
 
 ### Key teaching points for class
 
-1. **"The loop is the same."** Side-by-side the `github_agent_client.py` and `sse_agent_client.py` tool loops. The only difference is `stdio_client` vs `sse_client`.
+1. **"The loop is the same."** Side-by-side the `github_agent_client.py` and `sse_agent_client.py` tool loops. The only difference is the connection: `streamablehttp_client` vs `sse_client`.
 2. **"`--both` connects to two servers."** The LLM sees 4 tools from 2 servers as one unified set. This is how the seller agent works in M2 — two MCPToolsets merged.
 3. **"SSE is the HTTP transport."** In M2, ADK's `MCPToolset` with `SseConnectionParams` does the same thing. Understanding this script means understanding what ADK does with remote servers.
 4. **"No access control here."** Both servers are fully accessible. The restriction (buyer can't call `get_minimum_acceptable_price`) is added in M2 via `before_tool_callback`.
@@ -633,8 +698,8 @@ for iteration in range(1, max_iterations + 1):
 **"Why three transports? Why not just one?"**
 Each serves a different deployment pattern. stdio is simplest — the client spawns the server as a subprocess, no networking. SSE is for existing HTTP infrastructure. Streamable HTTP is the spec's recommended production transport — it's cleaner than SSE and supports bidirectional streaming. Use stdio for development, HTTP for production.
 
-**"Can I use a TypeScript MCP server with a Python client?"**
-Yes — that's the whole point of a protocol. The GitHub MCP server (`github_agent_client.py`) is TypeScript (`npx @modelcontextprotocol/server-github`). Our Python client connects to it over stdio. The transport and the language are independent.
+**"Can I use an MCP server written in another language with a Python client?"**
+Yes — that's the whole point of a protocol. GitHub's official MCP server (`github_agent_client.py`) is written in Go and hosted by GitHub; our Python client talks to it over Streamable HTTP. The transport and the language are independent.
 
 **"Why does sse_agent_client reconnect for each tool call?"**
 SSE connections are inherently unidirectional (server → client). The MCP SDK's `sse_client` establishes a new HTTP session for each interaction. This is a transport detail — stdio maintains a persistent pipe, SSE reconnects. Streamable HTTP (Demo 05) is cleaner because it uses standard POST requests.

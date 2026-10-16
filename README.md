@@ -108,12 +108,12 @@ Module 2 has three notes because it spans two distinct topics: the A2A protocol 
 ### 1. Prerequisites
 
 - Python 3.10+
-- Node.js 18+ (for GitHub MCP demo in Module 1 only)
+- Node.js 18+ (optional — only for the MCP Inspector GUI in Module 1)
 
 **Verify installation:**
 ```bash
 python --version  # should be 3.10+
-node --version    # should be 18+
+node --version    # optional: 18+ for the MCP Inspector
 ```
 
 ### 2. Clone or open this repo
@@ -247,7 +247,7 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 
 | # | Run | What it means (one line) |
 |---|---|---|
-| 1 | `python m1_mcp/github_agent_client.py` | LLM agent talks to **GitHub's official MCP server** over `stdio` — proves the ReAct tool-loop on a familiar API. |
+| 1 | `python m1_mcp/github_agent_client.py` | LLM agent talks to **GitHub's official hosted MCP server** over Streamable HTTP — lists tools, resource templates and prompts, attaches a repo README as a resource, and runs the ReAct tool loop on a familiar API. |
 | 2 | `python m1_mcp/pricing_server.py` *(or `--sse --port 8001`)* | Custom MCP server exposing `get_market_price` + `calculate_discount` — the buyer/seller's source of market data. |
 | 3 | `python m1_mcp/inventory_server.py` *(or `--sse --port 8002`)* | Custom MCP server with `get_inventory_level` (public) + `get_minimum_acceptable_price` (seller-only) — demonstrates **information asymmetry**. |
 | 4 | `python m1_mcp/sse_agent_client.py` *(after starting servers in SSE mode)* | Same agent loop as the GitHub client, but over **HTTP/SSE** — proves the transport is irrelevant. |
@@ -491,10 +491,11 @@ cd real-estate-negotiation-simulator
 python m1_mcp/pricing_server.py  # Not: python real-estate-negotiation-simulator/m1_mcp/pricing_server.py
 ```
 
-**GitHub MCP demo fails with `command not found: npx`**
+**GitHub MCP demo says `GITHUB_TOKEN not set (or is a placeholder)` or `401 Unauthorized`**
 ```bash
-# Install Node.js from: https://nodejs.org
-node --version && npx --version
+# .env still has the placeholder from .env.example, or the token is invalid/expired.
+# Create a token: GitHub → Settings → Developer Settings → Personal Access Tokens
+# (read access to public repositories is enough), then set GITHUB_TOKEN=... in .env
 ```
 
 **PowerShell `UnauthorizedAccess` error activating venv**

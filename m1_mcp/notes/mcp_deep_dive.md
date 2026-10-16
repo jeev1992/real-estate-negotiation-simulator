@@ -233,25 +233,23 @@ class GitHubIntegration:
 
 ```python
 # WITH MCP — Standardized, reusable, auto-discoverable
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+import os
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 async def use_github_tools():
-    server_params = StdioServerParameters(
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-github"],
-        env={"GITHUB_PERSONAL_ACCESS_TOKEN": "your_token"}
-    )
+    url = "https://api.githubcopilot.com/mcp/readonly"          # GitHub's hosted MCP server
+    headers = {"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}"}
 
-    async with stdio_client(server_params) as (read, write):
+    async with streamablehttp_client(url, headers=headers) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
             # DISCOVER what tools are available — no docs needed!
             tools = await session.list_tools()
             print([t.name for t in tools.tools])
-            # Output: ['search_repositories', 'get_file_contents',
-            #          'create_issue', 'list_issues', 'search_code', ...]
+            # Output: ['get_commit', 'get_file_contents', 'list_issues',
+            #          'search_code', 'search_repositories', ...]
 
             # CALL tools with standard interface
             result = await session.call_tool(
@@ -282,41 +280,47 @@ async def use_github_tools():
 
 ## 5. GitHub MCP — A Familiar Example
 
-GitHub has an **official MCP server** (`@modelcontextprotocol/server-github`) that exposes GitHub's API as MCP tools. This is a perfect teaching example because every developer already knows GitHub.
+GitHub has an **official MCP server** ([github/github-mcp-server](https://github.com/github/github-mcp-server), written in Go) that exposes GitHub's API through MCP. GitHub also **hosts** it at `https://api.githubcopilot.com/mcp/`, so you can connect over Streamable HTTP with just a token — nothing to install. This is a perfect teaching example because every developer already knows GitHub.
 
-### What GitHub MCP Exposes
+> The older `@modelcontextprotocol/server-github` npm package is **deprecated**. It only ever advertised the `tools` capability — `resources/list` and `prompts/list` returned "Method not found" — so it could not demonstrate resources or prompts.
+
+### What GitHub MCP Exposes (read-only endpoint `/mcp/readonly`)
+
+All three primitives — a good contrast with servers that only have tools:
 
 ```
-GitHub MCP Server Tools (partial list):
-─────────────────────────────────────────
-Repository Operations:
+Capabilities: tools, resources, prompts, completions
+
+TOOLS (29, model-controlled) — partial list:
   • search_repositories(query, page?, perPage?)
-  • get_repository(owner, repo)
-  • create_repository(name, description?, private?)
-  • fork_repository(owner, repo)
-
-File Operations:
-  • get_file_contents(owner, repo, path, branch?)
-  • create_or_update_file(owner, repo, path, message, content, sha?)
+  • get_file_contents(owner, repo, path, ref?)
   • search_code(query)
-
-Issues & PRs:
   • list_issues(owner, repo, state?, labels?)
-  • create_issue(owner, repo, title, body?, assignees?)
-  • get_issue(owner, repo, issue_number)
   • list_pull_requests(owner, repo, state?)
-  • create_pull_request(owner, repo, title, body, head, base)
-
-Users:
+  • get_commit(owner, repo, sha)
   • get_me()     ← get current authenticated user
-  • get_user(username)
+
+RESOURCE TEMPLATES (5, application-controlled):
+  • repo://{owner}/{repo}/contents{/path*}
+  • repo://{owner}/{repo}/refs/heads/{branch}/contents{/path*}
+  • repo://{owner}/{repo}/refs/pull/{prNumber}/head/contents{/path*}
+  • repo://{owner}/{repo}/refs/tags/{tag}/contents{/path*}
+  • repo://{owner}/{repo}/sha/{sha}/contents{/path*}
+
+PROMPTS (2, user-controlled):
+  • AssignCodingAgent
+  • issue_to_fix_workflow
 ```
+
+The full endpoint (`/mcp/`) adds write tools (49 in total) such as `create_issue` and `create_pull_request`. Toolset-specific endpoints like `/mcp/x/repos/readonly` narrow the tool list further.
 
 ### Why This Matters for Learning
 
 When you see `search_repositories(query="python")` and get back a list of repos — that's MCP working. The AI agent called a tool. The tool called GitHub's REST API. The result came back in a standard format.
 
 **The agent didn't know it was talking to GitHub's REST API**. It just called a tool. This is the entire point of MCP — abstraction.
+
+The same server also shows the other two primitives in a realistic setting. A **resource** like `repo://modelcontextprotocol/python-sdk/contents/README.md` is something the *host* reads and attaches as context — the model never calls it. A **prompt** like `issue_to_fix_workflow` is a template a *person* picks from a menu.
 
 ---
 
@@ -325,79 +329,65 @@ When you see `search_repositories(query="python")` and get back a list of repos 
 ### Prerequisites
 
 ```bash
-# GitHub MCP server is a Node.js package
-# You need Node.js + npx installed
-node --version  # should be 18+
-npx --version
-
-# Get a GitHub Personal Access Token:
-# GitHub → Settings → Developer Settings → Personal Access Tokens → Classic
-# Scopes needed: repo, read:org (for workshop purposes)
+# Get a GitHub Personal Access Token (classic or fine-grained):
+# GitHub → Settings → Developer Settings → Personal Access Tokens
+# Read access to public repositories is enough for the read-only endpoint.
+# Put it in .env as GITHUB_TOKEN=...
 ```
 
-### Method 1: Direct stdio Connection (Python)
+No Node.js, Docker, or local server process: GitHub runs the server.
 
-See `m1_mcp/github_agent_client.py` for the full runnable demo.
+### Streamable HTTP Connection (Python)
+
+See `m1_mcp/github_agent_client.py` for the full runnable demo (an LLM agent loop plus the resource step).
 
 ```python
 import asyncio
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+import json
 import os
+
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+URL = "https://api.githubcopilot.com/mcp/readonly"
+
 
 async def demo_github_mcp():
     """
-    Connects to GitHub's official MCP server and demonstrates tool discovery
-    and tool calling — the two fundamental MCP operations.
+    Connects to GitHub's hosted MCP server and exercises all three primitives:
+    discover tools, call a tool, list resource templates, and read a resource.
     """
-    server_params = StdioServerParameters(
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-github"],
-        env={
-            **os.environ,  # inherit system environment
-            "GITHUB_PERSONAL_ACCESS_TOKEN": os.environ["GITHUB_TOKEN"]
-        }
-    )
+    headers = {"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}"}
 
-    print("🔌 Connecting to GitHub MCP server via stdio...")
-
-    async with stdio_client(server_params) as (read, write):
+    async with streamablehttp_client(URL, headers=headers) as (read, write, _):
         async with ClientSession(read, write) as session:
 
-            # Step 1: Initialize the connection
-            await session.initialize()
-            print("✅ Connected to GitHub MCP server\n")
+            # Step 1: Initialize — the server reports its capabilities
+            init = await session.initialize()
+            print("Capabilities:", init.capabilities.model_dump(exclude_none=True))
 
-            # Step 2: DISCOVER available tools
-            # This is the magic of MCP — you don't need to read docs!
-            tools_response = await session.list_tools()
-            tools = tools_response.tools
-
-            print(f"🛠️  Available tools ({len(tools)} total):")
-            for tool in tools[:5]:  # show first 5
-                print(f"   • {tool.name}: {tool.description[:60]}...")
-            print()
+            # Step 2: DISCOVER available tools — no docs needed!
+            tools = (await session.list_tools()).tools
+            print(f"Available tools ({len(tools)} total):")
+            for tool in tools[:5]:
+                print(f"   • {tool.name}: {(tool.description or '')[:60]}...")
 
             # Step 3: CALL a tool — search for repos
-            print("🔍 Calling: search_repositories('real estate python')...")
             result = await session.call_tool(
                 "search_repositories",
-                {"query": "real estate pricing python", "perPage": 3}
+                {"query": "real estate pricing python", "perPage": 3},
             )
+            print(result.content[0].text[:300])
 
-            # Result comes back as content blocks
-            import json
-            data = json.loads(result.content[0].text)
-            print(f"Found {data['total_count']} repositories. Top 3:")
-            for repo in data['items'][:3]:
-                print(f"   ⭐ {repo['full_name']} ({repo['stargazers_count']} stars)")
-            print()
+            # Step 4: RESOURCES — list templates, then read one (host-driven)
+            templates = (await session.list_resource_templates()).resourceTemplates
+            print([t.uriTemplate for t in templates])
 
-            # Step 4: CALL another tool — get authenticated user
-            print("👤 Calling: get_me()...")
-            me_result = await session.call_tool("get_me", {})
-            me = json.loads(me_result.content[0].text)
-            print(f"   Authenticated as: {me['login']} ({me['name']})")
+            readme = await session.read_resource(
+                "repo://modelcontextprotocol/python-sdk/contents/README.md"
+            )
+            print(readme.contents[0].mimeType, len(readme.contents[0].text), "chars")
+            # → text/markdown 4561 chars
 
 asyncio.run(demo_github_mcp())
 ```
@@ -405,17 +395,18 @@ asyncio.run(demo_github_mcp())
 ### What Just Happened (Under the Hood)
 
 ```
-YOUR CODE                    MCP PROTOCOL                    GITHUB API
+YOUR CODE                    MCP PROTOCOL (HTTP POST)        GITHUB API
 ─────────────                ────────────────────            ──────────────────
 
-session.initialize()  ──►  {"jsonrpc": "2.0",          The server spawned by
-                            "id": 1,                    npx starts up, reads
-                            "method": "initialize",     stdio for messages
+session.initialize()  ──►  {"jsonrpc": "2.0",          GitHub's hosted server
+                            "id": 1,                    receives the POST and
+                            "method": "initialize",     checks the Bearer token
                             "params": {...}}
 
                       ◄──  {"result": {
-                            "protocolVersion": "2024-11-05",
-                            "capabilities": {...},
+                            "protocolVersion": "...",
+                            "capabilities": {"tools": {}, "resources": {},
+                                             "prompts": {}, "completions": {}},
                             "serverInfo": {"name": "github-mcp-server"}
                             }}
 
@@ -440,9 +431,17 @@ session.call_tool(    ──►  {"method": "tools/call",
                             {"type": "text",
                              "text": "{\"items\": [...]}"}
                             ]}}
+
+session.read_resource(──►  {"method": "resources/read",
+  "repo://.../README.md")   "params": {"uri": "repo://.../README.md"}}
+                                                         ──► GET /repos/.../contents/README.md
+                      ◄──  {"result": {"contents": [
+                            {"uri": "...", "mimeType": "text/markdown",
+                             "text": "# MCP Python SDK ..."}
+                            ]}}
 ```
 
-Every MCP interaction follows this same JSON-RPC 2.0 pattern. Once you understand it for GitHub, you understand it for every MCP server.
+Every MCP interaction follows this same JSON-RPC 2.0 pattern — whether the transport is stdio, SSE, or Streamable HTTP. Once you understand it for GitHub, you understand it for every MCP server.
 
 ---
 
@@ -775,8 +774,8 @@ python m1_mcp/pricing_server.py --sse --port 8001
 MCP itself doesn't define authentication — servers implement it however they need:
 
 ```python
-# GitHub MCP: token passed via environment variable
-env={"GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..."}
+# GitHub MCP (hosted): token sent as an HTTP header on every request
+headers={"Authorization": "Bearer <your GitHub token>"}
 
 # Custom server: could check an API key in initialize params
 @mcp.server.initialize_handler()

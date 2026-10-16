@@ -518,7 +518,11 @@ This is one of ADK's most powerful features — first-class MCP support via `MCP
 ### Using stdio MCP Servers
 
 ```python
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters
+from google.adk.tools.mcp_tool.mcp_toolset import (
+    MCPToolset,
+    StdioServerParameters,
+    StreamableHTTPConnectionParams,
+)
 
 async def create_buyer_with_mcp():
     """Create a buyer agent with MCP tools from our pricing server."""
@@ -532,12 +536,11 @@ async def create_buyer_with_mcp():
         )
     )
 
-    # Connect to GitHub's MCP server (for market research)
+    # Connect to GitHub's hosted MCP server (for market research) over Streamable HTTP
     github_toolset = MCPToolset(
-        connection_params=StdioServerParameters(
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-github"],
-            env={"GITHUB_PERSONAL_ACCESS_TOKEN": os.environ["GITHUB_TOKEN"]}
+        connection_params=StreamableHTTPConnectionParams(
+            url="https://api.githubcopilot.com/mcp/readonly",
+            headers={"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}"},
         )
     )
 

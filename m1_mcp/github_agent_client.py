@@ -1,52 +1,62 @@
 """
 GitHub MCP Agent Client
 ========================
-An LLM-powered agent that connects to GitHub's MCP server and uses
-GPT-4o to decide which tools to call based on your natural language query.
+An LLM-powered agent that connects to GitHub's official MCP server and lets
+the model decide which tools to call based on your natural language query.
+It also shows the two primitives the model does NOT drive — resources and
+prompts — so you can see all three on a server every engineer knows.
 
 WHY THIS EXISTS:
   This demonstrates the SAME agentic pattern used by our buyer and seller
-  agents in Module 2 — but against GitHub's real MCP server, a tool every
-  engineer already knows:
+  agents in Module 2 — but against GitHub's real MCP server:
 
-  1. Connect to an MCP server and discover tools (list_tools)
-  2. Give the LLM the tool schemas so it knows what's available
-  3. Let the LLM DECIDE which tools to call based on the task
-  4. Execute the tool calls via MCP and feed results back to the LLM
-  5. LLM either calls more tools or produces a final answer
+  1. Connect to an MCP server and discover its primitives
+     (tools/list, resources/templates/list, prompts/list)
+  2. HOST step: optionally read a RESOURCE (e.g. a repo's README) and attach
+     it to the conversation as context. The model never "calls" a resource.
+  3. Give the LLM the tool schemas so it knows what's available
+  4. Let the LLM DECIDE which tools to call based on the task
+  5. Execute the tool calls via MCP and feed results back to the LLM
+  6. LLM either calls more tools or produces a final answer
 
-  The key insight: the agent is NOT scripted. It reads the query, sees the
-  available tools, and decides its own action plan — just like our buyer
-  agent decides whether to call get_market_price or calculate_discount.
+  The key insight: tools are model-controlled (the agent picks them), while
+  resources are application-controlled (the host decides what to attach).
+
+THE SERVER:
+  GitHub hosts its official MCP server at https://api.githubcopilot.com/mcp/
+  (Streamable HTTP, authenticated with your token as a Bearer header). We use
+  the /readonly endpoint so a demo can never modify anything on GitHub.
+  No Node.js or Docker needed.
 
 PREREQUISITES:
-  1. Node.js 18+ installed (for npx)
-  2. GITHUB_TOKEN — GitHub Personal Access Token
-  3. OPENAI_API_KEY — OpenAI API key
+  1. GITHUB_TOKEN — a real GitHub Personal Access Token (read access to
+     public repositories is enough)
+  2. OPENAI_API_KEY — OpenAI API key
 
 HOW TO RUN:
-  export GITHUB_TOKEN=ghp_your_token_here
-  export OPENAI_API_KEY=sk-your_key_here
-  python m1_mcp/github_agent_client.py
+  python m1_mcp/github_agent_client.py               # runs the sample queries
 
-  # Or with a custom query:
+  # Custom query (tools only):
   python m1_mcp/github_agent_client.py "What are the top Python MCP repos?"
 
-SAMPLE QUERIES TO TRY:
-  python m1_mcp/github_agent_client.py "Find popular real estate Python projects"
-  python m1_mcp/github_agent_client.py "Find open issues about MCP in the modelcontextprotocol/python-sdk repo"
+  # Custom query with a resource attached by the host:
+  python m1_mcp/github_agent_client.py \\
+      --attach repo://modelcontextprotocol/python-sdk/contents/README.md \\
+      "Summarize what this SDK provides"
 """
 
+import argparse
 import asyncio
 import json
 import os
 import sys
 from typing import Any
 
+import httpx
 from openai import AsyncOpenAI
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
 
 # ─── Env loading ──────────────────────────────────────────────────────────────
@@ -91,13 +101,23 @@ if not OPENAI_API_KEY or OPENAI_API_KEY.startswith("sk-your"):
 
 OPENAI_MODEL = "gpt-4o-mini"
 
-# ─── Sample queries ───────────────────────────────────────────────────────────
-# Each query exercises a different set of GitHub MCP tools.
-# The agent reads the query, sees the available tools, and decides its own plan.
+# GitHub's hosted MCP server, read-only endpoint (no write tools exposed).
+GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/readonly"
 
-SAMPLE_QUERIES = [
-    "Find popular real estate Python projects on GitHub",
-    "Find open issues about MCP in the modelcontextprotocol/python-sdk repo",
+# Resources can be large; cap what the host attaches to the conversation.
+MAX_RESOURCE_CHARS = 8_000
+
+# ─── Sample queries ───────────────────────────────────────────────────────────
+# (query, resource URI the host attaches first — or None for tools only)
+
+SAMPLE_QUERIES: list[tuple[str, str | None]] = [
+    ("Find popular real estate Python projects on GitHub", None),
+    (
+        "Using the attached README, explain in two sentences what the MCP Python SDK "
+        "provides. Then use your tools to list 3 open issues in "
+        "modelcontextprotocol/python-sdk that mention resources.",
+        "repo://modelcontextprotocol/python-sdk/contents/README.md",
+    ),
 ]
 
 
@@ -144,19 +164,52 @@ def _parse_tool_result(result: Any) -> str:
     return "{}"
 
 
+# ─── Primitive discovery (tools, resources, prompts) ─────────────────────────
+
+async def discover_primitives(session: ClientSession, capabilities: Any) -> list:
+    """List all three MCP primitives the server offers and return its tools."""
+    tools = (await session.list_tools()).tools
+    print(f"[Agent] TOOLS ({len(tools)}) — model-controlled: the LLM decides when to call them")
+    print(f"        e.g. {', '.join(t.name for t in tools[:6])}, ...")
+
+    if capabilities.resources:
+        templates = (await session.list_resource_templates()).resourceTemplates
+        print(f"[Agent] RESOURCE TEMPLATES ({len(templates)}) — application-controlled: the host reads them")
+        for template in templates:
+            print(f"        {template.uriTemplate}")
+
+    if capabilities.prompts:
+        prompts = (await session.list_prompts()).prompts
+        print(f"[Agent] PROMPTS ({len(prompts)}) — user-controlled: picked by a person, not the model")
+        print(f"        {', '.join(p.name for p in prompts)}")
+
+    print()
+    return tools
+
+
+async def read_resource_text(session: ClientSession, uri: str) -> str:
+    """HOST step: read a resource and return its text (truncated for the prompt)."""
+    result = await session.read_resource(uri)
+    text = "\n".join(c.text for c in result.contents if getattr(c, "text", None))
+    if len(text) > MAX_RESOURCE_CHARS:
+        text = text[:MAX_RESOURCE_CHARS] + "\n...[truncated by host]"
+    return text
+
+
 # ─── Agent loop ───────────────────────────────────────────────────────────────
 
-async def run_agent(query: str) -> str:
+async def run_agent(query: str, attach_uri: str | None = None) -> str:
     """
-    Agentic loop: connect to GitHub MCP server, let GPT-4o decide
-    which tools to call, execute them, and produce a final answer.
+    Agentic loop: connect to GitHub's MCP server, optionally attach a resource,
+    let the LLM decide which tools to call, execute them, and answer.
 
     This follows a ReAct-style tool-use loop:
-      1. Discover tools (list_tools)
-      2. Give tool schemas to the LLM
-      3. LLM returns tool_calls -> we execute them via MCP
-      4. Feed results back -> LLM either calls more tools or responds
-      5. Return the final text answer
+      1. Discover primitives (tools/list, resources/templates/list, prompts/list)
+      2. (Host) read a resource and add it to the conversation as context
+      3. Give tool schemas to the LLM
+      4. LLM returns tool_calls -> we execute them via MCP
+      5. Feed results back -> LLM either calls more tools or responds
+      6. Return the final text answer
     """
     print("=" * 65)
     print("GITHUB MCP AGENT")
@@ -164,37 +217,21 @@ async def run_agent(query: str) -> str:
     print("=" * 65)
     print()
 
-    # ── 1. Connect to GitHub MCP server ───────────────────────────────────
-    server_params = StdioServerParameters(
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-github"],
-        env={
-            **os.environ,
-            "GITHUB_PERSONAL_ACCESS_TOKEN": GITHUB_TOKEN,
-        },
-    )
-
-    print(f"[Agent] Connecting to GitHub MCP server...")
+    # ── 1. Connect to GitHub's hosted MCP server (Streamable HTTP) ────────
+    print(f"[Agent] Connecting to {GITHUB_MCP_URL} ...")
     print(f"[Agent] Query: {query}")
     print()
 
-    async with stdio_client(server_params) as (read, write):
+    headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
+    async with streamablehttp_client(GITHUB_MCP_URL, headers=headers) as (read, write, _):
         async with ClientSession(read, write) as session:
-            await session.initialize()
+            init = await session.initialize()
 
-            # ── 2. Discover tools ─────────────────────────────────────────
-            tools_response = await session.list_tools()
-            mcp_tools = tools_response.tools
+            # ── 2. Discover all three primitives ──────────────────────────
+            mcp_tools = await discover_primitives(session, init.capabilities)
             openai_tools = mcp_tools_to_openai_functions(mcp_tools)
+            tools_by_name = {t.name for t in mcp_tools}
 
-            print(f"[Agent] Discovered {len(mcp_tools)} GitHub MCP tools")
-            print()
-
-            # Build a name->tool lookup for execution
-            tools_by_name = {t.name: t for t in mcp_tools}
-
-            # ── 3. Start the agent loop ───────────────────────────────────
-            client = AsyncOpenAI(api_key=OPENAI_API_KEY)
             messages: list[dict] = [
                 {
                     "role": "system",
@@ -206,13 +243,30 @@ async def run_agent(query: str) -> str:
                         "After gathering data, provide a clear summary."
                     ),
                 },
-                {"role": "user", "content": query},
             ]
+
+            # ── 3. HOST step: attach a resource as context ────────────────
+            # The model never calls resources/read — the host (this script)
+            # decides what to read and puts the content in the conversation.
+            if attach_uri:
+                print(f"[Host]  resources/read {attach_uri}")
+                resource_text = await read_resource_text(session, attach_uri)
+                print(f"[Host]  attached {len(resource_text):,} chars as context for the LLM")
+                print()
+                messages.append({
+                    "role": "user",
+                    "content": f"Context attached from MCP resource {attach_uri}:\n\n{resource_text}",
+                })
+
+            messages.append({"role": "user", "content": query})
+
+            # ── 4. Start the agent loop ───────────────────────────────────
+            client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
             # Agent loop — up to 5 iterations of tool calling
             max_iterations = 5
             for iteration in range(1, max_iterations + 1):
-                print(f"[Agent] Iteration {iteration}: calling GPT-4o...")
+                print(f"[Agent] Iteration {iteration}: calling {OPENAI_MODEL}...")
 
                 response = await client.chat.completions.create(
                     model=OPENAI_MODEL,
@@ -255,13 +309,7 @@ async def run_agent(query: str) -> str:
                 else:
                     # LLM is done — it produced a final text response
                     final_answer = choice.message.content or "(no response)"
-                    print()
-                    print("=" * 65)
-                    print("AGENT ANSWER")
-                    print("=" * 65)
-                    print()
-                    print(final_answer)
-                    print()
+                    _print_answer(final_answer)
                     return final_answer
 
             # If we exhausted iterations, ask for a summary with no tools
@@ -276,31 +324,56 @@ async def run_agent(query: str) -> str:
                 temperature=0.2,
             )
             final_answer = response.choices[0].message.content or "(no response)"
-            print()
-            print("=" * 65)
-            print("AGENT ANSWER")
-            print("=" * 65)
-            print()
-            print(final_answer)
-            print()
+            _print_answer(final_answer)
             return final_answer
+
+
+def _print_answer(answer: str) -> None:
+    print()
+    print("=" * 65)
+    print("AGENT ANSWER")
+    print("=" * 65)
+    print()
+    print(answer)
+    print()
 
 
 # ─── Entry point ──────────────────────────────────────────────────────────────
 
 async def run_all_samples() -> None:
     """Run the agent against every sample query in SAMPLE_QUERIES."""
-    for i, query in enumerate(SAMPLE_QUERIES, 1):
+    for i, (query, attach_uri) in enumerate(SAMPLE_QUERIES, 1):
         print(f"\n{'#' * 65}")
         print(f"  SAMPLE QUERY {i}/{len(SAMPLE_QUERIES)}")
         print(f"{'#' * 65}")
-        await run_agent(query)
+        await run_agent(query, attach_uri)
+
+
+def _http_status(exc: BaseException) -> int | None:
+    """Find an HTTP status code inside an (exception-group-wrapped) error."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code
+    for inner in getattr(exc, "exceptions", ()):
+        code = _http_status(inner)
+        if code:
+            return code
+    return None
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        # Custom query from the command line
-        asyncio.run(run_agent(" ".join(sys.argv[1:])))
-    else:
-        # No args — loop through all sample queries
-        asyncio.run(run_all_samples())
+    parser = argparse.ArgumentParser(description="GitHub MCP agent (tools + host-attached resources).")
+    parser.add_argument("query", nargs="*", help="Question for the agent. Omit to run the sample queries.")
+    parser.add_argument("--attach", metavar="URI", help="Resource URI the host reads and attaches first, "
+                        "e.g. repo://owner/repo/contents/README.md")
+    args = parser.parse_args()
+
+    try:
+        if args.query:
+            asyncio.run(run_agent(" ".join(args.query), args.attach))
+        else:
+            asyncio.run(run_all_samples())
+    except Exception as error:
+        if _http_status(error) == 401:
+            print("ERROR: GitHub rejected GITHUB_TOKEN (401 Unauthorized). Check that it is a valid, unexpired token.")
+            sys.exit(1)
+        raise
