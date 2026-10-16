@@ -122,7 +122,9 @@ def detect_injection(text: str) -> str | None:
 
 from openai import OpenAI
 
-_judge_client = OpenAI()
+# Created on first use (inside the try below), so a missing or bad API key
+# fails open instead of stopping the whole agent from loading.
+_judge_client: OpenAI | None = None
 
 _JUDGE_SYSTEM_PROMPT = (
     "You are a security classifier for a real estate negotiation system.\n\n"
@@ -153,7 +155,10 @@ def llm_judge_injection(text: str) -> bool:
     Returns True if the judge considers it an injection, False if safe.
     On any error, returns False (fail-open — don't break negotiation).
     """
+    global _judge_client
     try:
+        if _judge_client is None:
+            _judge_client = OpenAI()
         response = _judge_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
