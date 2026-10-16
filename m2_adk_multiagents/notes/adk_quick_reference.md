@@ -246,7 +246,7 @@ conversation. Round 1 omits it (server assigns one); rounds 2+ pass it back so
 the agent remembers prior turns. **Equivalent to `session_id` in ADK** — same
 idea, just at the network layer instead of in-process.
 
-See `m2_adk_multiagents/adk_demos/a2a_11_context_threading.py` and the matching
+See `m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py` and the matching
 section in [`a2a_protocols.md`](a2a_protocols.md).
 
 ---

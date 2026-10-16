@@ -1214,10 +1214,10 @@ Turn 2 ("Now do the same for 123 Main St, Austin, TX.") yields the same 5-event 
 
 ## Demo 10 — A2A Wire Format & Task Lifecycle (`a2a_10_wire_lifecycle.py`)
 
-**File:** `adk_demos/a2a_10_wire_lifecycle.py` (terminal script)
+**File:** `a2a_demos/a2a_10_wire_lifecycle.py` (terminal script)
 
 ### What it teaches
-The raw A2A protocol on the wire — hand-crafted JSON-RPC, Agent Card discovery, and task lifecycle states. No SDK helpers for the request — you see the exact HTTP calls.
+The A2A protocol on the wire — Agent Card discovery, the JSON-RPC `message/send` request, and the task state in the response. The script builds the request with the A2A SDK's typed objects and prints the exact JSON-RPC body the SDK sends, so you can see the envelope without writing it by hand.
 
 ### How to run
 
@@ -1226,7 +1226,7 @@ The raw A2A protocol on the wire — hand-crafted JSON-RPC, Agent Card discovery
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # Terminal 2: Run the script
-python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py
+python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py
 ```
 
 > **Before running the script**, try browsing the Agent Cards directly in your browser. `adk web --a2a` reads each agent's `agent.json` and serves it automatically:
@@ -1235,6 +1235,8 @@ python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py
 > - http://127.0.0.1:8000/a2a/negotiation/.well-known/agent-card.json
 >
 > These are the same Agent Cards the script fetches programmatically in Step 1. The JSON you see in the browser comes from `agent.json` in each agent's folder (e.g., `negotiation_agents/buyer_agent/agent.json`).
+
+> **How did the script know where the agent lives?** `--seller-url` is *direct configuration*; the card itself is then found at the *well-known URI*. The third discovery strategy is a **registry**: agents publish their cards to a catalog, and clients search it by skill, tag or keyword (Google Cloud Agent Registry, AGNTCY Agent Directory). A2A doesn't standardize a registry API, so each one differs — see [`a2a_protocols.md` §13.1](a2a_protocols.md#131-how-clients-find-agent-cards--discovery-strategies-and-registries).
 
 ### A2A Protocol Objects (the building blocks)
 
@@ -1405,7 +1407,7 @@ Response:
 
 ## Demo 11 — A2A Context Threading (`a2a_11_context_threading.py`)
 
-**File:** `adk_demos/a2a_11_context_threading.py` (terminal script)
+**File:** `a2a_demos/a2a_11_context_threading.py` (terminal script)
 
 ### What it teaches
 How `contextId` threads multiple A2A requests into one conversation. Without it, each message starts a new conversation and the agent forgets everything.
@@ -1417,7 +1419,7 @@ How `contextId` threads multiple A2A requests into one conversation. Without it,
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # Terminal 2: Run the script
-python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py
+python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py
 ```
 
 ### What happens
@@ -1474,7 +1476,7 @@ Tool calls are read from each round's Task `history` (they appear as DataParts):
 
 ## Demo 12 — A2A Multi-Part Messages (`a2a_12_parts_and_artifacts.py`)
 
-**File:** `adk_demos/a2a_12_parts_and_artifacts.py` (terminal script)
+**File:** `a2a_demos/a2a_12_parts_and_artifacts.py` (terminal script)
 
 ### What it teaches
 How to send multi-part Messages (TextPart + DataPart in one message) and inspect the structured response history, including MCP tool calls appearing as DataParts.
@@ -1486,7 +1488,7 @@ How to send multi-part Messages (TextPart + DataPart in one message) and inspect
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # Terminal 2: Run the script
-python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py
+python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py
 ```
 
 ### What happened
@@ -1851,7 +1853,7 @@ Round 3:
 
 ### A2A Orchestrated Negotiation (Demo 13)
 
-**File:** `m2_adk_multiagents/a2a_13_orchestrated_negotiation.py`
+**File:** `m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py`
 
 **What it teaches:** How to orchestrate a full buyer ↔ seller negotiation using Agent Card discovery and A2A message/send — two separate agents communicating over HTTP with a script as matchmaker.
 
@@ -1861,7 +1863,7 @@ Round 3:
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # Terminal 2:
-python m2_adk_multiagents/a2a_13_orchestrated_negotiation.py
+python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 ```
 
 **What the script does:**

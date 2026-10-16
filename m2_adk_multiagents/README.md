@@ -44,10 +44,11 @@ m2_adk_multiagents/
     d08_callbacks/agent.py         before_agent / before_model / before_tool / after_tool / after_model
     d09_event_stream/agent.py      ADK event stream: tool calls, state deltas, markers
     d09_event_stream/run_event_stream.py  Terminal script: Runner.run_async() + print every Event
-    a2a_10_wire_lifecycle.py       Terminal script: raw JSON-RPC + task states
-    a2a_11_context_threading.py    Terminal script: contextId across rounds
-    a2a_12_parts_and_artifacts.py  Terminal script: multi-part messages + artifacts
-  a2a_13_orchestrated_negotiation.py  Terminal script: full buyer↔seller negotiation over A2A
+  a2a_demos/                       ← terminal scripts; run against adk web --a2a negotiation_agents/
+    a2a_10_wire_lifecycle.py       Agent Card discovery + JSON-RPC message/send + task state
+    a2a_11_context_threading.py    contextId across rounds
+    a2a_12_parts_and_artifacts.py  multi-part messages + artifacts
+    a2a_13_orchestrated_negotiation.py  full buyer↔seller negotiation over A2A
   exercises/
   solution/
   notes/
@@ -151,12 +152,12 @@ With `--a2a`, each agent gets an Agent Card at:
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # Terminal 2 — run the A2A demos
-python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
-python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
-python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
+python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 # A2A orchestrated negotiation (buyer ↔ seller via Agent Cards)
-python m2_adk_multiagents/a2a_13_orchestrated_negotiation.py
+python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 ```
 
 ---

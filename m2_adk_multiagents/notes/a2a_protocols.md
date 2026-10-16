@@ -3,7 +3,7 @@
 
 > **Audience:** Engineers who have built one agent and need to connect it to *other* agents — built by other teams, in other languages, on other clouds — without sharing code or memory.
 > **Prerequisites:** Comfort with HTTP and JSON. Familiarity with [`mcp_deep_dive.md`](../../m1_mcp/notes/mcp_deep_dive.md) helps because A2A reuses the same JSON-RPC envelope as MCP.
-> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_12_parts_and_artifacts.py` in `m2_adk_multiagents/adk_demos/`. Seeing the wire frames first is essential.
+> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_13_orchestrated_negotiation.py` in `m2_adk_multiagents/a2a_demos/`. Seeing the wire frames first is essential.
 > **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) for how ADK exposes A2A endpoints automatically via `adk web --a2a`.
 >
 > **TL;DR:**
@@ -31,6 +31,7 @@
 **Part II — The A2A Protocol Spec**
 12. [Spec Overview & Versioning](#12-spec-overview--versioning)
 13. [Agent Card](#13-agent-card)
+    - [How clients find Agent Cards — discovery strategies and registries](#131-how-clients-find-agent-cards--discovery-strategies-and-registries)
 14. [Tasks, Messages, Parts, Artifacts](#14-tasks-messages-parts-artifacts)
 15. [JSON-RPC Methods (`message/send`, `message/stream`, `tasks/*`)](#15-json-rpc-methods)
 16. [Task Lifecycle and Status Updates](#16-task-lifecycle-and-status-updates)
@@ -789,15 +790,15 @@ The idiomatic way to run A2A in this repo:
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # Terminal 2 — see the wire format and task lifecycle
-python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py \
+python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py \
     --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 # Terminal 2 — see context threading across rounds
-python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py \
+python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py \
     --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 # Terminal 2 — see multi-part messages and artifacts
-python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py \
+python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py \
     --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 ```
@@ -806,9 +807,9 @@ Key files:
 - `m2_adk_multiagents/negotiation_agents/buyer_agent/agent.py` (buyer LlmAgent + MCPToolset)
 - `m2_adk_multiagents/negotiation_agents/seller_agent/agent.py` (seller LlmAgent + dual MCPToolsets)
 - `m2_adk_multiagents/negotiation_agents/negotiation/agent.py` (LoopAgent + SequentialAgent)
-- `m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` (raw A2A wire format)
-- `m2_adk_multiagents/adk_demos/a2a_11_context_threading.py` (contextId threading)
-- `m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py` (multi-part messages)
+- `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` (raw A2A wire format)
+- `m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py` (contextId threading)
+- `m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py` (multi-part messages)
 
 ---
 
@@ -878,38 +879,21 @@ Compare to:
 
 ### Pattern 1: Agent Registry
 
-In production, agents need to discover each other. An agent registry solves this:
+In production, agents need to find each other without hard-coded URLs. A
+registry stores Agent Cards and answers queries such as "agents with skill
+tag `seller`". The A2A spec does not define a registry API — see
+[§13.1](#131-how-clients-find-agent-cards--discovery-strategies-and-registries)
+for the discovery strategies and real registries (Google Cloud Agent
+Registry, AGNTCY Agent Directory). Conceptually:
 
 ```python
-class AgentRegistry:
-    """
-    Agents register themselves with their capabilities.
-    Other agents can discover and connect to them.
-    """
-
-    def __init__(self):
-        self._agents: dict[str, AgentCard] = {}
-
-    def register(self, agent_card: AgentCard) -> None:
-        """Agent announces its existence and capabilities."""
-        self._agents[agent_card.agent_id] = agent_card
-
-    def find_by_capability(self, capability: str) -> list[AgentCard]:
-        """Find agents that can handle a specific task."""
-        return [
-            card for card in self._agents.values()
-            if capability in card.capabilities
-        ]
-
-class AgentCard(BaseModel):
-    """The A2A equivalent of an MCP server's tool list."""
-    agent_id: str
-    name: str
-    description: str
-    capabilities: list[str]   # ["real_estate_negotiation", "property_valuation"]
-    endpoint: str             # "http://buyer-agent:8000"
-    supported_message_types: list[MessageType]
-    input_schema: dict        # What messages this agent accepts
+# 1. Agents publish their real A2A Agent Card (the same JSON served at
+#    /.well-known/agent-card.json) to the registry.
+# 2. A client queries by skill, tag, or keyword:
+cards = registry.search(tags=["seller"])          # API differs per registry
+card = cards[0]
+# 3. The client uses the returned card exactly like a fetched one:
+client = A2AClient(httpx_client=http, agent_card=card)   # card.url, card.capabilities, ...
 ```
 
 ### Pattern 2: Mediator Agent
@@ -1021,9 +1005,9 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 Then run:
 ```bash
-python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py
-python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py
-python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py
+python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py
+python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py
+python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py
 ```
 
 ---
@@ -1084,11 +1068,57 @@ Each `AgentSkill` should have an `id`, `name`, `description`, `tags`,
 `examples`, and per-skill `inputModes`/`outputModes`. Skills are how a
 caller (human or another agent) decides whether your agent is a fit.
 
-With `adk web --a2a`, the seller agent advertises skills automatically
-based on its `description` and tools. Agent Cards are auto-generated.
+With `adk web --a2a`, each agent's card is **read from its `agent.json`**
+(for example `negotiation_agents/seller_agent/agent.json`); agent folders
+without one aren't exposed over A2A. The card's `capabilities` matter: the
+A2A server refuses `message/stream` unless `streaming` is true, and refuses
+push-notification setup unless `pushNotifications` is true.
 
-**Demo:** `m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` fetches
+**Demo:** `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` fetches
 and prints the Agent Card before sending the first message.
+
+### 13.1 How clients find Agent Cards — discovery strategies and registries
+
+The A2A docs ([Agent Discovery](https://a2a-protocol.org/latest/topics/agent-discovery/))
+describe three strategies:
+
+| Strategy | How it works | In this workshop |
+|---|---|---|
+| **Well-known URI** | The agent serves its card at `https://{domain}/.well-known/agent-card.json`; a client that knows the domain fetches it | ✅ Every A2A demo fetches the card this way |
+| **Curated registry** (catalog-based) | Agents publish cards to a central registry; clients query it "by criteria like skills or tags" and get back matching cards | Not built — see below |
+| **Direct configuration** | The client is configured with URLs or cards (config files, env vars) | ✅ The base URLs in the demos (`--seller-url`, `--base-url`) are direct configuration |
+
+In the demos the agent's **base URL** is configured directly, and the
+**card** is discovered at the well-known path under it. A registry would
+replace the configured URL with a query ("find me an agent that can
+negotiate as a seller").
+
+**There is no standard registry API.** The A2A docs say so explicitly:
+"The current A2A specification does not prescribe a standard API for
+curated registries." Each registry has its own API and data model.
+
+Real registries you'll meet:
+
+| Registry | What it is | How you search it |
+|---|---|---|
+| **Google Cloud Agent Registry** ([docs](https://docs.cloud.google.com/agent-registry/overview)) | Managed catalog in a Google Cloud project for agents, MCP servers, skills and endpoints. Works with Agent Identity and Agent Gateway for runtime governance. Needs a project and IAM roles (e.g. `roles/agentregistry.viewer` to search); no local emulator | **Agents:** keyword search with `AND` / `OR` / `NOT`, matching metadata, description and the **A2A skills in the Agent Card** — `gcloud agent-registry agents search --search-string="flight OR booking"` — and prefix search such as `displayName:Best_A2A_*`. **Semantic** search (`--search-type=semantic`) is documented for registered *skills* (`SKILL.md` packages), not for agents |
+| **AGNTCY Agent Directory** ([github.com/agntcy/dir](https://github.com/agntcy/dir)) | Open source. Publishes and discovers agent records over a distributed peer-to-peer network (DHT), with cryptographic signing; records use the OASF schema rather than raw Agent Cards. CLI (`dirctl`) and Go/Python/JS SDKs; you run a directory node | **Capability-based** discovery: records describe skills in hierarchical taxonomies (OASF) and are matched by those attributes |
+| **MCP Registry** ([github.com/modelcontextprotocol/registry](https://github.com/modelcontextprotocol/registry)) | The official registry for **MCP servers** — "like an app store for MCP servers". Not for A2A agents; in preview (API frozen at v0.1) | Lists published MCP servers and their metadata |
+
+The search ideas recur across registries:
+
+| Search style | What it matches | Where it appears |
+|---|---|---|
+| **Tags / skills** (structured) | `skills[].tags`, skill names, or a skill taxonomy | A2A docs ("skills or tags"), AGNTCY (OASF taxonomy) |
+| **Keyword** with boolean operators | Name, description, skill text | Google Agent Registry agents |
+| **Prefix** | Start of a field, for autocomplete | Google Agent Registry (`displayName:...*`) |
+| **Semantic** (by meaning) | Embeddings of descriptions / instructions | Google Agent Registry *skills* |
+
+Whatever the registry, it returns an **Agent Card** (or a reference to
+one). The client then reads that card — `url`, `skills`, `capabilities`,
+`securitySchemes` — to decide how to call the agent. That's why rich,
+accurate skill descriptions and tags in your `agent.json` matter: they are
+what gets searched.
 
 ---
 
@@ -1129,7 +1159,7 @@ Four object types describe everything that flows between agents.
 In Phase 2, the seller server attaches a `negotiation-summary` artifact
 (a `DataPart` with the full structured response) to every completed Task.
 
-**Demo:** `m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py` sends a
+**Demo:** `m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py` sends a
 multi-part message (TextPart + DataPart) and inspects any artifacts the server returns.
 
 ---
@@ -1163,7 +1193,7 @@ The request envelope is plain JSON-RPC 2.0:
 }
 ```
 
-**Demo:** `m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` builds
+**Demo:** `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` builds
 this envelope by hand — no SDK helpers — so you can see the exact wire
 shape.
 
@@ -1196,7 +1226,7 @@ The server advances the state by calling `TaskUpdater` methods:
 In Phase 2, our seller server emits a `working` status update *before* the
 slow LLM/MCP roundtrip starts so streaming clients see the agent is alive.
 
-**Demo:** `m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` sends a valid
+**Demo:** `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` sends a valid
 and an invalid envelope so you can compare `completed` vs `failed`.
 
 ---

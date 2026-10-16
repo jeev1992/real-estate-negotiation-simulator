@@ -34,7 +34,7 @@ Prereq:
     adk web --a2a m2_adk_multiagents/negotiation_agents/ --port 8000
 
 Run:
-    python m2_adk_multiagents/a2a_13_orchestrated_negotiation.py
+    python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 """
 
 import argparse
@@ -130,6 +130,10 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
+    # Direct configuration: we know where the agents live. With a registry
+    # (Google Cloud Agent Registry, AGNTCY Agent Directory, ...) the matchmaker
+    # would instead search for "an agent with a seller skill" and get these
+    # Agent Cards back — see a2a_protocols.md §13.1.
     buyer_url = f"{args.base_url}/a2a/buyer_agent"
     seller_url = f"{args.base_url}/a2a/seller_agent"
 

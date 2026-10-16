@@ -29,7 +29,7 @@ Prereq:
     adk web --a2a m2_adk_multiagents/negotiation_agents/ --port 8000
 
 Run:
-    python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py \\
+    python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py \\
         --seller-url http://127.0.0.1:8000/a2a/seller_agent
 """
 
@@ -74,6 +74,12 @@ async def main() -> None:
         #
         # A2ACardResolver fetches from the well-known URL:
         #   GET /<agent>/.well-known/agent-card.json
+        #
+        # Where does --seller-url come from? Here it's direct configuration.
+        # In production you'd often look the agent up in a registry first
+        # (Google Cloud Agent Registry, AGNTCY Agent Directory, ...) by skill,
+        # tag or keyword, and get its Agent Card back. A2A doesn't standardize
+        # the registry API — see a2a_protocols.md §13.1.
         #
         print("=== 1. AGENT CARD (discovery) ===")
         resolver = A2ACardResolver(httpx_client=http, base_url=args.seller_url)

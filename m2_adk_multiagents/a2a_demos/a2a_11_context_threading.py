@@ -39,7 +39,7 @@ Prereq:
     adk web --a2a m2_adk_multiagents/negotiation_agents/ --port 8000
 
 Run:
-    python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py \\
+    python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py \\
         --seller-url http://127.0.0.1:8000/a2a/seller_agent
 """
 
