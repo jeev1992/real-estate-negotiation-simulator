@@ -24,7 +24,8 @@
 
 # ── MCP (Model Context Protocol) ────────────────────────────────────────────
 # Core MCP library — client and server (FastMCP included)
-mcp>=1.0.0
+# <2: mcp 2.x renamed FastMCP to MCPServer and breaks both workshop servers.
+mcp>=1.0.0,<2.0.0
 
 
 # ── LLM Providers ────────────────────────────────────────────────────────────
@@ -33,7 +34,8 @@ mcp>=1.0.0
 openai>=1.40.0
 
 # Google ADK — powers the ADK agents (OpenAI-backed model runtime)
-google-adk>=1.0.0
+# <2: the workshop is written and tested against the ADK 1.x API.
+google-adk>=1.0.0,<2.0.0
 
 # LiteLLM — required by ADK for provider-style model IDs (e.g., openai/gpt-4o)
 litellm>=1.75.5
