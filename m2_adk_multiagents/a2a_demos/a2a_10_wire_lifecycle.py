@@ -1,14 +1,11 @@
 """
-Demo 10 — A2A Wire Format and Task Lifecycle
-================================================
+Demo 10 — A2A Wire Format and the Task
+=========================================
 Peek under the hood of the A2A protocol. This script:
-  1. Fetches the Agent Card (discovery) via A2ACardResolver
-  2. Sends a valid offer using typed SDK objects (DataPart)
-  3. Sends a broken envelope to show graceful error handling
-
-Uses the A2A SDK for type-safe message construction and transport.
-We print the serialized wire format so you can see exactly what
-JSON-RPC frames go over the wire.
+  1. Fetches the seller's Agent Card (discovery)
+  2. Sends one offer with message/send and prints the ACTUAL HTTP bytes
+     going out and coming back (via httpx event hooks — nothing re-built)
+  3. Takes the returned Task apart: id, contextId, status, history, artifacts
 
 WHAT IS A2A?
   A2A (Agent-to-Agent) is an open protocol for agents to discover and
@@ -18,15 +15,20 @@ WHAT IS A2A?
     - A2A:  agent discovers AGENTS → Agent Card, message/send
 
 KEY A2A OBJECTS:
-  Task     — unit of work (like a support ticket)
-               Has a lifecycle: submitted → working → completed/failed
-  Message  — one turn in the conversation (has role: user or agent)
+  Task     — unit of work (like a support ticket). Has an id and a lifecycle:
+               submitted → working → completed / failed / canceled / rejected
+  Message  — one turn in the conversation (role: user or agent)
   Part     — atomic content: TextPart, DataPart, or FilePart
-  Artifact — durable output attached to a completed Task
+  Artifact — the task's durable output (the deliverable)
   contextId — ties multiple Tasks into one conversation thread
 
+CLIENT API:
+  ClientFactory + ClientConfig → Client (a2a-sdk's current client; the older
+  A2AClient class is deprecated). The factory reads the Agent Card and picks
+  the transport the agent declares (JSON-RPC here).
+
 Prereq:
-    adk web --a2a m2_adk_multiagents/negotiation_agents/ --port 8000
+    adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 Run:
     python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py \\
@@ -39,37 +41,85 @@ import json
 import uuid
 
 import httpx
-from a2a.client import A2ACardResolver, A2AClient
-from a2a.types import (
-    DataPart,
-    Message,
-    MessageSendParams,
-    Role,
-    SendMessageRequest,
-    SendMessageSuccessResponse,
-    Task,
-    TextPart,
-)
+from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from a2a.types import DataPart, Message, Role, Task, TextPart
+
+MAX_BODY_CHARS = 2500
+
+
+def pretty(body: str) -> str:
+    try:
+        text = json.dumps(json.loads(body), indent=2)
+    except ValueError:
+        text = body
+    if len(text) > MAX_BODY_CHARS:
+        text = text[:MAX_BODY_CHARS] + f"\n... ({len(text) - MAX_BODY_CHARS} more chars)"
+    return text
+
+
+# ── httpx event hooks: print every request/response exactly as sent ──────────
+
+async def log_request(request: httpx.Request) -> None:
+    print(f"──► {request.method} {request.url}")
+    if request.content:
+        print(pretty(request.content.decode()))
+
+
+async def log_response(response: httpx.Response) -> None:
+    await response.aread()
+    print(f"◄── HTTP {response.status_code}  {response.headers.get('content-type')}")
+    print(pretty(response.text))
+    print()
+
+
+def describe_part(part) -> str:
+    inner = part.root
+    if isinstance(inner, TextPart):
+        return f'text "{inner.text.strip()[:90]}"'
+    if isinstance(inner, DataPart):
+        data = inner.data
+        if "args" in data:                     # ADK sends tool calls as DataParts
+            return f"data (tool_call {data.get('name')})"
+        if "response" in data:
+            return f"data (tool_result {data.get('name')})"
+        return f"data keys={list(data)}"
+    return inner.kind
+
+
+def print_task_anatomy(task: Task) -> None:
+    print("=== 3. THE TASK, TAKEN APART ===")
+    print(f"  id          {task.id}        ← this unit of work (tasks/get uses it)")
+    print(f"  contextId   {task.context_id}        ← the conversation it belongs to")
+    print(f"  status      {task.status.state.value}  at {task.status.timestamp}")
+    print(f"  history     {len(task.history or [])} message(s) — the conversation so far:")
+    for i, message in enumerate(task.history or []):
+        parts = ", ".join(describe_part(p) for p in message.parts)
+        print(f"    [{i}] {message.role.value:<5} {parts}")
+    print(f"  artifacts   {len(task.artifacts or [])} — the deliverable:")
+    for artifact in task.artifacts or []:
+        parts = ", ".join(describe_part(p) for p in artifact.parts)
+        print(f"    artifactId={artifact.artifact_id}  {parts}")
+    print()
+    print("  Note: message/send blocked until the task finished, so we only see the")
+    print("  final state. Demo 14 shows submitted → working → completed as it happens.")
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="A2A wire format + task lifecycle demo"
-    )
-    parser.add_argument(
-        "--seller-url",
-        default="http://127.0.0.1:8000/a2a/seller_agent",
-    )
+    parser = argparse.ArgumentParser(description="A2A wire format + the Task object")
+    parser.add_argument("--seller-url", default="http://127.0.0.1:8000/a2a/seller_agent")
     args = parser.parse_args()
 
-    async with httpx.AsyncClient(timeout=60.0) as http:
+    async with httpx.AsyncClient(
+        timeout=60.0,
+        event_hooks={"request": [log_request], "response": [log_response]},
+    ) as http:
 
         # ── Step 1: Discovery — fetch the Agent Card ──────────────────
         #
         # Before sending any messages, a client fetches the Agent Card.
         # This is the A2A equivalent of MCP's tools/list — it tells you:
         #   - What the agent does (name, description, skills)
-        #   - Where to send messages (url)
+        #   - Where to send messages (url) and over which transport
         #   - What features are supported (streaming, push notifications)
         #
         # A2ACardResolver fetches from the well-known URL:
@@ -82,29 +132,26 @@ async def main() -> None:
         # the registry API — see a2a_protocols.md §13.1.
         #
         print("=== 1. AGENT CARD (discovery) ===")
-        resolver = A2ACardResolver(httpx_client=http, base_url=args.seller_url)
-        card = await resolver.get_agent_card()
-        print(json.dumps(card.model_dump(mode="json"), indent=2))
-        print()
+        card = await A2ACardResolver(httpx_client=http, base_url=args.seller_url).get_agent_card()
 
-        client = A2AClient(httpx_client=http, agent_card=card)
+        # streaming=False: ask for plain message/send so the whole answer comes
+        # back as ONE JSON body you can read. (The seller's card does allow
+        # streaming — demo 14 uses it.)
+        client = ClientFactory(ClientConfig(httpx_client=http, streaming=False)).create(card)
 
-        # ── Step 2: Valid offer — see task lifecycle ───────────────────
+        # ── Step 2: message/send — the JSON-RPC frames on the wire ────
         #
-        # Build a typed offer using DataPart (structured dict) instead
-        # of stuffing JSON into a TextPart string. The SDK handles all
-        # JSON-RPC framing — no manual envelope construction needed.
+        # A TextPart for the LLM plus a DataPart with the same offer as
+        # structured data. The SDK wraps it in a JSON-RPC 2.0 envelope.
         #
         # What happens server-side:
-        #   1. adk web receives the JSON-RPC request
-        #   2. Creates a Task (status: submitted)
-        #   3. Runs the seller LlmAgent (status: working)
+        #   1. adk web receives the JSON-RPC request and creates a Task
+        #   2. Runs the seller LlmAgent (task is "working")
         #      - LlmAgent calls MCP tools (get_market_price, etc.)
-        #      - LLM produces counter-offer based on tool results
-        #   4. Task completes (status: completed)
-        #   5. Response includes contextId, history, and artifacts
+        #      - LLM produces a counter-offer based on tool results
+        #   3. Task completes; the reply is attached as an Artifact
         #
-        print("=== 2. VALID OFFER ===")
+        print("=== 2. message/send ON THE WIRE ===")
         offer = {
             "round": 1,
             "from_agent": "buyer",
@@ -114,69 +161,25 @@ async def main() -> None:
             "conditions": ["inspection contingency"],
             "closing_timeline_days": 30,
         }
-        request = SendMessageRequest(
-            id=f"req_{uuid.uuid4().hex[:8]}",
-            params=MessageSendParams(
-                message=Message(
-                    messageId=f"msg_{uuid.uuid4().hex[:8]}",
-                    role=Role.user,
-                    parts=[
-                        TextPart(text="Opening offer at $440k, 30-day close, pre-approved."),
-                        DataPart(data=offer),
-                    ],
-                )
-            ),
+        message = Message(
+            message_id=f"msg_{uuid.uuid4().hex[:8]}",
+            role=Role.user,
+            parts=[
+                TextPart(text="Opening offer at $440k, 30-day close, pre-approved."),
+                DataPart(data=offer),
+            ],
         )
 
-        # Print the wire format — this is what the SDK sends over HTTP
-        print("WIRE FORMAT (what the SDK sends):")
-        print(json.dumps(request.model_dump(mode="json", exclude_none=True), indent=2))
+        task = None
+        async for event in client.send_message(message):
+            # Non-streaming: exactly one event — (Task, None), or a Message
+            # if the agent answered without creating a task.
+            task = event[0] if isinstance(event, tuple) else event
 
-        response = await client.send_message(request)
-        result = response.root
-
-        if isinstance(result, SendMessageSuccessResponse):
-            task_or_msg = result.result
-            if isinstance(task_or_msg, Task):
-                print(f"\nRESPONSE (status={task_or_msg.status.state.value}):")
-                print(f"  contextId: {task_or_msg.context_id}")
-                print(f"  artifacts: {len(task_or_msg.artifacts or [])}")
-            print(json.dumps(result.model_dump(mode="json"), indent=2)[:1500])
-        else:
-            print(f"ERROR: {json.dumps(result.model_dump(mode='json'), indent=2)}")
-        print()
-
-        # ── Step 3: Broken envelope — graceful error handling ─────────
-        #
-        # Send garbage data — no price, no real structure.
-        # The A2A protocol still works (valid JSON-RPC, valid Message)
-        # so the task shows "completed" not "failed". The LLM handles
-        # bad content gracefully: "Could you please resend your offer?"
-        #
-        # "completed" = the agent processed the request.
-        # "failed" = protocol error or server crash.
-        #
-        print("=== 3. BROKEN ENVELOPE (expect graceful handling) ===")
-        request = SendMessageRequest(
-            id=f"req_{uuid.uuid4().hex[:8]}",
-            params=MessageSendParams(
-                message=Message(
-                    messageId=f"msg_{uuid.uuid4().hex[:8]}",
-                    role=Role.user,
-                    parts=[TextPart(text="broken message with no real offer")],
-                )
-            ),
-        )
-        response = await client.send_message(request)
-        result = response.root
-
-        if isinstance(result, SendMessageSuccessResponse):
-            task_or_msg = result.result
-            if isinstance(task_or_msg, Task):
-                print(f"RESPONSE (status={task_or_msg.status.state.value}):")
-            print(json.dumps(result.model_dump(mode="json"), indent=2)[:1500])
-        else:
-            print(f"ERROR: {json.dumps(result.model_dump(mode='json'), indent=2)}")
+    if isinstance(task, Task):
+        print_task_anatomy(task)
+    else:
+        print(f"Agent replied with a Message, not a Task: {task}")
 
 
 if __name__ == "__main__":

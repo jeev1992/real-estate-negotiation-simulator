@@ -13,8 +13,14 @@ Agent Card, and this script uses the matching A2A mechanism:
   negotiation    pushNotifications: true        PUSH     — message/send with a webhook; the
                                                             server POSTs task updates to us
 
-The A2A server checks the card for streaming: `refusal` mode asks the buyer
-(streaming: false) to stream and gets an error back.
+The ClientConfig decides which one the a2a-sdk Client uses:
+  polling   ClientConfig(streaming=False, polling=True)
+  streaming ClientConfig(streaming=True)       — used only if the card says streaming: true
+  push      ClientConfig(streaming=False, polling=True,
+                         push_notification_configs=[PushNotificationConfig(url, token)])
+
+Asking an agent for something its card doesn't offer is an error — see
+demo 15 (error handling).
 
 Prereqs (two terminals):
     adk web --a2a m2_adk_multiagents/negotiation_agents/              # buyer + seller on :8000
@@ -24,7 +30,6 @@ Run:
     python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode polling
     python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode streaming
     python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode push        # ~30-60 s
-    python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode refusal
 """
 
 import argparse
@@ -32,22 +37,16 @@ import asyncio
 import secrets
 import time
 import uuid
-import warnings
 
 import httpx
 import uvicorn
-from a2a.client import A2ACardResolver, A2AClient
+from a2a.client import A2ACardResolver, Client, ClientConfig, ClientFactory
 from a2a.types import (
     AgentCard,
     DataPart,
-    GetTaskRequest,
     Message,
-    MessageSendConfiguration,
-    MessageSendParams,
     PushNotificationConfig,
     Role,
-    SendMessageRequest,
-    SendStreamingMessageRequest,
     Task,
     TaskArtifactUpdateEvent,
     TaskQueryParams,
@@ -60,9 +59,6 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-# Classic A2AClient is used intentionally for parity with demos 10-13.
-warnings.filterwarnings("ignore", message=".*A2AClient is deprecated.*", category=DeprecationWarning)
-
 TERMINAL = {TaskState.completed, TaskState.failed, TaskState.canceled, TaskState.rejected}
 _t0 = time.monotonic()
 
@@ -71,12 +67,8 @@ def ts() -> str:
     return f"t+{time.monotonic() - _t0:5.1f}s"
 
 
-def rid() -> str:
-    return f"req_{uuid.uuid4().hex[:8]}"
-
-
 def user_message(text: str) -> Message:
-    return Message(messageId=f"msg_{uuid.uuid4().hex[:8]}", role=Role.user, parts=[TextPart(text=text)])
+    return Message(message_id=f"msg_{uuid.uuid4().hex[:8]}", role=Role.user, parts=[TextPart(text=text)])
 
 
 def describe_parts(parts) -> str:
@@ -107,24 +99,32 @@ def final_text(task: Task) -> str:
     return "(no text)"
 
 
-async def discover(http: httpx.AsyncClient, base_url: str) -> tuple[A2AClient, AgentCard]:
+async def discover(http: httpx.AsyncClient, base_url: str) -> AgentCard:
     card = await A2ACardResolver(httpx_client=http, base_url=base_url).get_agent_card()
     caps = card.capabilities
     print(f"Agent Card: {card.name} @ {card.url}")
     print(f"  capabilities: streaming={caps.streaming}, pushNotifications={caps.push_notifications}\n")
-    return A2AClient(httpx_client=http, agent_card=card), card
+    return card
+
+
+async def send_once(client: Client, message: Message) -> Task:
+    """Non-streaming send: the Client yields exactly one (Task, None)."""
+    async for event in client.send_message(message):
+        if isinstance(event, Message):
+            raise RuntimeError(f"expected a Task, got a Message: {event!r}")
+        return event[0]
+    raise RuntimeError("no response")
 
 
 # ── 1. POLLING (buyer) ────────────────────────────────────────────────────────
 
 async def polling(http: httpx.AsyncClient, buyer_url: str) -> None:
     print("=" * 72, "\nPOLLING — buyer_agent\n" + "=" * 72)
-    client, card = await discover(http, buyer_url)
-    request = SendMessageRequest(id=rid(), params=MessageSendParams(
-        message=user_message("Make your opening offer for 742 Evergreen Terrace, Austin TX 78701 (listed at $485,000)."),
-        configuration=MessageSendConfiguration(blocking=False),   # ← return immediately, don't wait
-    ))
-    task: Task = (await client.send_message(request)).root.result
+    card = await discover(http, buyer_url)
+    # polling=True → message/send with blocking=false: return immediately, don't wait
+    client = ClientFactory(ClientConfig(httpx_client=http, streaming=False, polling=True)).create(card)
+    task = await send_once(client, user_message(
+        "Make your opening offer for 742 Evergreen Terrace, Austin TX 78701 (listed at $485,000)."))
     print(f"{ts()}  message/send (blocking=false) → task {task.id[:8]}  state={task.status.state.value}")
     print(f"           taskId={task.id}\n           contextId={task.context_id}  (the conversation; a new message gets a new taskId)")
 
@@ -132,7 +132,7 @@ async def polling(http: httpx.AsyncClient, buyer_url: str) -> None:
     while task.status.state not in TERMINAL:
         await asyncio.sleep(1.0)
         polls += 1
-        task = (await client.get_task(GetTaskRequest(id=rid(), params=TaskQueryParams(id=task.id)))).root.result
+        task = await client.get_task(TaskQueryParams(id=task.id))
         if task.status.state != last:
             print(f"{ts()}  tasks/get #{polls} → state={task.status.state.value}")
             last = task.status.state
@@ -143,22 +143,21 @@ async def polling(http: httpx.AsyncClient, buyer_url: str) -> None:
 
 async def streaming(http: httpx.AsyncClient, seller_url: str) -> None:
     print("=" * 72, "\nSTREAMING — seller_agent\n" + "=" * 72)
-    client, card = await discover(http, seller_url)
-    request = SendStreamingMessageRequest(id=rid(), params=MessageSendParams(
-        message=user_message("The buyer offers $440,000 for 742 Evergreen Terrace with a 30-day close. Respond with ACCEPT or COUNTER."),
-    ))
-    async for event in client.send_message_streaming(request):
-        result = event.root.result
-        if isinstance(result, Task):
-            print(f"{ts()}  task        {result.id[:8]} state={result.status.state.value}")
-        elif isinstance(result, TaskStatusUpdateEvent):
-            content = describe_parts(result.status.message.parts) if result.status.message else "-"
-            print(f"{ts()}  status      state={result.status.state.value:<9} final={result.final!s:<5} {content}")
-        elif isinstance(result, TaskArtifactUpdateEvent):
-            print(f"{ts()}  artifact    {describe_parts(result.artifact.parts)}")
-        else:
-            print(f"{ts()}  {type(result).__name__}")
-    print()
+    card = await discover(http, seller_url)
+    client = ClientFactory(ClientConfig(httpx_client=http, streaming=True)).create(card)
+    message = user_message(
+        "The buyer offers $440,000 for 742 Evergreen Terrace with a 30-day close. Respond with ACCEPT or COUNTER.")
+    # The Client yields (task, update): `task` is the task so far (the SDK
+    # merges each update into it); `update` is the event that just arrived.
+    async for task, update in client.send_message(message):
+        if update is None:
+            print(f"{ts()}  task        {task.id[:8]} state={task.status.state.value}")
+        elif isinstance(update, TaskStatusUpdateEvent):
+            content = describe_parts(update.status.message.parts) if update.status.message else "-"
+            print(f"{ts()}  status      state={update.status.state.value:<9} final={update.final!s:<5} {content}")
+        elif isinstance(update, TaskArtifactUpdateEvent):
+            print(f"{ts()}  artifact    {describe_parts(update.artifact.parts)}")
+    print(f"\n  final task: state={task.status.state.value}, artifacts={len(task.artifacts or [])}\n")
 
 
 # ── 3. PUSH (negotiation) ─────────────────────────────────────────────────────
@@ -194,15 +193,14 @@ async def push(http: httpx.AsyncClient, negotiation_url: str, webhook_port: int)
     print(f"Webhook listening on {webhook_url}\n")
 
     try:
-        client, card = await discover(http, negotiation_url)
-        request = SendMessageRequest(id=rid(), params=MessageSendParams(
-            message=user_message("Start the negotiation."),
-            configuration=MessageSendConfiguration(
-                blocking=False,
-                push_notification_config=PushNotificationConfig(url=webhook_url, token=token),
-            ),
-        ))
-        task: Task = (await client.send_message(request)).root.result
+        card = await discover(http, negotiation_url)
+        client = ClientFactory(ClientConfig(
+            httpx_client=http,
+            streaming=False,
+            polling=True,                                   # blocking=false
+            push_notification_configs=[PushNotificationConfig(url=webhook_url, token=token)],
+        )).create(card)
+        task = await send_once(client, user_message("Start the negotiation."))
         print(f"{ts()}  message/send (blocking=false, webhook registered) → task {task.id[:8]} "
               f"state={task.status.state.value}")
         print(f"{ts()}  the client is free now — no open connection, no polling. Waiting for POSTs...\n")
@@ -213,25 +211,9 @@ async def push(http: httpx.AsyncClient, negotiation_url: str, webhook_port: int)
     print()
 
 
-# ── 4. REFUSAL (the card is enforced) ─────────────────────────────────────────
-
-async def refusal(http: httpx.AsyncClient, buyer_url: str) -> None:
-    print("=" * 72, "\nREFUSAL — asking buyer_agent (streaming: false) to stream\n" + "=" * 72)
-    client, card = await discover(http, buyer_url)
-    request = SendStreamingMessageRequest(id=rid(), params=MessageSendParams(message=user_message("Make an offer.")))
-    # Sent as raw JSON-RPC so you see the server's own answer (the SDK's
-    # streaming client only reports that the reply wasn't an event stream).
-    body = request.model_dump(mode="json", exclude_none=True)
-    response = await http.post(card.url, json=body, headers={"Accept": "text/event-stream"})
-    print(f"  POST {card.url}  method={body['method']}")
-    print(f"  ← HTTP {response.status_code}  {response.headers.get('content-type')}")
-    print(f"  ← {response.text}")
-    print()
-
-
 async def main() -> None:
     parser = argparse.ArgumentParser(description="A2A result delivery: polling, streaming, push.")
-    parser.add_argument("--mode", choices=["polling", "streaming", "push", "refusal", "all"], default="all")
+    parser.add_argument("--mode", choices=["polling", "streaming", "push", "all"], default="all")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000", help="adk web --a2a (buyer, seller)")
     parser.add_argument("--negotiation-url", default="http://127.0.0.1:8003", help="negotiation_a2a_server.py")
     parser.add_argument("--webhook-port", type=int, default=9010)
@@ -242,8 +224,6 @@ async def main() -> None:
             await polling(http, f"{args.base_url}/a2a/buyer_agent")
         if args.mode in ("streaming", "all"):
             await streaming(http, f"{args.base_url}/a2a/seller_agent")
-        if args.mode in ("refusal", "all"):
-            await refusal(http, f"{args.base_url}/a2a/buyer_agent")
         if args.mode in ("push", "all"):
             await push(http, args.negotiation_url, args.webhook_port)
 

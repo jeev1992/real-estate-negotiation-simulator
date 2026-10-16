@@ -45,11 +45,12 @@ m2_adk_multiagents/
     d09_event_stream/agent.py      ADK event stream: tool calls, state deltas, markers
     d09_event_stream/run_event_stream.py  Terminal script: Runner.run_async() + print every Event
   a2a_demos/                       ← terminal scripts; run against adk web --a2a negotiation_agents/
-    a2a_10_wire_lifecycle.py       Agent Card discovery + JSON-RPC message/send + task state
-    a2a_11_context_threading.py    contextId across rounds
-    a2a_12_parts_and_artifacts.py  multi-part messages + artifacts
-    a2a_13_orchestrated_negotiation.py  full buyer↔seller negotiation over A2A
+    a2a_10_wire_lifecycle.py       Agent Card discovery + the HTTP bytes of message/send + the Task taken apart
+    a2a_11_context_threading.py    contextId across rounds; taskId vs contextId; tasks/get
+    a2a_12_parts_and_artifacts.py  multi-part messages; history vs status.message vs artifacts
+    a2a_13_orchestrated_negotiation.py  full buyer↔seller negotiation (buyer polled, seller streamed)
     a2a_14_result_delivery.py      polling (buyer) / streaming (seller) / push (negotiation)
+    a2a_15_error_handling.py       errors at 4 layers: transport, protocol, task, application
     negotiation_a2a_server.py      A2A server for the negotiation agent, with push notifications (:8003)
   exercises/
   solution/
@@ -156,7 +157,7 @@ Each agent's card advertises one way to receive results:
 | `seller_agent` | `streaming: true` | **Streaming** — `message/stream` |
 | `negotiation` | `pushNotifications: true` | **Push** — server POSTs task updates to your webhook |
 
-### A2A protocol demos (10–14) — terminal scripts
+### A2A protocol demos (10–15) — terminal scripts
 
 ```bash
 # Terminal 1 — start agents with A2A endpoints (buyer + seller)
@@ -174,8 +175,10 @@ python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
 python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode polling     # buyer
 python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode streaming   # seller
-python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode refusal     # buyer can't stream
 python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode push        # negotiation, ~30-60 s
+
+# Error handling — transport, protocol, task and application errors
+python m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py
 ```
 
 ---
@@ -209,11 +212,12 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 | 07 | `AgentTool` | Wrap an agent as a callable tool — hierarchical delegation |
 | 08 | Callbacks | `before_agent` (turn count), `before_model` (SSN redaction), `before_tool` (allowlist block), `after_tool` (strip confidential field), `after_model` (scrub phone numbers) |
 | 09 | Event stream | See ADK events: tool calls, state deltas, final response markers — in the UI, or printed by `run_event_stream.py` |
-| 10 | A2A wire format | Agent Card discovery, the JSON-RPC `message/send` body, task state in the response |
-| 11 | A2A context threading | `contextId` ties multiple rounds into one conversation |
-| 12 | A2A parts & artifacts | Multi-part Messages (TextPart + DataPart), inspect Artifacts |
-| 13 | A2A orchestration | Full buyer↔seller negotiation — Agent Card discovery + multi-round A2A messages |
-| 14 | A2A result delivery | Each agent's card advertises one mechanism: buyer → polling (`tasks/get`), seller → streaming (`message/stream`), negotiation → push (webhook); asking the buyer to stream is refused |
+| 10 | A2A wire format | Agent Card discovery, the actual HTTP request/response of `message/send`, and the returned Task taken apart (id, contextId, status, history, artifacts) |
+| 11 | A2A context threading | `contextId` ties multiple rounds into one conversation; each round is a new Task (`tasks/get` fetches any of them) |
+| 12 | A2A parts & artifacts | Multi-part Messages (TextPart + DataPart); where content lives in a Task: history (incl. tool calls as DataParts), status message, artifacts |
+| 13 | A2A orchestration | Full buyer↔seller negotiation — the orchestrator reads each card: buyer polled (`tasks/get`), seller streamed (`message/stream`) |
+| 14 | A2A result delivery | Each agent's card advertises one mechanism: buyer → polling (`tasks/get`), seller → streaming (`message/stream`), negotiation → push (webhook) |
+| 15 | A2A error handling | Transport and protocol errors raise (`A2AClientHTTPError`, `A2AClientTimeoutError`, `A2AClientJSONRPCError`); a failed task and a useless `completed` answer don't — check the state and the content |
 
 ---
 

@@ -6,32 +6,36 @@ discovered via Agent Cards and communicate through A2A messages.
 
 THIS IS THE PAYOFF DEMO. It shows:
   1. Agent Card discovery for BOTH buyer and seller
-  2. Multi-round negotiation orchestrated by a Python script
-  3. Buyer sends offer → script relays to seller → seller responds
-  4. contextId threads each side's conversation independently
+  2. The orchestrator reading each card's capabilities and talking to
+     each agent the way it supports:
+       buyer_agent   streaming: false → message/send (non-blocking) + tasks/get polling
+       seller_agent  streaming: true  → message/stream (live events)
+  3. Multi-round negotiation: buyer offers → script relays to seller → seller responds
+  4. contextId threads each side's conversation independently; every
+     round is a new Task, and the agent's reply is read from its Artifact
   5. The script acts as a "matchmaker" — neither agent knows about the other
 
 HOW IT WORKS:
   The script is NOT an agent itself — it's a simple orchestrator that:
   - Discovers buyer_agent and seller_agent via their Agent Cards
-  - Asks the buyer to make an offer (via A2A message/send)
-  - Forwards the buyer's offer to the seller (via A2A message/send)
+  - Asks the buyer to make an offer (polling: send, then tasks/get until done)
+  - Forwards the buyer's offer to the seller (streaming: tool calls arrive live)
   - Reads the seller's response (ACCEPT or COUNTER)
   - If COUNTER: sends the counter back to the buyer for next round
-  - Repeats until ACCEPT or max rounds
+  - Repeats until ACCEPT, WALK AWAY, a failed task, or max rounds
 
   Each agent has its own contextId — the buyer's conversation thread
   and the seller's conversation thread are separate. The script bridges
   them by extracting text from one response and sending it to the other.
 
 WHAT LEARNERS SEE:
-  - Two Agent Card fetches (buyer + seller capabilities)
-  - Alternating A2A messages to each agent
-  - Each agent calling its own MCP tools (visible in the server terminal)
-  - Agreement or max rounds reached
+  - Two Agent Card fetches, with the capability each one advertises
+  - Buyer turns: task submitted → polled → completed
+  - Seller turns: the seller's MCP tool calls streamed as they happen
+  - Agreement, walk-away, or max rounds reached
 
 Prereq:
-    adk web --a2a m2_adk_multiagents/negotiation_agents/ --port 8000
+    adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 Run:
     python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
@@ -42,37 +46,34 @@ import asyncio
 import re
 import uuid
 
-import warnings
-
 import httpx
-from a2a.client import A2ACardResolver, A2AClient
+from a2a.client import A2ACardResolver, Client, ClientConfig, ClientFactory
 from a2a.types import (
+    AgentCard,
+    DataPart,
     Message,
-    MessageSendParams,
     Role,
-    SendMessageRequest,
-    SendMessageSuccessResponse,
     Task,
+    TaskArtifactUpdateEvent,
+    TaskQueryParams,
+    TaskState,
+    TaskStatusUpdateEvent,
     TextPart,
-)
-
-# Classic A2AClient is used intentionally for parity with the other demos.
-warnings.filterwarnings(
-    "ignore", message=".*A2AClient is deprecated.*", category=DeprecationWarning
 )
 
 BASE_URL = "http://127.0.0.1:8000"
 MAX_ROUNDS = 5
+TERMINAL = {TaskState.completed, TaskState.failed, TaskState.canceled, TaskState.rejected}
 
 
 def extract_agent_text(task: Task) -> str:
     """Extract the agent's text response from an A2A Task."""
-    # Try artifacts first (durable output)
+    # Artifacts first — the task's durable output
     for artifact in task.artifacts or []:
         for part in artifact.parts:
             if isinstance(part.root, TextPart):
                 return part.root.text
-    # The final agent turn often lands in status.message, not history/artifacts
+    # A failed task explains itself in status.message
     status_message = task.status.message if task.status else None
     if status_message and status_message.role == Role.agent:
         for part in status_message.parts:
@@ -93,41 +94,65 @@ def extract_price(text: str) -> str | None:
     return f"${match.group(1)}" if match else None
 
 
-async def send_a2a_message(
-    client: A2AClient,
-    text: str,
-    context_id: str | None = None,
-) -> tuple[Task, str | None]:
-    """Send a message to an A2A agent and return (Task, contextId)."""
-    request = SendMessageRequest(
-        id=f"req_{uuid.uuid4().hex[:8]}",
-        params=MessageSendParams(
-            message=Message(
-                messageId=f"msg_{uuid.uuid4().hex[:8]}",
-                role=Role.user,
-                parts=[TextPart(text=text)],
-                contextId=context_id,
-            )
-        ),
+def tool_calls(update: TaskStatusUpdateEvent) -> list[str]:
+    """Names of the MCP tools in a streamed status update (ADK sends them as DataParts)."""
+    if not update.status.message:
+        return []
+    return [
+        p.root.data.get("name", "?")
+        for p in update.status.message.parts
+        if isinstance(p.root, DataPart) and "args" in p.root.data
+    ]
+
+
+# ── Talk to each agent the way its card says it supports ─────────────────────
+
+def client_for(http: httpx.AsyncClient, card: AgentCard) -> Client:
+    if card.capabilities.streaming:
+        config = ClientConfig(httpx_client=http, streaming=True)
+    else:
+        # polling=True → message/send with blocking=false: the task comes back
+        # at once (state "submitted") and we poll tasks/get until it ends.
+        config = ClientConfig(httpx_client=http, streaming=False, polling=True)
+    return ClientFactory(config).create(card)
+
+
+async def ask(client: Client, who: str, text: str, context_id: str | None) -> Task:
+    """Send one message; follow the task to a final state (stream or poll)."""
+    message = Message(
+        message_id=f"msg_{uuid.uuid4().hex[:8]}",
+        role=Role.user,
+        parts=[TextPart(text=text)],
+        context_id=context_id,
     )
-    response = await client.send_message(request)
-    result = response.root
-    if isinstance(result, SendMessageSuccessResponse) and isinstance(result.result, Task):
-        task = result.result
-        return task, task.context_id
-    raise RuntimeError(f"Unexpected response: {response.model_dump(mode='json')}")
+    task = None
+    async for event in client.send_message(message):
+        if isinstance(event, Message):
+            raise RuntimeError(f"{who} replied with a Message, expected a Task: {event!r}")
+        task, update = event
+        # Streaming: events arrive while the agent works
+        if isinstance(update, TaskStatusUpdateEvent) and tool_calls(update):
+            print(f"    [{who} ⇢ stream] {update.status.state.value}: calling {', '.join(tool_calls(update))}")
+        elif isinstance(update, TaskArtifactUpdateEvent):
+            print(f"    [{who} ⇢ stream] artifact received")
+
+    # Polling: message/send returned straight away — check back until done
+    polls = 0
+    if task.status.state not in TERMINAL:
+        print(f"    [{who} ⇠ poll] task {task.id[:8]} {task.status.state.value} — polling tasks/get")
+    while task.status.state not in TERMINAL:
+        await asyncio.sleep(1.0)
+        polls += 1
+        task = await client.get_task(TaskQueryParams(id=task.id))
+    via = f"after {polls} polls" if polls else "via stream"
+    print(f"    [{who}] task {task.id[:8]} {task.status.state.value} {via}")
+    return task
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="A2A orchestrated multi-round negotiation"
-    )
-    parser.add_argument(
-        "--base-url", default=BASE_URL, help="Base URL of adk web --a2a"
-    )
-    parser.add_argument(
-        "--max-rounds", type=int, default=MAX_ROUNDS, help="Max negotiation rounds"
-    )
+    parser = argparse.ArgumentParser(description="A2A orchestrated multi-round negotiation")
+    parser.add_argument("--base-url", default=BASE_URL, help="Base URL of adk web --a2a")
+    parser.add_argument("--max-rounds", type=int, default=MAX_ROUNDS, help="Max negotiation rounds")
     args = parser.parse_args()
 
     # Direct configuration: we know where the agents live. With a registry
@@ -144,21 +169,20 @@ async def main() -> None:
         print("STEP 1: Agent Card Discovery")
         print("=" * 60)
 
-        buyer_resolver = A2ACardResolver(httpx_client=http, base_url=buyer_url)
-        buyer_card = await buyer_resolver.get_agent_card()
-        buyer_client = A2AClient(httpx_client=http, agent_card=buyer_card)
-        print(f"\nBuyer Agent Card:")
-        print(f"  Name:   {buyer_card.name}")
-        print(f"  URL:    {buyer_card.url}")
-        print(f"  Skills: {[s.name for s in buyer_card.skills]}")
+        cards = {}
+        for role, url in (("buyer", buyer_url), ("seller", seller_url)):
+            card = await A2ACardResolver(httpx_client=http, base_url=url).get_agent_card()
+            cards[role] = card
+            how = "message/stream" if card.capabilities.streaming else "message/send + tasks/get polling"
+            print(f"\n{role.title()} Agent Card:")
+            print(f"  Name:   {card.name}")
+            print(f"  URL:    {card.url}")
+            print(f"  Skills: {[s.name for s in card.skills]}")
+            print(f"  Capabilities: streaming={card.capabilities.streaming}, "
+                  f"pushNotifications={card.capabilities.push_notifications}  → use {how}")
 
-        seller_resolver = A2ACardResolver(httpx_client=http, base_url=seller_url)
-        seller_card = await seller_resolver.get_agent_card()
-        seller_client = A2AClient(httpx_client=http, agent_card=seller_card)
-        print(f"\nSeller Agent Card:")
-        print(f"  Name:   {seller_card.name}")
-        print(f"  URL:    {seller_card.url}")
-        print(f"  Skills: {[s.name for s in seller_card.skills]}")
+        buyer_client = client_for(http, cards["buyer"])
+        seller_client = client_for(http, cards["seller"])
 
         # ── Step 2: Multi-round negotiation ───────────────────────────
         print("\n" + "=" * 60)
@@ -168,7 +192,7 @@ async def main() -> None:
         buyer_context_id = None
         seller_context_id = None
         seller_response_text = None  # No seller response for round 1
-        messages_sent = 0
+        tasks_created = 0
         outcome = None
 
         for round_num in range(1, args.max_rounds + 1):
@@ -190,13 +214,15 @@ async def main() -> None:
                 )
 
             print(f"\n→ Sending to BUYER:\n{buyer_prompt}")
-            buyer_task, buyer_context_id = await send_a2a_message(
-                buyer_client, buyer_prompt, buyer_context_id
-            )
-            messages_sent += 1
+            buyer_task = await ask(buyer_client, "buyer", buyer_prompt, buyer_context_id)
+            buyer_context_id = buyer_task.context_id
+            tasks_created += 1
             buyer_offer_text = extract_agent_text(buyer_task)
-            print(f"← Buyer says:\n{buyer_offer_text}")
-            print(f"  (contextId: {buyer_context_id})")
+            if buyer_task.status.state != TaskState.completed:
+                print(f"\nBuyer task ended {buyer_task.status.state.value}: {buyer_offer_text}")
+                outcome = f"buyer_task_{buyer_task.status.state.value}"
+                break
+            print(f"← Buyer says (artifact):\n{buyer_offer_text}")
 
             # ── Buyer walked away? End the negotiation ────────────────
             if re.search(r"\bWALK[\s_-]?AWAY\b", buyer_offer_text, re.IGNORECASE):
@@ -213,13 +239,15 @@ async def main() -> None:
             )
 
             print(f"\n→ Sending to SELLER:\n{seller_prompt}")
-            seller_task, seller_context_id = await send_a2a_message(
-                seller_client, seller_prompt, seller_context_id
-            )
-            messages_sent += 1
+            seller_task = await ask(seller_client, "seller", seller_prompt, seller_context_id)
+            seller_context_id = seller_task.context_id
+            tasks_created += 1
             seller_response_text = extract_agent_text(seller_task)
-            print(f"← Seller says:\n{seller_response_text}")
-            print(f"  (contextId: {seller_context_id})")
+            if seller_task.status.state != TaskState.completed:
+                print(f"\nSeller task ended {seller_task.status.state.value}: {seller_response_text}")
+                outcome = f"seller_task_{seller_task.status.state.value}"
+                break
+            print(f"← Seller says (artifact):\n{seller_response_text}")
 
             # ── Check for acceptance (exactly one keyword expected) ───
             has_counter = bool(re.search(r"\bCOUNTER\b", seller_response_text, re.IGNORECASE))
@@ -242,12 +270,12 @@ async def main() -> None:
             outcome = "max_rounds"
 
         # ── Summary ──────────────────────────────────────────────────
-        print(f"\nA2A Protocol Summary:")
+        print("\nA2A Protocol Summary:")
         print(f"  Outcome:          {outcome}")
-        print(f"  Buyer  contextId: {buyer_context_id}")
-        print(f"  Seller contextId: {seller_context_id}")
-        print(f"  Total A2A messages sent: {messages_sent}")
-        print(f"  Each agent maintained its own conversation thread.")
+        print(f"  Buyer  contextId: {buyer_context_id}  (reached by polling)")
+        print(f"  Seller contextId: {seller_context_id}  (reached by streaming)")
+        print(f"  A2A tasks created: {tasks_created} (one per message)")
+        print("  Each agent maintained its own conversation thread.")
 
 
 if __name__ == "__main__":

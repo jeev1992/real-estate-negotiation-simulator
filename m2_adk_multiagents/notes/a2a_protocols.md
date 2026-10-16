@@ -3,7 +3,7 @@
 
 > **Audience:** Engineers who have built one agent and need to connect it to *other* agents — built by other teams, in other languages, on other clouds — without sharing code or memory.
 > **Prerequisites:** Comfort with HTTP and JSON. Familiarity with [`mcp_deep_dive.md`](../../m1_mcp/notes/mcp_deep_dive.md) helps because A2A reuses the same JSON-RPC envelope as MCP.
-> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_14_result_delivery.py` in `m2_adk_multiagents/a2a_demos/`. Seeing the wire frames first is essential.
+> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_15_error_handling.py` in `m2_adk_multiagents/a2a_demos/`. Seeing the wire frames first is essential.
 > **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) for how ADK exposes A2A endpoints automatically via `adk web --a2a`.
 >
 > **TL;DR:**
@@ -703,6 +703,29 @@ error_msg = A2AMessage(
 )
 ```
 
+### What errors look like on the wire (demo 15)
+
+The categories above are about the *negotiation*. Underneath, the A2A call
+itself can fail at four layers, and each reaches the client differently
+(a2a-sdk 0.3 `Client`; all observed in `a2a_15_error_handling.py`):
+
+| Layer | How it arrives | Examples observed |
+|---|---|---|
+| Transport | Exception: `A2AClientHTTPError` (`.status_code`), `A2AClientTimeoutError` | Agent not running → 503 from the card resolver; unknown agent path → 404; blocking `message/send` past the read timeout |
+| Protocol | Exception: `A2AClientJSONRPCError` (`.error.code`, `.error.message`); on the wire, HTTP 200 with a JSON-RPC `error` object | -32001 task not found; -32002 task not cancelable; -32601 method not found; -32602 invalid params (with field details); -32603 for "Streaming / Push notifications are not supported by the agent" and ADK's "Cancellation is not supported" |
+| Task | No exception: the Task's `status.state` is `failed`, reason in `status.message` | A FilePart (`application/zip`) the model can't read |
+| Application | No exception, state `completed` — the content says the agent couldn't do it | An offer with no price: the seller asks for clarification and records no decision |
+
+Two practical rules: retry only what's transient (connection errors, 5xx);
+and for long work, don't block — a timed-out blocking call leaves the task
+running on the server with no taskId on the client. Send with
+`blocking: false` and poll `tasks/get` (or stream, or push — §17).
+
+The spec defines dedicated codes for unsupported features (-32003 push
+notifications not supported, -32004 unsupported operation); a2a-sdk
+0.3.26's server returned -32603 with a descriptive message instead, so
+check the message as well as the code.
+
 ---
 
 ## 9. Implementing A2A in Python
@@ -804,8 +827,11 @@ python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py \
 # Terminal 3 — negotiation agent's A2A server (push notifications), port 8003
 python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
 
-# Terminal 2 — polling (buyer), streaming (seller), refusal, push (negotiation)
+# Terminal 2 — polling (buyer), streaming (seller), push (negotiation)
 python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode all
+
+# Terminal 2 — errors at four layers (transport, protocol, task, application)
+python m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py
 
 ```
 
@@ -817,6 +843,7 @@ Key files:
 - `m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py` (contextId threading)
 - `m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py` (multi-part messages)
 - `m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py` (polling / streaming / push)
+- `m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py` (transport, protocol, task and application errors)
 - `m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py` (ADK agent behind a custom A2A server with a push sender)
 
 ---
@@ -901,7 +928,7 @@ Registry, AGNTCY Agent Directory). Conceptually:
 cards = registry.search(tags=["seller"])          # API differs per registry
 card = cards[0]
 # 3. The client uses the returned card exactly like a fetched one:
-client = A2AClient(httpx_client=http, agent_card=card)   # card.url, card.capabilities, ...
+client = ClientFactory(ClientConfig(httpx_client=http)).create(card)   # uses card.url, card.capabilities, ...
 ```
 
 ### Pattern 2: Mediator Agent
@@ -1016,7 +1043,8 @@ Then run:
 python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py
 python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py
 python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py
-python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode polling   # also: streaming, refusal, push
+python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode polling   # also: streaming, push
+python m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py
 ```
 
 ---
@@ -1237,11 +1265,14 @@ The server advances the state by calling `TaskUpdater` methods:
 `complete(message)`, `failed(message)`, `cancel(message)`, `requires_input(...)`,
 `requires_auth(...)`, `reject(...)`.
 
-In Phase 2, our seller server emits a `working` status update *before* the
-slow LLM/MCP roundtrip starts so streaming clients see the agent is alive.
+ADK's A2A executor emits a `submitted` and then a `working` status update
+*before* the slow LLM/MCP run starts, so streaming clients see the agent is
+alive (visible in `a2a_14_result_delivery.py --mode streaming`).
 
-**Demo:** `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` sends a valid
-and an invalid envelope so you can compare `completed` vs `failed`.
+**Demos:** `a2a_10_wire_lifecycle.py` takes a `completed` Task apart;
+`a2a_14_result_delivery.py` shows `submitted → working → completed` live;
+`a2a_15_error_handling.py` produces a `failed` task (a FilePart the model
+can't read) — no exception, the reason is in `status.message`.
 
 ---
 
@@ -1302,8 +1333,8 @@ but not on a `message/send` that carries a push config inline.)
 seller (whose card has `streaming: true`) and prints each event: `submitted`,
 `working`, the seller's MCP tool calls and results (as DataParts), its reply
 text, a `TaskArtifactUpdateEvent` with the same text, then `completed` with
-`final: true`. `--mode refusal` sends `message/stream` to the buyer
-(`streaming: false`) and prints the error above.
+`final: true`. `a2a_15_error_handling.py` sends `message/stream` to the
+buyer (`streaming: false`) and prints the error above.
 
 ### 17.2 Push notifications (webhooks)
 

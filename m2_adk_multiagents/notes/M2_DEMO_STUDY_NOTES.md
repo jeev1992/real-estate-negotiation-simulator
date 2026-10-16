@@ -1,6 +1,6 @@
 # Module 2 — Demo Walkthrough & Concept Notes
 
-> **Audience:** Learners working through the 9 ADK demos (`d01`–`d09`) and the 3 A2A demos (`a2a_10`–`a2a_12`) plus the orchestrated negotiation (`a2a_13`) and result delivery (`a2a_14`). Use as a guided tour while you run.
+> **Audience:** Learners working through the 9 ADK demos (`d01`–`d09`) and the 3 A2A demos (`a2a_10`–`a2a_12`) plus the orchestrated negotiation (`a2a_13`), result delivery (`a2a_14`) and error handling (`a2a_15`). Use as a guided tour while you run.
 > **Prerequisites:** Python + `OPENAI_API_KEY` set. Familiarity with `mcp_deep_dive.md` helps once you reach demo 02.
 > **Read this *while* running:** the demos in `m2_adk_multiagents/adk_demos/` and the negotiation system in `m2_adk_multiagents/negotiation_agents/`. Sections are numbered to match the demos.
 > **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) and [`a2a_protocols.md`](a2a_protocols.md) for the conceptual deep-dives. [`adk_quick_reference.md`](adk_quick_reference.md) is the one-page lookup.
@@ -1212,12 +1212,14 @@ Turn 2 ("Now do the same for 123 Main St, Austin, TX.") yields the same 5-event 
 
 ---
 
-## Demo 10 — A2A Wire Format & Task Lifecycle (`a2a_10_wire_lifecycle.py`)
+## Demo 10 — A2A Wire Format & the Task (`a2a_10_wire_lifecycle.py`)
 
 **File:** `a2a_demos/a2a_10_wire_lifecycle.py` (terminal script)
 
 ### What it teaches
-The A2A protocol on the wire — Agent Card discovery, the JSON-RPC `message/send` request, and the task state in the response. The script builds the request with the A2A SDK's typed objects and prints the exact JSON-RPC body the SDK sends, so you can see the envelope without writing it by hand.
+The A2A protocol on the wire — Agent Card discovery, the JSON-RPC `message/send` request and response — and the **Task** that comes back, taken apart field by field. The script hooks the HTTP client (`httpx` `event_hooks`), so what you see is exactly what was sent and received, not a re-serialization.
+
+It uses the a2a-sdk's current client: `ClientFactory(ClientConfig(...)).create(card)` → `Client`. (The older `A2AClient` class is deprecated.)
 
 ### How to run
 
@@ -1275,7 +1277,7 @@ Message
 | **DataPart** | Structured JSON | `{"kind": "data", "data": {"price": 440000}}` |
 | **FilePart** | Binary file | `{"kind": "file", "file": {"uri": "...", "mimeType": "..."}}` |
 
-In demo 10, we used TextPart only. Demo 12 shows TextPart + DataPart together.
+Demo 10 sends a TextPart and a DataPart together (the offer as text and as structured data). Demo 12 looks at where Parts end up in the returned Task, and Demo 15 sends a FilePart.
 
 **4. Artifact** — a durable output attached to the Task (not the Message).
 
@@ -1298,110 +1300,109 @@ Messages are conversational (the back-and-forth). Artifacts are the result — w
 | contextId | Session ID | No equivalent (MCP is stateless) |
 | Task status | Event stream (`is_final_response()`) | Synchronous (returns when done) |
 
-### What happens in demo 10
+### What happens in demo 10 (actual run, gpt-4o — abridged)
 
-**Step 1 — Agent Card Discovery:**
+**Step 1 — Agent Card discovery**
 ```
-GET /a2a/seller_agent/.well-known/agent-card.json → 200 OK
-
-Response:
+──► GET http://127.0.0.1:8000/a2a/seller_agent/.well-known/agent-card.json
+◄── HTTP 200  application/json
 {
+  "capabilities": {"pushNotifications": false, "streaming": true},
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"],
+  "description": "Real estate seller agent for 742 Evergreen Terrace, Austin TX. ...",
   "name": "seller_agent",
-  "description": "Real estate seller agent for 742 Evergreen Terrace...",
-  "url": "http://localhost:8000/a2a/seller_agent",
+  "preferredTransport": "JSONRPC",
   "protocolVersion": "0.3.0",
-  "capabilities": {"streaming": true, "pushNotifications": false},
-  "skills": [{
-    "id": "negotiation_response",
-    "name": "Real Estate Seller Negotiation",
-    "description": "Responds to buyer offers with counter-offers or acceptance",
-    "tags": ["real_estate", "seller", "negotiation", "mcp"],
-    "examples": ["Buyer offers $438,000 with 45-day close"]
-  }]
+  "skills": [{"id": "negotiation_response", "name": "Real Estate Seller Negotiation",
+              "tags": ["real_estate", "seller", "negotiation", "mcp"], "examples": [...]}],
+  "url": "http://localhost:8000/a2a/seller_agent",
+  "version": "1.0.0"
 }
 ```
 
-This is how an external client learns what the agent does, where to send messages, and what features are supported — before sending a single message. Like MCP's `tools/list` but for entire agents.
+This is how a client learns what the agent does, where to send messages, which transport to use, and what features are supported — before sending a single message. `ClientFactory.create(card)` reads `url` and `preferredTransport` from it. Like MCP's `tools/list`, but for entire agents.
 
-**Step 2 — Valid Offer → Task Completed:**
+**Step 2 — `message/send` on the wire**
 ```
-POST /a2a/seller_agent  (JSON-RPC message/send)
-
-Request body:
+──► POST http://localhost:8000/a2a/seller_agent          ← card.url, not the URL we typed
 {
+  "id": "b23808c5-...",
   "jsonrpc": "2.0",
-  "id": "req_46866028",
   "method": "message/send",
   "params": {
+    "configuration": {"acceptedOutputModes": [], "blocking": true},   ← wait for the final result
     "message": {
-      "messageId": "msg_4a6c666c",
-      "role": "user",
-      "parts": [{"kind": "text", "text": "{...offer JSON...}"}]
+      "kind": "message",
+      "messageId": "msg_7af7c873",
+      "parts": [
+        {"kind": "text", "text": "Opening offer at $440k, 30-day close, pre-approved."},
+        {"kind": "data", "data": {"round": 1, "from_agent": "buyer", "message_type": "OFFER",
+                                  "price": 440000, "closing_timeline_days": 30, ...}}
+      ],
+      "role": "user"
     }
   }
 }
 
-Response (truncated):
+◄── HTTP 200  application/json
 {
-  "result": {
-    "status": "completed",                          ← task finished successfully
-    "contextId": "4f0fff3e-...",                    ← use this for round 2 (demo 11)
-    "history": [Message(user), Message(agent)],     ← full conversation
-    "artifacts": [{
-      "artifactId": "dd72d5b4-...",
-      "parts": [{"kind": "text", "text": "Counter-offer at $477,000..."}]
-    }]
+  "id": "b23808c5-...",                    ← same id: this is the reply to that request
+  "jsonrpc": "2.0",
+  "result": {                              ← the Task
+    "artifacts": [{"artifactId": "bee4354b-...",
+                   "parts": [{"kind": "text", "text": "SELLER: We COUNTER at $477,000 due to the extensive $75,000 in recent upgrades, ..."}]}],
+    "contextId": "0918bf29-...",
+    "history": [ ...7 messages... ],
+    ...
   }
 }
 ```
 
-The seller agent:
-- Spawned MCP tools (pricing + inventory servers)
-- Got market price: $462K estimated value
-- Got minimum acceptable price: $445K (seller-only tool)
-- Recorded its decision with `submit_decision` (which enforces the floor in code) and counter-offered at $477K with justification from $75K in upgrades
-- **Task status: `completed`** — the agent processed the request successfully
-
-**Step 3 — Broken Envelope → Still Completed (not failed):**
+**Step 3 — the Task, taken apart**
 ```
-Request: {"from_agent": "buyer", "message": "broken"}  ← garbage, no session_id, no price
-
-Response:
-{
-  "result": {
-    "status": "completed",
-    "artifacts": [{"parts": [{"kind": "text",
-      "text": "Listing Price: $485,000... Minimum Acceptable Price: $445,000...
-               recommend counter-offer starting at $477,000..."}]}]
-  }
-}
+  id          162a296b-5515-4458-9601-4eb8b5af4bb5        ← this unit of work (tasks/get uses it)
+  contextId   0918bf29-218b-4011-86b2-e21b2dd517c4        ← the conversation it belongs to
+  status      completed  at 2026-10-16T12:11:08.856948+00:00
+  history     7 message(s) — the conversation so far:
+    [0] user  text "Opening offer at $440k, 30-day close, pre-approved.", data keys=['round', 'from_agent', ...]
+    [1] user  text "Opening offer at $440k, 30-day close, pre-approved.", data keys=['round', 'from_agent', ...]
+    [2] agent data (tool_call get_market_price), data (tool_call get_inventory_level), data (tool_call get_minimum_acceptable_price)
+    [3] agent data (tool_result get_market_price), data (tool_result get_inventory_level), data (tool_result get_minimum_acceptable_price)
+    [4] agent data (tool_call submit_decision)
+    [5] agent data (tool_result submit_decision)
+    [6] agent text "SELLER: We COUNTER at $477,000 due to the extensive $75,000 in recent upgrades, including "
+  artifacts   1 — the deliverable:
+    artifactId=bee4354b-0938-4159-b8ba-967f479b332a  text "SELLER: We COUNTER at $477,000 due to the extensive $75,000 in recent upgrades, including "
 ```
 
-**Key insight:** The task didn't `fail` because the A2A protocol layer worked fine — valid JSON-RPC, valid message structure. The CONTENT was bad, but the LLM didn't ask for clarification — it treated the vague message as a general inquiry and **dumped its entire property analysis**, including the floor price ($445K). The LLM called all its MCP tools and presented a full strategic briefing. A task fails only on protocol errors or server crashes, not bad business logic input.
+What to notice:
+- **The Task is the response.** `message/send` returned a Task with an `id`, the `contextId` it belongs to, a `status`, the `history`, and `artifacts`.
+- **History is the audit trail.** It contains our message (recorded twice — an ADK quirk), the seller's MCP tool calls and results as DataParts, the `submit_decision` call, and the final text.
+- **The artifact is the deliverable.** The final reply appears both as the last history message and as the artifact. Code that consumes the result should read the artifact (Demos 11, 13 and 14 do).
+- **Only the final state is visible.** `blocking: true` means the server answered once the task was `completed`. Demo 14 shows `submitted → working → completed` as it happens.
 
-**`completed` means "the agent processed the request" — not "the negotiation succeeded."**
-
-> **Security observation:** The broken envelope got the seller to volunteer its floor price ($445K) without even asking. In an adversarial scenario, vague or confusing messages could trick an agent into over-sharing. The seller's `before_tool_callback` allowlist does **not** help here — the seller is *allowed* to call `get_minimum_acceptable_price`; the allowlist only keeps that tool away from the buyer. Defenses for this case are the confidentiality rules in the seller's instruction and input screening such as Exercise 05's `before_model_callback` (prompt-injection defense). Responses vary run to run; a current run may decline instead of over-sharing.
+> "`completed` means the agent processed the request — not that it agreed, or even understood." Demo 15 (layer 4) sends an offer with no price in it: still `completed`.
 
 ### Concepts introduced
 
 | Concept | Detail |
 |---------|--------|
-| **Agent Card** | JSON discovery document at `/.well-known/agent-card.json`. Contains name, description, skills, capabilities, URL |
-| **JSON-RPC `message/send`** | The A2A invocation method. Wraps a Message in a JSON-RPC envelope |
-| **Task lifecycle** | submitted → working → completed (or failed). `completed` = agent responded, not necessarily agreement |
+| **Agent Card** | JSON discovery document at `/.well-known/agent-card.json`. Contains name, description, skills, capabilities, URL, preferred transport |
+| **JSON-RPC `message/send`** | The A2A invocation method. Wraps a Message in a JSON-RPC 2.0 envelope; `configuration.blocking` says whether to wait for the result |
+| **Task** | What `message/send` returns: `id`, `contextId`, `status`, `history`, `artifacts` |
+| **Task lifecycle** | submitted → working → completed (or failed / canceled / rejected). `completed` = agent responded, not necessarily agreement |
 | **contextId** | Returned in the response. Reuse it in subsequent requests to thread a multi-turn conversation (demo 11) |
-| **Artifacts** | Durable outputs of the task. The counter-offer text lives here, not just in the message history |
-| **Parts** | Atomic content units: TextPart, DataPart, FilePart. Demo 10 uses TextPart only |
-| **Task vs Message vs Artifact** | Task = the work request. Messages = the conversation. Artifacts = the deliverables |
-| **Graceful degradation** | Bad input → LLM copes (completed), not a protocol crash (failed). Response is non-deterministic: may ask for clarification, or may dump full property analysis including sensitive data like the floor price |
+| **Artifacts** | Durable outputs of the task. The counter-offer text lives here as well as in the history |
+| **Parts** | Atomic content units: TextPart, DataPart, FilePart. Demo 10 sends TextPart + DataPart |
+| **`ClientFactory` / `Client`** | a2a-sdk's current client. Built from the Agent Card; picks the transport the card declares |
 
 ### Key teaching points for class
 
 1. **"MCP and A2A use the same pattern."** MCP: list_tools → tool schema → tools/call. A2A: Agent Card → skills → message/send. Same three operations, different level (tools vs agents).
-2. **"completed ≠ agreement."** Task status is about the PROTOCOL, not the BUSINESS LOGIC. The agent ran, it produced a response — that's `completed`. Whether the negotiation succeeded is in the response content.
-3. **"contextId is the threading key."** Without it, each message starts a new conversation. With it (demo 11), the seller remembers prior offers. It's A2A's equivalent of `session_id`.
-4. **"Artifacts are separate from messages."** The counter-offer text appears in BOTH the history (as a Message) and as an Artifact. Artifacts are for things you want to fetch later — like saving the final deal summary.
+2. **"The card drives the client."** The request went to `card.url` over `card.preferredTransport`. The client didn't need to be told anything but where the card is.
+3. **"Every message/send creates a Task."** It has an id you can look up later (`tasks/get`), a status, and its outputs. Demo 11 shows that each round is a new Task in the same context.
+4. **"Artifacts are separate from messages."** History is the conversation (including tool calls); the artifact is the result you hand to the next system.
 5. **"No custom server code."** The Agent Card came from `agent.json`. The JSON-RPC endpoint was created by `adk web --a2a`. The seller agent is just a `root_agent = LlmAgent(...)` — ADK did the rest.
 
 ---
@@ -1411,7 +1412,7 @@ Response:
 **File:** `a2a_demos/a2a_11_context_threading.py` (terminal script)
 
 ### What it teaches
-How `contextId` threads multiple A2A requests into one conversation. Without it, each message starts a new conversation and the agent forgets everything.
+How `contextId` threads multiple A2A requests into one conversation — and the difference between a **Task** (one unit of work, new every time) and a **context** (the conversation the tasks belong to). Without a contextId, each message starts a new conversation and the agent forgets everything.
 
 ### How to run
 
@@ -1425,62 +1426,85 @@ python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py
 
 ### What happens
 
-The script sends 3 rounds of offers ($432K → $440K → $446K) to the seller agent, reusing the `contextId` from round 1. Then it sends a **bonus round 4** at $440K (same price as round 2) but **without contextId** — proving the seller has no memory without it.
+The script sends 3 rounds of offers ($432K → $440K → $446K) to the seller agent, reusing the `contextId` from round 1. Then it calls `tasks/get` on round 1's taskId, and finally sends a **bonus round 4** at $440K (same price as round 2) **without contextId** — proving the seller has no memory without it.
 
 ```
-Round 1: POST /a2a/seller_agent  (no contextId — server assigns one)
-         → Response includes contextId: "46cc0efb-..."
-
-Round 2: POST /a2a/seller_agent  (+ contextId: "46cc0efb-...")
-         → Seller sees round 1 history + round 2 message
-
-Round 3: POST /a2a/seller_agent  (+ contextId: "46cc0efb-...")
-         → Seller sees rounds 1-2 history + round 3 message
-
-Round 4: POST /a2a/seller_agent  (NO contextId — server assigns NEW one)
-         → Seller has ZERO memory — treats $440K as first-ever message
+Round 1: message/send (no contextId)        → new task A, server assigns context X
+Round 2: message/send (contextId X)         → new task B, context X — seller sees round 1
+Round 3: message/send (contextId X)         → new task C, context X — seller sees rounds 1-2
+tasks/get(A)                                → round 1's task, still there, unchanged
+Round 4: message/send (no contextId)        → new task D, NEW context Y — no memory
 ```
 
-### Actual results (gpt-4o, current seller with `submit_decision`)
+For each round the script prints the taskId, contextId, state, the tools the seller called in that task (read from the task's history DataParts) and the seller's reply (read from the artifact).
 
-Tool calls are read from each round's Task `history` (they appear as DataParts):
+### Actual results (gpt-4o, abridged — prices vary run to run)
 
-| Round | Offer | contextId | Tool calls in this round | `submit_decision` result | Seller's reply |
-|-------|-------|-----------|--------------------------|--------------------------|----------------|
-| 1 | $432K | `3c114cc0` (new) | `get_market_price`, `get_inventory_level`, `get_minimum_acceptable_price`, `submit_decision` | COUNTER $477,000 | "We appreciate your offer but will COUNTER with $477,000..." |
-| 2 | $440K | `3c114cc0` (reused) | `submit_decision` **only** | COUNTER $469,000 | "...we will need to COUNTER at $469,000" |
-| 3 | $446K | `3c114cc0` (reused) | `submit_decision` **only** — model sent **COUNTER $461,000** | **ACCEPT $446,000** (+ note) | "We are pleased to ACCEPT your offer of $446,000" |
-| **4** | **$440K** | **`6776a3c2` (new)** | **all three MCP tools again**, then `submit_decision` | COUNTER $456,000 | "We COUNTER your offer at $456,000..." |
+```
+=== round 1 — $432,000 (sent contextId=none) ===
+  taskId    3fc7f67a-f40d-4c46-ad2a-482b517ea1c7
+  contextId 06264516-70ea-4471-b354-33b94c73f3fc
+  state     completed
+  tools     get_market_price, get_inventory_level, get_minimum_acceptable_price, submit_decision
+  seller    SELLER: COUNTER at $477,000. ...
+
+=== round 2 — $440,000 (sent contextId=X) ===
+  taskId    d6a7db58-2ab2-4a61-8b36-599556a9a30e
+  contextId 06264516-70ea-4471-b354-33b94c73f3fc
+  tools     submit_decision
+  seller    SELLER: COUNTER at $472,000. ...
+
+=== round 3 — $446,000 (sent contextId=X) ===
+  taskId    5c78919f-83e5-448e-8e2a-e09eec522ac9
+  contextId 06264516-70ea-4471-b354-33b94c73f3fc
+  tools     submit_decision
+  seller    SELLER: ACCEPT at $446,000. ...
+
+=== tasks/get on round 1's taskId ===
+  taskId    3fc7f67a-f40d-4c46-ad2a-482b517ea1c7
+  state     completed
+  tools     get_market_price, get_inventory_level, get_minimum_acceptable_price, submit_decision
+  seller    SELLER: COUNTER at $477,000. ...
+
+=== round 4 — $440,000, NO contextId ===
+  taskId    b7befb6e-7e6f-4e53-a708-3576692342e6
+  contextId 1de09dfa-5de8-48b1-8320-7a6749be13e5
+  tools     get_market_price, get_inventory_level, get_minimum_acceptable_price, submit_decision
+  seller    SELLER: We must COUNTER at $469,000. ...
+```
 
 > **The contrast between round 2 and round 4 is the proof.** Same price ($440K), same seller — but round 2 makes no MCP calls (it already knows the market data and floor from round 1's history), while round 4 calls all three MCP tools again because it has zero memory. The only difference is contextId.
 
-> **Round 3 shows the floor enforced in code.** $446K is above the $445K floor, yet the model sent `COUNTER $461,000`. `submit_decision` recorded `ACCEPT $446,000` and its note told the model to accept, so the reply said ACCEPT. It didn't need to re-check the floor: the floor was saved to session state in round 1, and with the same contextId that state is still there.
+> **Four rounds, four taskIds; two contexts.** Each `message/send` is its own Task. `tasks/get` on round 1's id returns that task exactly as it finished — the conversation moving on doesn't change it.
+
+> **The floor is enforced in code.** Any offer at or above the $445K floor is recorded as ACCEPT by `submit_decision`, whatever the model sent; it reads the floor saved to session state in round 1, which is still there because the contextId is the same. (In an earlier run the model sent `COUNTER $461,000` in round 3 and `submit_decision` recorded `ACCEPT $446,000`.)
 
 ### Concepts introduced
 
 | Concept | Detail |
 |---------|--------|
 | **`contextId`** | A string that ties multiple Tasks into one conversation. Assigned by the server on round 1, reused by the client on rounds 2+. Round 4 proves: drop contextId → drop memory |
+| **Task vs context** | Every `message/send` creates a new Task (new taskId). The contextId groups them. `tasks/get` fetches any one task by id |
 | **Conversation memory via protocol** | With the same contextId the seller reuses what it learned (no repeat MCP calls). Without it, it starts over and calls every tool again |
 | **A2A threading vs ADK sessions** | `contextId` in A2A = `session_id` in ADK. Same concept (conversation continuity), different level (HTTP vs in-process). ADK session state — like the saved floor — persists per contextId too |
-| **Acceptance enforced in code** | The seller's `submit_decision` records any offer at or above the floor as ACCEPT, whatever the model sent. Round 3 is a live example: COUNTER $461K → recorded ACCEPT $446K |
+| **Acceptance enforced in code** | The seller's `submit_decision` records any offer at or above the floor as ACCEPT, whatever the model sent |
 
 ### Key teaching points for class
 
 1. **"contextId = session_id for HTTP."** In d03, session state persisted across turns within `adk web`. Here, `contextId` does the same across HTTP requests. Without it, every POST is a brand new conversation.
-2. **"The seller's behavior changed across rounds."** Round 1: full MCP research. Rounds 2–3: no research, just a decision — it remembered. Round 4: full research again.
-3. **"$446K crossed the $445K floor — and code made sure it was accepted."** The model tried to counter; `submit_decision` overrode it. A rule that must hold lives in code, not in the prompt.
-4. **"Round 4 is the proof by contradiction."** Same $440K as round 2, but no contextId → the seller re-runs every MCP tool as if it were the first offer. **contextId is the ONLY difference.**
-5. **"This is what a real multi-round negotiation looks like over A2A."** Each round is an independent HTTP request, but contextId ties them together into one coherent negotiation.
+2. **"A task is one job; a context is the conversation."** Three rounds → three taskIds, one contextId. You poll or cancel a *task*; you continue a *context*.
+3. **"The seller's behavior changed across rounds."** Round 1: full MCP research. Rounds 2–3: no research, just a decision — it remembered. Round 4: full research again.
+4. **"$446K crossed the $445K floor — and code made sure it was accepted."** A rule that must hold lives in code (`submit_decision`), not in the prompt.
+5. **"Round 4 is the proof by contradiction."** Same $440K as round 2, but no contextId → the seller re-runs every MCP tool as if it were the first offer. **contextId is the ONLY difference.**
 
 ---
 
-## Demo 12 — A2A Multi-Part Messages (`a2a_12_parts_and_artifacts.py`)
+## Demo 12 — A2A Parts and Artifacts (`a2a_12_parts_and_artifacts.py`)
 
 **File:** `a2a_demos/a2a_12_parts_and_artifacts.py` (terminal script)
 
 ### What it teaches
-How to send multi-part Messages (TextPart + DataPart in one message) and inspect the structured response history, including MCP tool calls appearing as DataParts.
+How to send multi-part Messages (TextPart + DataPart in one message), and **where content lives in the Task that comes back**: `history` (the conversation, including MCP tool calls as DataParts), `status.message`, and `artifacts` (the deliverable).
 
 ### How to run
 
@@ -1492,22 +1516,41 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
 python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py
 ```
 
-### What happened
+### What happened (actual run, gpt-4o — abridged)
 
 **Request sent with 2 Parts:**
 ```
-parts[0]: TextPart  → {"price": 445000, "message": "Final-and-best at $445k."}
-parts[1]: DataPart  → {"hint": "machine-readable copy", "offer": {...}}
+parts[0]: TextPart  → "Final-and-best offer at $445k for 742 Evergreen Terrace."
+parts[1]: DataPart  → {"hint": "machine-readable copy of the offer", "offer": {..., "price": 445000}}
 ```
-Same offer in two formats — human-readable text AND structured JSON. The agent can parse either.
 
-**Response message history (actual run, gpt-4o):**
-1. `role=user, 2 parts` — the multi-part offer we sent (it appears twice in the history)
-2. `role=agent, 3 DataParts` — MCP tool CALLS (`id`, `name`, `args`)
-3. `role=agent, 3 DataParts` — MCP tool RESULTS (`id`, `name`, `response`)
-4. `role=agent, 1 DataPart` — `submit_decision` CALL
-5. `role=agent, 1 DataPart` — `submit_decision` RESULT
-6. `role=agent, 1 TextPart` — "SELLER: We ACCEPT your offer of $445,000..."
+**The Task, in three places:**
+```
+=== 1. history (7 messages) ===
+  (0) role=user, 2 part(s):  [0] TextPart ..., [1] DataPart {"hint": ..., "offer": {...}}
+  (1) role=user, 2 part(s):  (the same message again — an ADK quirk)
+  (2) role=agent, 3 part(s): DataParts — tool CALLS get_market_price, get_inventory_level, get_minimum_acceptable_price
+  (3) role=agent, 3 part(s): DataParts — tool RESULTS (id, name, response)
+  (4) role=agent, 1 part(s): DataPart  {"args": {"action": "ACCEPT", "price": 445000, "buyer_offer": 445000}, "name": "submit_decision"}
+  (5) role=agent, 1 part(s): DataPart  {"name": "submit_decision", "response": {"recorded": "ACCEPT", "price": 445000}}
+  (6) role=agent, 1 part(s): TextPart  SELLER: I ACCEPT your offer of $445,000 for 742 Evergreen Terrace. ...
+
+=== 2. status.message ===
+  (none — the final 'completed' update carries no message; the reply is in the artifact)
+
+=== 3. artifacts (1) ===
+  artifactId=79ee2ece-b0ce-4460-9eb7-6ad5493d5bf7  name=None
+    [0] TextPart  SELLER: I ACCEPT your offer of $445,000 for 742 Evergreen Terrace. ...
+
+=== tools the seller called (from history DataParts) ===
+  call   get_market_price({"address": "742 Evergreen Terrace, Austin, TX 78701"})
+  call   get_inventory_level({"zip_code": "78701"})
+  call   get_minimum_acceptable_price({"property_id": "742-evergreen-austin-78701"})
+  result get_market_price → {"content": [{"type": "text", "text": "{\n  \"address\": ...
+  ...
+  call   submit_decision({"action": "ACCEPT", "price": 445000, "buyer_offer": 445000})
+  result submit_decision → {"recorded": "ACCEPT", "price": 445000}
+```
 
 **The seller ACCEPTED at $445K** — exactly at the floor price. The decision went through `submit_decision`, which records any offer at or above the floor as ACCEPT.
 
@@ -1517,14 +1560,16 @@ Same offer in two formats — human-readable text AND structured JSON. The agent
 |---------|--------|
 | **Multi-part Messages** | One Message can carry multiple Parts of different types. TextPart for humans, DataPart for machines |
 | **DataPart** | Structured JSON content: `{"kind": "data", "data": {...}}`. Unlike TextPart (free text), DataPart is machine-parseable without LLM inference |
-| **Tool calls as DataParts** | MCP tool calls and results — and the `submit_decision` call — appear as DataParts in the message history: structured, not text. Same mechanism we saw in Demo 11 |
+| **Tool calls as DataParts** | ADK puts MCP tool calls and results — and the `submit_decision` call — in the history as DataParts: structured, not text |
+| **history vs status.message vs artifacts** | history = the conversation; status.message = the latest status update's message (here empty once completed; on failure it holds the reason — Demo 15); artifacts = the deliverable, each with an `artifactId` |
+| **ADK → artifact** | ADK's A2A server turns the agent's final reply into one artifact when the task completes |
 
 ### Key teaching points for class
 
 1. **"Use DataPart when you need both human and machine representations."** The offer was sent as TextPart (LLM reads it) AND DataPart (code parses it). Both travel in the same Message.
-2. **"Tool calls show up as DataParts in history."** The MCP tool calls and results are structured data, not text — you can programmatically inspect what tools were called without parsing text.
-3. **"$445K = exact floor = guaranteed acceptance."** `submit_decision` records any offer at or above the floor as ACCEPT — the instruction asks for it, the code guarantees it.
-4. **"This connects back to Demo 11."** Round 1 and round 4 there showed MCP tool calls as DataParts in the history — same mechanism here. DataParts are how A2A exposes tool usage, including the decision tool.
+2. **"Read the answer from the artifact; read the audit trail from history."** A downstream system doesn't replay the conversation to find the result.
+3. **"Tool calls show up as DataParts in history."** You can programmatically inspect what tools were called — and what `submit_decision` recorded — without parsing text.
+4. **"$445K = exact floor = guaranteed acceptance."** `submit_decision` records any offer at or above the floor as ACCEPT — the instruction asks for it, the code guarantees it.
 
 ---
 
@@ -1615,7 +1660,7 @@ adk web m2_adk_multiagents/negotiation_agents/
 
 Open http://localhost:8000, select `seller_agent` from the dropdown.
 
-**What it is:** A standalone `LlmAgent` with TWO `MCPToolset`s (pricing + inventory), a `before_tool_callback` allowlist, and a `submit_decision` tool that enforces the seller's floor in code. Has access to `get_minimum_acceptable_price` — the seller's secret floor. This is also the agent the A2A demos (10–14) talk to.
+**What it is:** A standalone `LlmAgent` with TWO `MCPToolset`s (pricing + inventory), a `before_tool_callback` allowlist, and a `submit_decision` tool that enforces the seller's floor in code. Has access to `get_minimum_acceptable_price` — the seller's secret floor. This is also the agent the A2A demos (10–15) talk to.
 
 **Key code elements:**
 
@@ -1856,7 +1901,7 @@ Round 3:
 
 **File:** `m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py`
 
-**What it teaches:** How to orchestrate a full buyer ↔ seller negotiation using Agent Card discovery and A2A message/send — two separate agents communicating over HTTP with a script as matchmaker.
+**What it teaches:** How to orchestrate a full buyer ↔ seller negotiation using Agent Card discovery — and how an orchestrator **reads each card's capabilities and talks to each agent the way it supports**: the buyer (`streaming: false`) by non-blocking `message/send` + `tasks/get` polling, the seller (`streaming: true`) by `message/stream`.
 
 **How to run:**
 ```bash
@@ -1868,34 +1913,59 @@ python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 ```
 
 **What the script does:**
-1. Discovers both agents via `GET /.well-known/agent-card.json`
-2. Sends "make an offer" to buyer_agent → gets offer text
-3. Forwards buyer's offer to seller_agent → gets COUNTER or ACCEPT
-4. If COUNTER: sends counter back to buyer for next round
-5. Repeats until ACCEPT or max rounds
+1. Discovers both agents via `GET /.well-known/agent-card.json` and prints their capabilities
+2. Builds one `Client` per agent from its card: `ClientConfig(streaming=False, polling=True)` for the buyer, `ClientConfig(streaming=True)` for the seller
+3. Sends "make an offer" to buyer_agent → task comes back `submitted` → polls `tasks/get` until `completed` → reads the offer from the artifact
+4. Forwards the buyer's offer to seller_agent → streams events (the seller's tool calls appear live) → reads COUNTER or ACCEPT from the artifact
+5. If COUNTER: sends the counter back to the buyer for next round
+6. Repeats until ACCEPT, WALK AWAY, a task that doesn't complete, or max rounds
 
-**Actual output (2 rounds):**
+**Actual output (gpt-4o, abridged):**
 ```
 STEP 1: Agent Card Discovery
-  Buyer:  name=buyer_agent, skills=[Property Valuation]
-  Seller: name=seller_agent, skills=[Real Estate Seller Negotiation]
+Buyer Agent Card:
+  Name:   buyer_agent
+  Capabilities: streaming=False, pushNotifications=False  → use message/send + tasks/get polling
+Seller Agent Card:
+  Name:   seller_agent
+  Capabilities: streaming=True, pushNotifications=False  → use message/stream
 
-STEP 2: Multi-Round Negotiation
-  Round 1: Buyer → $425K (MCP tools) | Seller → COUNTER $477K (MCP tools)
-  Round 2: Buyer → $445K            | Seller → ACCEPT $445K
-  DEAL REACHED in round 2!
+ROUND 1
+    [buyer ⇠ poll] task 294b01f5 submitted — polling tasks/get
+    [buyer] task 294b01f5 completed after 4 polls
+← Buyer says (artifact): ...
+    [seller ⇢ stream] working: calling get_market_price, get_inventory_level, get_minimum_acceptable_price
+    [seller ⇢ stream] working: calling submit_decision
+    [seller ⇢ stream] artifact received
+    [seller] task 496292e2 completed via stream
+← Seller says (artifact): ...
+ROUND 2
+    [buyer ⇠ poll] task e9d52173 submitted — polling tasks/get
+    [buyer] task e9d52173 completed after 2 polls
+    [seller ⇢ stream] working: calling submit_decision
+    ...
+ROUND 3
+    ...
+← Seller says (artifact):
+SELLER: ACCEPT your offer of $448,000. ...
+DEAL REACHED in round 3!
+Buyer's final offer was accepted by the seller. Agreed price: $448,000.
 
-  Buyer  contextId: e4c33941-...
-  Seller contextId: 41036068-...
-  Total A2A messages: 4
+A2A Protocol Summary:
+  Outcome:          deal
+  Buyer  contextId: 70a23b70-...  (reached by polling)
+  Seller contextId: 286a9e64-...  (reached by streaming)
+  A2A tasks created: 6 (one per message)
 ```
 
 **Key details:**
+- **The card decides the mechanism**: the orchestrator never hard-codes "poll the buyer"; it checks `card.capabilities.streaming`.
 - **Separate contextIds**: Each agent has its own conversation thread. The script bridges them.
+- **One Task per message**: 3 rounds × 2 agents = 6 tasks, each with its own id and artifact.
 - **Neither agent knows about the other**: They only see messages from the script.
-- **Each agent calls its own MCP tools**: Buyer calls pricing, seller calls pricing + inventory, then records its decision with `submit_decision` (floor enforced in code).
+- **Each agent calls its own MCP tools**: Buyer calls pricing, seller calls pricing + inventory, then records its decision with `submit_decision` (floor enforced in code). The seller only researches in round 1 — its context remembers.
 - **The script still reads the seller's reply text** for ACCEPT/COUNTER — over A2A it only sees the reply, not the seller's session state. The seller's prompt makes the reply match what `submit_decision` recorded.
-- **4 A2A messages total**: 2 to buyer, 2 to seller.
+- **A task that doesn't complete stops the negotiation**: the script checks `task.status.state` before reading the reply (see Demo 15 for why).
 
 ### Key teaching points
 
@@ -1909,7 +1979,7 @@ STEP 2: Multi-Round Negotiation
 
 5. **"Escalate from the last agent, and make the escalation visible."** The seller runs last in each round, so escalating from its `after_agent_callback` ends the loop with no extra messages. The callback must also write state (`loop_exit_reason`) — a bare `escalate` is silently dropped and the loop keeps running.
 
-6. **"The A2A demo shows the production pattern."** Agents discovered via Agent Cards, communicating via JSON-RPC, each with separate contextIds. The script is just a matchmaker — swap it for another agent, and you have agent-to-agent negotiation over HTTP.
+6. **"The A2A demo shows the production pattern."** Agents discovered via Agent Cards, each reached the way its card says (polling or streaming), each with separate contextIds. The script is just a matchmaker — swap it for another agent, and you have agent-to-agent negotiation over HTTP.
 
 ---
 
@@ -1926,7 +1996,7 @@ The three ways an A2A client can get a task's result — and that **the Agent Ca
 | `seller_agent` | `streaming: true` | **Streaming** — `message/stream` (Server-Sent Events) | Multi-step work you can watch live |
 | `negotiation` | `pushNotifications: true` | **Push** — `message/send` with a webhook; the server POSTs task updates | Long-running job; no connection held open |
 
-The A2A server checks the card for streaming: asking the buyer to stream is refused.
+The `ClientConfig` passed to `ClientFactory` picks the mechanism: `streaming=True` (used only if the card allows it), `polling=True` (non-blocking `message/send`), and `push_notification_configs=[...]` for a webhook. Asking an agent for something its card doesn't offer is refused — see Demo 15.
 
 ### Why the negotiation agent has its own server
 `adk web --a2a` stores a client's push-notification config but never sends notifications — ADK 1.39 creates the A2A request handler without a push sender. `negotiation_a2a_server.py` builds the same server from parts and adds the sender:
@@ -1953,7 +2023,6 @@ python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py     # negotiation 
 
 python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode polling
 python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode streaming
-python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode refusal
 python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode push
 ```
 
@@ -1961,68 +2030,63 @@ The buyer and seller cards say `http://localhost:8000/...`, so stop any other se
 
 ### Actual output (gpt-4o, abridged — wording, timings and the final price differ run to run)
 
-**Polling — buyer**
+**Polling — buyer** (`ClientConfig(streaming=False, polling=True)`)
 ```
 Agent Card: buyer_agent @ http://localhost:8000/a2a/buyer_agent
   capabilities: streaming=False, pushNotifications=False
 
-t+  1.8s  message/send (blocking=false) → task a9d69c9c  state=submitted
-           taskId=a9d69c9c-8600-4a27-91a2-e2d9ce582fce
-           contextId=35902612-cd1e-41b6-a572-418fb572424e  (the conversation; a new message gets a new taskId)
-t+  2.8s  tasks/get #1 → state=working
-t+ 14.3s  tasks/get #6 → state=completed
-t+ 14.3s  done after 6 polls
-  result: BUYER: We are offering $425,000 for 742 Evergreen Terrace. ...
+t+  1.0s  message/send (blocking=false) → task 45356018  state=submitted
+           taskId=45356018-8188-4d20-9e95-cbc812c39a4f
+           contextId=ed413092-99ef-4e20-be7e-84b2cc077091  (the conversation; a new message gets a new taskId)
+t+  2.0s  tasks/get #1 → state=working
+t+  4.0s  tasks/get #3 → state=completed
+t+  4.0s  done after 3 polls
+  result: BUYER: Our opening offer for 742 Evergreen Terrace is $425,000. ...
 ```
 
-**Streaming — seller**
+**Streaming — seller** (`ClientConfig(streaming=True)`)
 ```
 Agent Card: seller_agent @ http://localhost:8000/a2a/seller_agent
   capabilities: streaming=True, pushNotifications=False
 
-t+ 14.3s  status      state=submitted final=False text "The buyer offers $440,000 for 742 Evergreen Terrace with a 30-day close. ..."
-t+ 14.3s  status      state=working   final=False -
-t+ 18.7s  status      state=working   final=False tool_call get_market_price, tool_call get_inventory_level, tool_call get_minimum_acceptable_price
-t+ 18.7s  status      state=working   final=False tool_result get_market_price, tool_result get_inventory_level, tool_result get_minimum_acceptable_price
-t+ 19.7s  status      state=working   final=False tool_call submit_decision
-t+ 19.7s  status      state=working   final=False tool_result submit_decision
-t+ 21.2s  status      state=working   final=False text "SELLER: We COUNTER the offer with $477,000. ..."
-t+ 21.2s  artifact    text "SELLER: We COUNTER the offer with $477,000. ..."
-t+ 21.2s  status      state=completed final=True  -
+t+  4.1s  status      state=submitted final=False text "The buyer offers $440,000 for 742 Evergreen Terrace with a 30-day close. ..."
+t+  4.1s  status      state=working   final=False -
+t+  5.8s  status      state=working   final=False tool_call get_minimum_acceptable_price, tool_call get_market_price, tool_call get_inventory_level
+t+  5.8s  status      state=working   final=False tool_result get_minimum_acceptable_price, tool_result get_market_price, tool_result get_inventory_level
+t+  7.0s  status      state=working   final=False tool_call submit_decision
+t+  7.0s  status      state=working   final=False tool_result submit_decision
+t+  8.1s  status      state=working   final=False text "SELLER: We COUNTER the offer at $477,000. ..."
+t+  8.1s  artifact    text "SELLER: We COUNTER the offer at $477,000. ..."
+t+  8.1s  status      state=completed final=True  -
+
+  final task: state=completed, artifacts=1
 ```
 
-**Refusal — buyer asked to stream** (sent as raw JSON-RPC so you see the server's own answer)
-```
-  POST http://localhost:8000/a2a/buyer_agent  method=message/stream
-  ← HTTP 200  application/json
-  ← {"error":{"code":-32603,"message":"Streaming is not supported by the agent"},"id":"req_77b4b993","jsonrpc":"2.0"}
-```
-
-**Push — negotiation** (32 webhook POSTs in this run)
+**Push — negotiation** (`ClientConfig(streaming=False, polling=True, push_notification_configs=[...])`; 30 webhook POSTs in this run)
 ```
 Webhook listening on http://127.0.0.1:9010/webhook
 
 Agent Card: negotiation @ http://localhost:8003/
   capabilities: streaming=False, pushNotifications=True
 
-t+ 21.6s  webhook #1: state=working
-t+ 21.6s  webhook #2: state=working
-t+ 21.6s  message/send (blocking=false, webhook registered) → task 4db456d0 state=working
-t+ 21.6s  the client is free now — no open connection, no polling. Waiting for POSTs...
+t+  8.6s  webhook #1: state=working
+t+  8.6s  webhook #2: state=working
+t+  8.6s  message/send (blocking=false, webhook registered) → task 669ec356 state=working
+t+  8.6s  the client is free now — no open connection, no polling. Waiting for POSTs...
 
-t+ 32.0s  webhook #3: state=working   tool_call get_market_price, tool_call calculate_discount
-t+ 32.1s  webhook #4: state=working   tool_result get_market_price, tool_result calculate_discount
-t+ 33.0s  webhook #5: state=working   tool_call submit_offer
-t+ 33.0s  webhook #6: state=working   tool_result submit_offer
-t+ 34.4s  webhook #7: state=working   text "BUYER: We are offering $425,000 for 742 Evergreen Terrace. ..."
-t+ 38.9s  webhook #8: state=working   tool_call get_market_price, tool_call get_inventory_level, tool_call get_minimum_acceptable_price
+t+ 19.6s  webhook #3: state=working   tool_call get_market_price, tool_call calculate_discount
+t+ 19.6s  webhook #4: state=working   tool_result get_market_price, tool_result calculate_discount
+t+ 20.7s  webhook #5: state=working   tool_call submit_offer
+t+ 20.7s  webhook #6: state=working   tool_result submit_offer
+t+ 22.1s  webhook #7: state=working   text "BUYER: We offer $425,000 for 742 Evergreen Terrace ..."
+t+ 27.2s  webhook #8: state=working   tool_call get_market_price, tool_call get_inventory_level, tool_call get_minimum_acceptable_price
    ...
-t+ 41.1s  webhook #12: state=working   text "SELLER: We appreciate your offer, but considering the extensive upgrades worth over $75,000 ..."
-   ... rounds 2–4 ...
-t+ 54.8s  webhook #30: state=working   text "SELLER: ... pleased to accept your offer of $460,000. ..."
-t+ 54.8s  webhook #32: state=completed
+t+ 29.6s  webhook #12: state=working   text "SELLER: We appreciate your interest in 742 Evergreen Terrace ..."
+   ... rounds 2–3 ...
+t+ 41.6s  webhook #28: state=working   text "SELLER: Thank you for your revised offer of $450,000. ..."
+t+ 41.6s  webhook #30: state=completed
 
-  final result: SELLER: We appreciate your recognition of the property's upgrades and are pleased to accept your offer of $460,000. ...
+  final result: SELLER: Thank you for your revised offer of $450,000. We appreciate your acknowledgment of the recent upgrades ...
 ```
 (Captured with buyer/seller served on a different port; URLs shown as they appear with the default `:8000`.)
 
@@ -2030,11 +2094,11 @@ t+ 54.8s  webhook #32: state=completed
 
 1. **taskId vs contextId.** Polling prints both: the **task** is this one piece of work (what `tasks/get` looks up); the **context** is the conversation it belongs to. Sending another message in the same context (Demo 11) creates a new task with the same contextId.
 
-2. **The full lifecycle is finally visible.** Demos 10–13 use blocking `message/send`, which only returns the final `completed` task. Non-blocking send + polling shows `submitted → working → completed`; streaming shows every step in between, including the seller's MCP tool calls.
+2. **The full lifecycle is finally visible.** Demos 10–12 use blocking `message/send`, which only returns the final `completed` task. Non-blocking send + polling shows `submitted → working → completed`; streaming shows every step in between, including the seller's MCP tool calls. (Demo 13 uses polling and streaming the same way inside the negotiation.)
 
-3. **Artifacts arrive as their own event.** In the stream, the final text comes once as a status message and once as a `TaskArtifactUpdateEvent` — the durable output of the task.
+3. **Artifacts arrive as their own event.** In the stream, the final text comes once as a status message and once as a `TaskArtifactUpdateEvent` — the durable output of the task. The `Client` merges each update into the task it yields, so the final task has the artifact attached.
 
-4. **The card is enforced for streaming.** `message/stream` against the buyer returns a JSON-RPC error. For push, the a2a-sdk handler checks the card only on `tasks/pushNotificationConfig/set`; a `message/send` that carries a push config inline (what this demo sends) is accepted without that check. Whether anything is ever POSTed depends on the server having a push sender — which is why `negotiation_a2a_server.py` exists.
+4. **Asking for what the card doesn't offer is an error.** Demo 15 sends `message/stream` and a push-config request to the buyer and shows both refusals. (The a2a-sdk server checks the push capability on `tasks/pushNotificationConfig/set`, but not on a `message/send` that carries a push config inline, as this demo's push mode does. Whether anything is ever POSTed depends on the server having a push sender — which is why `negotiation_a2a_server.py` exists.)
 
 5. **Push is fire-and-forget.** The client registers a webhook and a shared token, then holds no connection at all. The server POSTs a full Task snapshot for each update and includes the token in an `X-A2A-Notification-Token` header, which the webhook checks before trusting the POST.
 
@@ -2043,6 +2107,117 @@ t+ 54.8s  webhook #32: state=completed
 1. **"How long is the job?"** Seconds → just wait or poll. Want progress → stream. Minutes, or the client may go away → push.
 2. **"Read the card before choosing."** The client checks `capabilities` and picks the mechanism the agent actually offers.
 3. **"Runner + executor is how you put any ADK agent behind A2A."** `adk web --a2a` does this for you; `negotiation_a2a_server.py` shows the parts — and why you'd assemble them yourself (here: to add push).
+
+---
+
+## Demo 15 — Error Handling (`a2a_15_error_handling.py`)
+
+**File:** `a2a_demos/a2a_15_error_handling.py` (terminal script)
+
+### What it teaches
+Things go wrong at four different layers in A2A, and each one reaches your code differently. The script triggers each one against the real agents and shows how to detect and handle it.
+
+| Layer | How it shows up in the client | Example in the demo |
+|---|---|---|
+| **1. Transport** | An exception: `A2AClientHTTPError` (with `status_code`) or `A2AClientTimeoutError` | Agent not running, wrong agent path, request timed out |
+| **2. Protocol** | An exception: `A2AClientJSONRPCError`, with the JSON-RPC error in `.error.code` / `.error.message` | Unknown task, can't cancel, capability not offered, malformed request |
+| **3. Task** | **No exception.** The Task comes back with `status.state == "failed"` and the reason in `status.message` | A file the model can't read |
+| **4. Application** | **No exception, state `completed`** — but the agent didn't do what you asked | An "offer" with no price in it |
+
+### How to run
+
+```bash
+# Terminal 1:
+adk web --a2a m2_adk_multiagents/negotiation_agents/
+
+# Terminal 2:
+python m2_adk_multiagents/a2a_demos/a2a_15_error_handling.py
+```
+
+### Actual output (gpt-4o, abridged)
+
+```
+LAYER 1 — TRANSPORT (exceptions: A2AClientHTTPError, A2AClientTimeoutError)
+
+▶ Agent Card from a port with nothing running (retry 3x, then give up)
+  attempt 1: HTTP 503 (transient) — retrying in 0.5s
+  attempt 2: HTTP 503 (transient) — retrying in 1.0s
+  A2AClientHTTPError  status=503  Network communication error fetching agent card from http://127.0.0.1:8099/...: All connection attempts failed
+
+▶ Agent Card for an agent that doesn't exist (404 — fail fast)
+  A2AClientHTTPError  status=404  Failed to fetch agent card from http://127.0.0.1:8000/a2a/no_such_agent/.well-known/agent-card.json: ...
+
+▶ Blocking message/send with a 2s timeout
+  A2AClientTimeoutError  Client Request timed out
+  ⚠ The server never heard that we gave up — the seller may still be working on it.
+    We have no taskId, so we can't check. Resending could repeat the work.
+
+▶ Recovery: message/send with blocking=false, then poll tasks/get
+  task 87132b5b submitted — returned immediately
+  task 87132b5b completed: SELLER: We must COUNTER at $477,000 ...
+
+LAYER 2 — PROTOCOL (exception: A2AClientJSONRPCError with a JSON-RPC error code)
+
+▶ tasks/get with a taskId the server doesn't know
+  A2AClientJSONRPCError  code=-32001  message='Task not found'
+
+▶ tasks/cancel on task 87132b5b, which already completed
+  A2AClientJSONRPCError  code=-32002  message='Task cannot be canceled - current state: TaskState.completed'
+
+▶ tasks/cancel on task 96be8c5e, still submitted
+  A2AClientJSONRPCError  code=-32603  message='Cancellation is not supported'
+
+▶ tasks/pushNotificationConfig/set on buyer_agent (pushNotifications: false)
+  A2AClientJSONRPCError  code=-32603  message='Push notifications are not supported by the agent'
+
+▶ raw message/stream to buyer_agent (streaming: false)
+  HTTP 200  {"error":{"code":-32603,"message":"Streaming is not supported by the agent"},"id":"1","jsonrpc":"2.0"}
+
+▶ raw request with an unknown method
+  HTTP 200  {"error":{"code":-32601,"message":"Method not found"},"id":"2","jsonrpc":"2.0"}
+
+▶ raw message/send missing messageId and parts
+  HTTP 200  {"error":{"code":-32602,"data":[{"type":"missing","loc":["params","message","messageId"],"msg":"Field required",...
+
+LAYER 3 — TASK FAILED (no exception: check task.status.state)
+
+▶ message/send with a TextPart + a FilePart (application/zip)
+  no exception. task 71e66f85 state=failed
+  reason (status.message): LiteLlm(BaseLlm) does not support content part with MIME type application/zip.
+  → don't retry as-is: the same input will fail the same way.
+
+LAYER 4 — APPLICATION (no exception, state=completed — check the content)
+
+▶ message/send with no price in it
+  no exception. task faee45dc state=completed
+  seller: SELLER: Could you clarify your offer or any questions you may have? ...
+  submit_decision was NOT called → completed, but no decision. Treat as 'ask again'.
+```
+
+### Key observations
+
+1. **"Agent not running" arrives as HTTP 503.** Nothing answered on that port, yet the card resolver reports `A2AClientHTTPError(status_code=503)`. The demo's `get_card_with_retry` retries 5xx with backoff (0.5 s, 1 s) and fails fast on 4xx, because retrying a 404 can't help.
+
+2. **A timeout doesn't cancel anything.** The blocking `message/send` timed out on the client after 2 s, but the server kept going. With no taskId the client can't check or cancel, and resending may do the work twice. The recovery — `blocking=false`, then poll `tasks/get` — gets the taskId back immediately, and each poll is a short request.
+
+3. **JSON-RPC errors come back with HTTP 200.** The HTTP request succeeded; the *RPC* failed. The SDK turns the error object into `A2AClientJSONRPCError`; the raw POSTs show what's actually on the wire. Standard JSON-RPC codes (-32601 method not found, -32602 invalid params, with field-level details) sit alongside A2A's own (-32001 task not found, -32002 task not cancelable).
+
+4. **What the card doesn't offer is refused — with a generic code.** The spec defines -32003 (push notifications not supported) and -32004 (unsupported operation); a2a-sdk 0.3.26's server returned -32603 with a descriptive message. Check the message, not just the code. ADK's executor also doesn't implement cancel, so cancelling a running task fails the same way.
+
+5. **The typed client prevents some errors.** The `Client` won't send `message/stream` to an agent whose card says `streaming: false` (it falls back to `message/send`), and won't build a request without `messageId` or `parts`. That's why those cases use raw JSON-RPC — that's what a buggy or non-SDK client might send.
+
+6. **A FilePart is valid A2A, but the agent's model couldn't read it.** The task was created and then `failed`; the reason is in `status.message`. There is no exception — code that only catches exceptions treats this as success.
+
+7. **`completed` ≠ success.** The seller asked for clarification and never called `submit_decision`. ADK records tool calls in history as DataParts, so the demo checks for a recorded decision instead of trusting the state. (Responses vary: in an earlier version of Demo 10, the same kind of vague message got the seller to dump its whole analysis, including the $445K floor.)
+
+> **Security observation:** A vague or confusing message can make an agent over-share. The seller's `before_tool_callback` allowlist does **not** help here — the seller is *allowed* to call `get_minimum_acceptable_price`; the allowlist only keeps that tool away from the buyer. Defenses are the confidentiality rules in the seller's instruction and input screening such as Exercise 05's `before_model_callback` (prompt-injection defense).
+
+### Key teaching points for class
+
+1. **"Four layers, two of them silent."** Transport and protocol errors raise. Task failures and application failures don't — check `task.status.state`, then the content.
+2. **"Retry what's transient, fix what's wrong."** Connection errors and 5xx: retry with backoff. 4xx and JSON-RPC errors: retrying sends the same mistake again.
+3. **"For long work, don't block."** A timeout on a blocking call leaves you without a taskId. Non-blocking send + polling (or streaming, or push — Demo 14) keeps you in control.
+4. **"Read the card first."** Most protocol errors in practice are clients asking for something the card never offered.
 
 ---
 
@@ -2062,13 +2237,16 @@ t+ 54.8s  webhook #32: state=completed
 | `AgentTool` | d07 | — |
 | Callbacks (before/after) | d08 | buyer_agent, seller_agent, negotiation |
 | Event stream | d09 | — |
-| Agent Card | a2a_10 | a2a_11, a2a_12, a2a_13 |
+| Agent Card | a2a_10 | a2a_11, a2a_12, a2a_13, a2a_14 |
+| Task (id, status, history, artifacts) | a2a_10 | a2a_11 (taskId vs contextId, `tasks/get`), a2a_12, a2a_14 |
 | `contextId` threading | a2a_11 | a2a_13 |
-| Parts (Text/Data/File) | a2a_12 | — |
-| Artifacts | a2a_12 | — |
+| Parts (Text/Data/File) | a2a_10 | a2a_12, a2a_15 (FilePart) |
+| Artifacts | a2a_10 | a2a_12, a2a_13, a2a_14 |
+| `ClientFactory` / `Client` | a2a_10 | a2a_11–15 |
 | Information asymmetry | buyer vs seller | negotiation orchestrator |
 | `before_tool_callback` allowlist | d08 | buyer_agent, seller_agent, negotiation |
 | Structured decision tool (+ floor enforced in code) | negotiation | seller_agent, a2a_10–13 |
 | A2A orchestration | a2a_13 | — |
-| Polling / streaming / push | a2a_14 | — |
+| Polling / streaming / push | a2a_14 | a2a_13 (polling + streaming), a2a_15 (refusals) |
+| Error handling (transport / protocol / task / application) | a2a_15 | a2a_13 (stops on a task that doesn't complete) |
 | `A2aAgentExecutor` + `Runner` (custom A2A server) | a2a_14 (negotiation_a2a_server.py) | — |

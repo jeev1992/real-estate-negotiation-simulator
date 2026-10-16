@@ -1,36 +1,36 @@
 """
 Demo 12 — A2A Parts and Artifacts
 ====================================
-Sends a Message with multiple parts (TextPart + DataPart) and inspects
-any artifacts the server attaches to the Task response.
+Sends a Message with multiple parts (TextPart + DataPart), then looks at
+the three places content lives in the Task that comes back: the history,
+the status message, and the artifacts.
 
 WHY MULTI-PART MESSAGES?
-  Demo 10 sent a single TextPart — just a JSON string. But A2A Messages
-  can carry MULTIPLE Parts of different types:
+  A2A Messages can carry MULTIPLE Parts of different types:
 
   - TextPart: plain text (what the LLM reads)
   - DataPart: structured JSON (what code parses)
-  - FilePart: binary data with MIME type (PDFs, images)
+  - FilePart: a file — inline bytes or a URI — with a MIME type
 
   This demo sends BOTH a TextPart and a DataPart in the same Message —
-  the offer in human-readable AND machine-readable form. The agent can
-  use whichever format is more convenient.
+  the offer in human-readable AND machine-readable form.
 
-WHAT ARE ARTIFACTS?
-  Artifacts are DURABLE OUTPUTS attached to a completed Task.
-  They're separate from the Message history.
+WHERE THE ANSWER LIVES IN A TASK:
+  history        the conversation: our message, then the agent's turns —
+                 including its MCP tool calls and results as DataParts
+  status.message the latest status update's message (if any)
+  artifacts      DURABLE OUTPUTS — the deliverable, each with an artifactId
 
   Think of it this way:
-    Messages = the email thread (conversational, ordered)
-    Artifacts = the attached report (the deliverable)
+    history   = the email thread (conversational, ordered)
+    artifacts = the attached report (the deliverable)
 
-  In this demo, the seller's acceptance text appears in BOTH
-  the history (as a Message) and as an Artifact. You'd use
-  Artifacts when a downstream system needs to fetch the result
-  without replaying the entire conversation.
+  A downstream system reads the artifact; it doesn't have to replay the
+  history to find the answer. ADK's A2A server turns the agent's final
+  reply into one artifact.
 
 Prereq:
-    adk web --a2a m2_adk_multiagents/negotiation_agents/ --port 8000
+    adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 Run:
     python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py \\
@@ -43,27 +43,23 @@ import json
 import uuid
 
 import httpx
-from a2a.client import A2ACardResolver, A2AClient
-from a2a.types import (
-    DataPart,
-    Message,
-    MessageSendParams,
-    Role,
-    SendMessageRequest,
-    SendMessageSuccessResponse,
-    Task,
-    TextPart,
-)
+from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from a2a.types import DataPart, Message, Part, Role, Task, TextPart
+
+
+def show_part(index: int, part: Part, indent: str = "    ") -> None:
+    inner = part.root
+    if isinstance(inner, TextPart):
+        print(f"{indent}[{index}] TextPart  {inner.text.strip()[:160]}")
+    elif isinstance(inner, DataPart):
+        print(f"{indent}[{index}] DataPart  {json.dumps(inner.data)[:160]}")
+    else:
+        print(f"{indent}[{index}] {inner.kind}")
 
 
 async def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="A2A parts and artifacts demo"
-    )
-    parser.add_argument(
-        "--seller-url",
-        default="http://127.0.0.1:8000/a2a/seller_agent",
-    )
+    parser = argparse.ArgumentParser(description="A2A parts and artifacts demo")
+    parser.add_argument("--seller-url", default="http://127.0.0.1:8000/a2a/seller_agent")
     args = parser.parse_args()
 
     buyer_envelope = {
@@ -77,77 +73,67 @@ async def main() -> None:
     }
 
     # ── Two parts in one message ──────────────────────────────────────
-    #
-    # This is the key concept: we send the SAME offer in TWO formats
-    # inside a single Message. The agent can use whichever is easier:
-    #
     #   parts[0] = TextPart  → human-readable text (the LLM reads this)
     #   parts[1] = DataPart  → structured dict (code can parse this directly)
-    #
-    # In production, you'd use DataPart for machine-to-machine fields
-    # (prices, IDs, timestamps) and TextPart for human context.
-    #
     parts = [
         TextPart(text="Final-and-best offer at $445k for 742 Evergreen Terrace."),
-        DataPart(
-            data={
-                "hint": "machine-readable copy of the offer",
-                "offer": buyer_envelope,
-            }
-        ),
+        DataPart(data={"hint": "machine-readable copy of the offer", "offer": buyer_envelope}),
     ]
 
     async with httpx.AsyncClient(timeout=60.0) as http:
-        # ── Discover the agent and create client ──────────────────────
-        resolver = A2ACardResolver(
-            httpx_client=http, base_url=args.seller_url
-        )
-        card = await resolver.get_agent_card()
-        client = A2AClient(httpx_client=http, agent_card=card)
+        card = await A2ACardResolver(httpx_client=http, base_url=args.seller_url).get_agent_card()
+        client = ClientFactory(ClientConfig(httpx_client=http, streaming=False)).create(card)
 
-        request = SendMessageRequest(
-            id=f"req_{uuid.uuid4().hex[:8]}",
-            params=MessageSendParams(
-                message=Message(
-                    messageId=f"msg_{uuid.uuid4().hex[:8]}",
-                    role=Role.user,
-                    parts=parts,
-                )
-            ),
-        )
-        response = await client.send_message(request)
+        message = Message(message_id=f"msg_{uuid.uuid4().hex[:8]}", role=Role.user, parts=parts)
+        task = None
+        async for event in client.send_message(message):
+            task = event[0] if isinstance(event, tuple) else event
 
-    result = response.root
+    if not isinstance(task, Task):
+        print(f"Expected a Task, got: {task!r}")
+        return
 
-    # ── Inspect response status ───────────────────────────────────────
-    print("=== response status ===")
-    if isinstance(result, SendMessageSuccessResponse) and isinstance(result.result, Task):
-        task = result.result
-        print(f"state: {task.status.state.value}")
+    print(f"=== task {task.id}  state={task.status.state.value} ===")
 
-        # ── Inspect response message parts ────────────────────────────────
-        print("\n=== response message parts ===")
-        for msg in task.history or []:
-            print(f"  role={msg.role.value}, {len(msg.parts)} part(s):")
-            for i, part in enumerate(msg.parts):
-                inner = part.root
-                print(f"    [{i}] kind={inner.kind}")
-                if isinstance(inner, TextPart):
-                    print(f"        text={inner.text[:200]}...")
-                if isinstance(inner, DataPart):
-                    print(f"        data keys={list(inner.data.keys())}")
+    # ── 1. history — the conversation ─────────────────────────────────
+    print(f"\n=== 1. history ({len(task.history or [])} messages) ===")
+    for i, msg in enumerate(task.history or []):
+        print(f"  ({i}) role={msg.role.value}, {len(msg.parts)} part(s):")
+        for j, part in enumerate(msg.parts):
+            show_part(j, part)
+
+    # ── 2. status.message ─────────────────────────────────────────────
+    print("\n=== 2. status.message ===")
+    if task.status.message:
+        for j, part in enumerate(task.status.message.parts):
+            show_part(j, part, indent="  ")
     else:
-        print(f"ERROR or unexpected response type")
+        print("  (none — the final 'completed' update carries no message; the reply is in the artifact)")
 
-    # ── Key takeaways ─────────────────────────────────────────────────
+    # ── 3. artifacts — the deliverable ────────────────────────────────
+    print(f"\n=== 3. artifacts ({len(task.artifacts or [])}) ===")
+    for artifact in task.artifacts or []:
+        print(f"  artifactId={artifact.artifact_id}  name={artifact.name}")
+        for j, part in enumerate(artifact.parts):
+            show_part(j, part)
+
+    # ── Structured observability: read tool calls from DataParts ──────
+    #
+    # ADK records each MCP tool call/result as a DataPart in history, so
+    # code can see exactly which tools ran — no text parsing needed.
+    print("\n=== tools the seller called (from history DataParts) ===")
+    for msg in task.history or []:
+        for part in msg.parts:
+            data = part.root.data if isinstance(part.root, DataPart) else {}
+            if "args" in data:
+                print(f"  call   {data['name']}({json.dumps(data['args'])[:100]})")
+            elif "response" in data:
+                print(f"  result {data['name']} → {json.dumps(data['response'])[:100]}")
+
     print("\n=== key takeaways ===")
-    print("• Messages carry Parts: TextPart (text), DataPart (structured), FilePart (binary)")
-    print("• Use DataPart when you need both human + machine representations")
-    print("• MCP tool calls appear as DataParts in history — structured observability")
-    print("• You can programmatically inspect what tools were called without parsing text")
-
-    print(f"\n=== full response (truncated) ===")
-    print(json.dumps(response.model_dump(mode="json"), indent=2)[:2000])
+    print("• Messages carry Parts: TextPart (text), DataPart (structured), FilePart (files)")
+    print("• history = the conversation (incl. tool calls as DataParts); artifacts = the deliverable")
+    print("• Read the answer from the artifact; read the audit trail from history")
 
 
 if __name__ == "__main__":
