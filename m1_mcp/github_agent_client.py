@@ -8,19 +8,36 @@ prompts — so you can see all three on a server every engineer knows.
 
 WHY THIS EXISTS:
   This demonstrates the SAME agentic pattern used by our buyer and seller
-  agents in Module 2 — but against GitHub's real MCP server:
+  agents in Module 2 — but against GitHub's real MCP server. In Module 2,
+  ADK's MCPToolset does steps 3-6 for you; here every step is written out.
 
-  1. Connect to an MCP server and discover its primitives
-     (tools/list, resources/templates/list, prompts/list)
-  2. HOST step: optionally read a RESOURCE (e.g. a repo's README) and attach
-     it to the conversation as context. The model never "calls" a resource.
-  3. Give the LLM the tool schemas so it knows what's available
-  4. Let the LLM DECIDE which tools to call based on the task
-  5. Execute the tool calls via MCP and feed results back to the LLM
-  6. LLM either calls more tools or produces a final answer
+HOW IT WORKS — three parties, and only this script talks to both others:
 
-  The key insight: tools are model-controlled (the agent picks them), while
-  resources are application-controlled (the host decides what to attach).
+   SCRIPT (MCP host)                 GITHUB MCP SERVER            OPENAI (LLM)
+   1 initialize            ───────►  capabilities: tools,
+                                     resources, prompts
+   2 tools/list, resources/templates/list, prompts/list
+                           ───────►  29 tools, 5 repo:// templates, 2 prompts
+   3 resources/read README ───────►  README text
+     → attach it to the chat as context (the HOST decides this)
+   4 chat + tool schemas   ──────────────────────────────────►  "call get_latest_release,
+                                                                  list_issues"
+   5 tools/call (each)     ───────►  results → added to the chat
+   6 chat again            ──────────────────────────────────►  final answer
+
+  1. initialize — handshake over Streamable HTTP; server lists its capabilities
+  2. Discover all three primitives (discover_primitives)
+  3. HOST step: read a RESOURCE and attach it as context (read_resource_text).
+     The model never "calls" a resource.
+  4. Convert MCP tool schemas to OpenAI function format
+     (mcp_tools_to_openai_functions); the LLM DECIDES which tools to call
+  5. Execute each tool call with tools/call and feed the result back
+  6. Repeat until the LLM answers without calling tools (max 5 rounds)
+
+WHO CONTROLS EACH PRIMITIVE:
+  Tool      — the MODEL decides     (gpt-4o picks get_latest_release, list_issues)
+  Resource  — the APPLICATION       (this script reads and attaches the README)
+  Prompt    — a PERSON picks it     (only listed here; a real app shows a menu)
 
 THE SERVER:
   GitHub hosts its official MCP server at https://api.githubcopilot.com/mcp/

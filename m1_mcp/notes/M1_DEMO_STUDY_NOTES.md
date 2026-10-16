@@ -337,6 +337,45 @@ Part 1 comes only from the attached resource (no tool reads the README); part 2 
 
 Sample query 1 ("Find popular Python repositories about real estate on GitHub.") attaches nothing; the model calls `search_repositories({"query": "real estate language:python", "sort": "stars", ...})` and summarizes the results (HomeHarvest, ...).
 
+### How it works, step by step
+
+Three parties take part. The script is the **MCP host**: it is the only one that talks to both the MCP server and the LLM. The LLM never talks to GitHub — it only sees text and tool schemas.
+
+```
+ SCRIPT (MCP host)                     GITHUB MCP SERVER                 OPENAI (LLM)
+ ─────────────────                     ─────────────────                 ────────────
+ 1 initialize                ───────►  "I support tools, resources,
+                             ◄───────   prompts, completions"
+ 2 tools/list                ───────►  29 tools (+ JSON schemas)
+   resources/templates/list  ───────►  5 repo:// templates
+   prompts/list              ───────►  2 prompts
+ 3 resources/read README     ───────►  README text (4,561 chars)
+   → put it in the chat as context
+ 4 send chat + 29 tool schemas ─────────────────────────────────────────►  "call get_latest_release
+                                                                              and list_issues"
+ 5 tools/call get_latest_release ───►  v2.3.0
+   tools/call list_issues    ───────►  #3718, #3715, #3714
+   → add both results to the chat
+ 6 send chat again ──────────────────────────────────────────────────────►  final answer (no tool calls)
+```
+
+| Step | Code | MCP / API call | What happens |
+|---|---|---|---|
+| 1 | `streamablehttp_client(...)`, `session.initialize()` | `initialize` | Opens a Streamable HTTP connection to `https://api.githubcopilot.com/mcp/readonly` with your token in the `Authorization` header, then performs the same handshake as Demo 01. The server returns its capabilities. |
+| 2 | `discover_primitives()` | `tools/list`, `resources/templates/list`, `prompts/list` | Lists all three primitives. Resources and prompts are only asked for because the server advertised them. No LLM involved yet. |
+| 3 | `read_resource_text()` | `resources/read` | **Host step.** The script fills the template `repo://{owner}/{repo}/contents{/path*}` and reads the README, then adds it to the conversation marked "already provided — don't fetch it again". |
+| 4 | `mcp_tools_to_openai_functions()`, `chat.completions.create(...)` | OpenAI API | MCP tool schemas are rewrapped into OpenAI function format (same JSON Schema, different envelope). gpt-4o reads the README, the question, and 29 tool definitions, and **decides** to call `get_latest_release` and `list_issues` (`finish_reason == "tool_calls"`). |
+| 5 | `session.call_tool(name, args)`, `_parse_tool_result()` | `tools/call` | For each tool call the script sends an MCP request; GitHub's server calls the GitHub REST API and returns the result, which is appended to the chat as a `"tool"` message. |
+| 6 | `chat.completions.create(...)` again | OpenAI API | With the README and both tool results in context, gpt-4o answers in text — part 1 from the resource, part 2 from the tools. No more tool calls ends the loop (up to 5 rounds). |
+
+**Who controls each primitive:**
+
+| Primitive | Who decides | In this run |
+|---|---|---|
+| **Tool** | The **model** | gpt-4o chose `get_latest_release` and `list_issues` |
+| **Resource** | The **application** (host) | The script chose to read and attach the README |
+| **Prompt** | A **person** | Only listed (`AssignCodingAgent`, `issue_to_fix_workflow`) — a real app would show them in a menu |
+
 ### Why the sample queries are worded this way
 
 Earlier versions of this demo showed two failure modes worth knowing about:
@@ -376,7 +415,7 @@ async with streamablehttp_client(GITHUB_MCP_URL, headers={"Authorization": f"Bea
 
 ### Key observations
 
-1. **One server, three primitives, three controllers.** Tools are *model-controlled* (the LLM picked `get_latest_release` and `list_issues`), resources are *application-controlled* (this script decided to read the README), and prompts are *user-controlled* (a person would pick `issue_to_fix_workflow` from a menu — the script only lists them).
+1. **One server, three primitives, three controllers.** See the "who controls" table above: the model picked the tools, the script picked the resource, and the prompts are left for a person to choose.
 
 2. **Resources are addressed by URI templates.** `repo://{owner}/{repo}/contents{/path*}` lets the host read any file in any repo it has access to — the same idea as `inventory://floor-prices` in Demo 03, but parameterized.
 
@@ -385,7 +424,7 @@ async with streamablehttp_client(GITHUB_MCP_URL, headers={"Authorization": f"Bea
 4. **Remote server, no install.** Streamable HTTP plus a Bearer token — the transport from Demo 05, against a production server.
 
 ### Key insight
-This is the **manual version** of what ADK's `MCPToolset` automates. Understanding this loop means understanding what ADK does under the hood.
+This is the **manual version** of what ADK's `MCPToolset` automates. Steps 4–6 above — schema conversion, the LLM call, checking for tool calls, running them over MCP, and feeding results back — are about 60 lines here; in Module 2 they become `tools=[MCPToolset(...)]`. Understanding this loop means understanding what ADK does under the hood.
 
 ### Troubleshooting
 
