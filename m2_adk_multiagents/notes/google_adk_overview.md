@@ -9,7 +9,7 @@
 > **TL;DR:**
 > 1. **ADK is opinionated infrastructure for LLM agents.** Sessions, memory, streaming, multi-agent orchestration, tool integration — all declarative. You write `root_agent = LlmAgent(...)` and ADK gives you a runtime.
 > 2. **Four primitives you'll touch every day:** `LlmAgent` (the agent), `Runner` (the loop), `SessionService` (memory), and some toolset (usually `MCPToolset`). Workflow agents — `SequentialAgent`, `ParallelAgent`, `LoopAgent` — and callbacks compose on top.
-> 3. **`adk web` runs everything.** It auto-discovers agents from package structure, creates Runner + Session for you, gives you a chat UI with event stream, and (with `--a2a`) exposes each agent as an A2A network service with an auto-generated Agent Card.
+> 3. **`adk web` runs everything.** It auto-discovers agents from package structure, creates Runner + Session for you, gives you a chat UI with event stream, and (with `--a2a`) exposes each agent that has an `agent.json` as an A2A network service, serving that file as its Agent Card.
 
 See also: [A2A Protocols](a2a_protocols.md) for the protocol layer that lets ADK agents talk to other agents.
 
@@ -1014,7 +1014,7 @@ root_agent = LlmAgent(
 - No class, no `__aenter__`/`__aexit__`, no manual Runner — just `root_agent = LlmAgent(...)`
 - MCPToolset goes directly in the `tools` list — ADK manages the lifecycle
 - `adk web` discovers this agent automatically from the package structure
-- `adk web --a2a` serves it as an A2A endpoint with an auto-generated Agent Card
+- `adk web --a2a` serves it as an A2A endpoint, with its `agent.json` as the Agent Card
 
 ### Seller Agent — Dual MCPToolsets
 
@@ -1056,29 +1056,11 @@ root_agent = LoopAgent(name="negotiation", sub_agents=[round], max_iterations=5)
 # Interactive web UI — pick buyer, seller, or negotiation from dropdown
 adk web m2_adk_multiagents/negotiation_agents/
 
-# With A2A endpoints (Agent Cards auto-generated)
+# With A2A endpoints (each agent's Agent Card comes from its agent.json)
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # ADK demos (9 concept demos in dropdown)
 adk web m2_adk_multiagents/adk_demos/
-```
-Property: 742 Evergreen Terrace, Austin, TX 78701
-Listed at: $485,000
-
-Seller's profile:
-- Minimum acceptable price: $445,000 (absolute floor)
-- Ideal outcome: Close at $465,000 or above
-- Property highlights: Renovated kitchen (2023), new roof (2022)
-
-Strategy:
-1. Use get_inventory_level() to understand market pressure
-2. Use get_minimum_acceptable_price() to confirm your floor price
-3. Start counter-offers at $477,000
-4. Come down in small increments (1-2% at a time)
-5. Never go below $445,000
-
-Leverage your property's upgrades in every counter-offer.
-"""
 ```
 
 ---
@@ -1767,7 +1749,7 @@ adk web m2_adk_multiagents/adk_demos/
 # Full agents (buyer, seller, negotiation)
 adk web m2_adk_multiagents/negotiation_agents/
 
-# A2A endpoints (Agent Cards auto-generated)
+# A2A endpoints (Agent Cards from each agent.json)
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 ```
 

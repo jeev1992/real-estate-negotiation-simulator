@@ -38,10 +38,12 @@ Run:
 import argparse
 import asyncio
 import json
+import sys
 import uuid
 
 import httpx
 from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from a2a.client.errors import A2AClientHTTPError
 from a2a.types import DataPart, Message, Role, Task, TextPart
 
 MAX_BODY_CHARS = 2500
@@ -183,4 +185,11 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.stdout.reconfigure(encoding="utf-8")   # so the output can be piped/redirected on Windows
+    try:
+        asyncio.run(main())
+    except A2AClientHTTPError as e:
+        if e.status_code != 503:   # 503 = the SDK's code for "nothing answered" (network error)
+            raise
+        sys.exit(f"Can't reach the agent: {e.message}\n"
+                 "Start the agents first:  adk web --a2a m2_adk_multiagents/negotiation_agents/")

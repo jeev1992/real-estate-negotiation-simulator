@@ -171,6 +171,8 @@ python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
 python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py
 ```
 
+If `adk web --a2a` isn't running, each demo prints `Can't reach the agent: ...` and how to start it.
+
 ---
 
 ## Agent details

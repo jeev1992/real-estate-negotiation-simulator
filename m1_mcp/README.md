@@ -223,15 +223,15 @@ python utils/pricing_auth.py --role buyer            # mint a token (buyer | ana
 
 ## Deep-dive demos (`m1_mcp/demos/`)
 
-Standalone, runnable scripts that crack open the MCP protocol so you can see what's happening on the wire. Each one is self-contained and prints what it sends/receives. Read them in order; companion notes live in [m1_mcp/notes/mcp_deep_dive.md](m1_mcp/notes/mcp_deep_dive.md).
+Standalone, runnable scripts that crack open the MCP protocol so you can see what's happening on the wire. Each one is self-contained and prints what it sends/receives. Read them in order; companion notes live in [m1_mcp/notes/mcp_deep_dive.md](notes/mcp_deep_dive.md).
 
 | Demo | What it shows | Run |
 |---|---|---|
-| [`01_initialize_handshake.py`](m1_mcp/demos/01_initialize_handshake.py) | Raw JSON-RPC frames of the MCP `initialize` handshake (no SDK) — capability negotiation, `notifications/initialized`, then `tools/list` | `python m1_mcp/demos/01_initialize_handshake.py` |
-| [`02_tool_loop_trace.py`](m1_mcp/demos/02_tool_loop_trace.py) | The full **model ↔ host ↔ server** tool-calling loop, narrated step by step with timestamps (uses the `mcp` SDK + OpenAI function calling) | `python m1_mcp/demos/02_tool_loop_trace.py` |
-| [`03_list_all_primitives.py`](m1_mcp/demos/03_list_all_primitives.py) | Lists **Tools, Resources, and Prompts** from both workshop servers — proves MCP carries more than just tools | `python m1_mcp/demos/03_list_all_primitives.py` |
-| [`04_content_types.py`](m1_mcp/demos/04_content_types.py) | A tiny inline server that returns each `Content` block kind (text / image / embedded resource) so you can see the JSON shape of each | `python m1_mcp/demos/04_content_types.py` |
-| [`05_streamable_http_transport.py`](m1_mcp/demos/05_streamable_http_transport.py) | Same MCP protocol, **Streamable HTTP** transport (the spec's recommended replacement for raw SSE) | Server: `python m1_mcp/demos/05_streamable_http_transport.py --serve --port 8765`<br>Client: `python m1_mcp/demos/05_streamable_http_transport.py --client --port 8765` |
+| [`01_initialize_handshake.py`](demos/01_initialize_handshake.py) | Raw JSON-RPC frames of the MCP `initialize` handshake (no SDK) — capability negotiation, `notifications/initialized`, then `tools/list` | `python m1_mcp/demos/01_initialize_handshake.py` |
+| [`02_tool_loop_trace.py`](demos/02_tool_loop_trace.py) | The full **model ↔ host ↔ server** tool-calling loop, narrated step by step with timestamps (uses the `mcp` SDK + OpenAI function calling) | `python m1_mcp/demos/02_tool_loop_trace.py` |
+| [`03_list_all_primitives.py`](demos/03_list_all_primitives.py) | Lists **Tools, Resources, and Prompts** from both workshop servers — proves MCP carries more than just tools | `python m1_mcp/demos/03_list_all_primitives.py` |
+| [`04_content_types.py`](demos/04_content_types.py) | A tiny inline server that returns each `Content` block kind (text / image / embedded resource) so you can see the JSON shape of each | `python m1_mcp/demos/04_content_types.py` |
+| [`05_streamable_http_transport.py`](demos/05_streamable_http_transport.py) | Same MCP protocol, **Streamable HTTP** transport (the spec's recommended replacement for raw SSE) | Server: `python m1_mcp/demos/05_streamable_http_transport.py --serve --port 8765`<br>Client: `python m1_mcp/demos/05_streamable_http_transport.py --client --port 8765` |
 
 > Demos 01–04 spawn their own server subprocess — no manual setup. Only demo 05 needs two terminals.
 
@@ -262,7 +262,7 @@ Open the printed `http://localhost:6274?...` URL, click **Connect** (this runs t
 | **Resources** | Read `inventory://floor-prices` | You *read* it; there's no args form. The host never "calls" a resource |
 | **Prompts** *(pricing server)* | Render `negotiation-tactics` with `role=seller` | A user-selected template — surfaced for a human to pick, not the model |
 
-This is the visual companion to [`03_list_all_primitives.py`](m1_mcp/demos/03_list_all_primitives.py): that script *lists* the primitives on the wire; the Inspector *renders* them the way a real host would — sorting them into tabs purely from the `type` each was declared with, with zero Inspector-specific code from you.
+This is the visual companion to [`03_list_all_primitives.py`](demos/03_list_all_primitives.py): that script *lists* the primitives on the wire; the Inspector *renders* them the way a real host would — sorting them into tabs purely from the `type` each was declared with, with zero Inspector-specific code from you.
 
 ---
 

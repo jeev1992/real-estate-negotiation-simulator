@@ -1231,6 +1231,8 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
 python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py
 ```
 
+If Terminal 1 isn't running, every A2A demo (10–14) stops with `Can't reach the agent: ...` and `Start the agents first: adk web --a2a m2_adk_multiagents/negotiation_agents/` instead of a traceback. The demos also force UTF-8 output, so piping or redirecting them (e.g. `> out.txt`) works on Windows.
+
 > **Before running the script**, try browsing the Agent Cards directly in your browser. `adk web --a2a` reads each agent's `agent.json` and serves it automatically:
 > - http://127.0.0.1:8000/a2a/buyer_agent/.well-known/agent-card.json
 > - http://127.0.0.1:8000/a2a/seller_agent/.well-known/agent-card.json
@@ -1907,7 +1909,7 @@ Round 3:
 | `buyer_agent` | `streaming: false`, `pushNotifications: false` | **Polling** — `message/send` with `blocking: false`, then `tasks/get` until a final state | `streaming=False, polling=True` |
 | `seller_agent` | `streaming: true` | **Streaming** — `message/stream`; events arrive as the seller works | `streaming=True` |
 
-A2A's third mechanism, push notifications (the server POSTs task updates to a client webhook), isn't demonstrated: ADK's built-in A2A server stores a client's webhook but never calls it. See `a2a_protocols.md` §17.2.
+A2A's third mechanism, push notifications (the server POSTs task updates to a client webhook), isn't demonstrated: ADK's built-in A2A server stores a client's webhook but never calls it. See `a2a_protocols.md` §17.3 — and §13.2 for all four Agent Card capabilities (`streaming`, `pushNotifications`, `stateTransitionHistory`, `extensions`).
 
 **How to run:**
 ```bash

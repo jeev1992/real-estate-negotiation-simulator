@@ -8,7 +8,7 @@ This is the production pattern: **a script that doesn't know how either agent is
 
 ## Context
 
-In Module 2 you ran `a2a_13_orchestrated_negotiation.py` — a script that does exactly this. Today you'll write your own version from scratch. The point isn't to invent something new; it's to **internalize the wire-level pattern** so you'd recognize and write it again at work.
+In Module 2 you ran `a2a_13_orchestrated_negotiation.py` — a script that does exactly this with the a2a-sdk's `Client` (polling the buyer, streaming the seller). Today you'll write your own version from scratch, one level lower: **hand-built JSON-RPC `message/send` requests** posted with `httpx` (the wire format from demo 10). The point isn't to invent something new; it's to **internalize the wire-level pattern** so you'd recognize and write it again at work.
 
 ## What you're building
 
@@ -25,12 +25,14 @@ A standalone script `multi_round_client.py` that:
 ## Steps
 
 1. Write the helper `send_a2a_message(http, agent_url, text, context_id)` that:
-   - POSTs a JSON-RPC `message/send` request to `agent_url`.
-   - Returns `(result_dict, new_context_id)`.
-2. Write `extract_agent_text(result)` that pulls the agent's text response from `artifacts` first, falling back to the last agent message in `history`.
+   - POSTs a JSON-RPC `message/send` request to `agent_url` (the `url` from the agent's card).
+   - Raises if the reply is a JSON-RPC `error` — it arrives with HTTP 200, so `raise_for_status()` won't catch it.
+   - Returns `(result_dict, new_context_id)` — the result is the Task.
+2. Write `extract_agent_text(result)` that pulls the agent's text response from `artifacts` first, then `status.message` (where a failed task puts its reason), falling back to the last agent message in `history`.
 3. Use `A2ACardResolver` to fetch both Agent Cards.
 4. Write the round loop. Maintain `buyer_context_id` and `seller_context_id` separately; pass each one back to its own agent on subsequent calls.
-5. Detect `\bACCEPT\b` in the seller's reply (regex, word-boundary). Break on match.
+5. Check each Task's `status.state`: anything other than `completed` (e.g. `failed`) ends the negotiation — see demo 14.
+6. Detect `\bACCEPT\b` (and no `\bCOUNTER\b`) in the seller's reply (regex, word-boundary). Break on match. Also stop if the buyer says WALK AWAY.
 
 ## Prerequisites
 
@@ -51,7 +53,8 @@ python m2_adk_multiagents/solution/ex03_a2a_multiround_client/multi_round_client
 - Two Agent Cards fetched and printed (name, URL, skills)
 - Each round prints: round number, buyer's text (truncated), seller's text (truncated), both contextIds
 - Buyer's contextId stays constant across rounds. Seller's contextId stays constant across rounds. They are *different* from each other.
-- Loop terminates on `ACCEPT` or after max rounds — clean exit either way.
+- Loop terminates on `ACCEPT`, a walk-away, a task that isn't `completed`, or after max rounds — clean exit either way.
+- With `adk web` stopped, the script prints a one-line "can't reach the agent" message instead of a traceback.
 
 ## Reflection
 

@@ -131,7 +131,7 @@ adk web m2_adk_multiagents/negotiation_agents/
 # Run demos (9 concept demos in dropdown)
 adk web m2_adk_multiagents/adk_demos/
 
-# Enable A2A endpoints (auto-generates Agent Cards)
+# Enable A2A endpoints (serves each agent's agent.json as its Agent Card)
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 ```
 
@@ -153,7 +153,7 @@ OPENAI_MODEL = "openai/gpt-4o"   # not just "gpt-4o"
 
 ## 7. `adk web --a2a` — "A2A endpoints + Agent Cards"
 
-With the `--a2a` flag, each agent gets a JSON-RPC endpoint and an auto-generated Agent Card.
+With the `--a2a` flag, each agent folder that has an `agent.json` gets a JSON-RPC endpoint, and that file is served as its Agent Card (folders without one are skipped).
 
 ```bash
 adk web --a2a m2_adk_multiagents/negotiation_agents/
