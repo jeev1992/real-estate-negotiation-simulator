@@ -99,7 +99,7 @@ if not OPENAI_API_KEY or OPENAI_API_KEY.startswith("sk-your"):
     sys.exit(1)
 
 
-OPENAI_MODEL = "gpt-4o-mini"
+OPENAI_MODEL = "gpt-4o"
 
 # GitHub's hosted MCP server, read-only endpoint (no write tools exposed).
 GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/readonly"
@@ -111,11 +111,11 @@ MAX_RESOURCE_CHARS = 8_000
 # (query, resource URI the host attaches first — or None for tools only)
 
 SAMPLE_QUERIES: list[tuple[str, str | None]] = [
-    ("Find popular real estate Python projects on GitHub", None),
+    ("Find popular Python repositories about real estate on GitHub.", None),
     (
-        "Using the attached README, explain in two sentences what the MCP Python SDK "
-        "provides. Then use your tools to list 3 open issues in "
-        "modelcontextprotocol/python-sdk that mention resources.",
+        "Answer in two parts. 1) Using the attached README, explain in two sentences "
+        "what the MCP Python SDK provides. 2) Use your tools to get the latest release of "
+        "modelcontextprotocol/python-sdk and its 3 most recent open issues (number and title).",
         "repo://modelcontextprotocol/python-sdk/contents/README.md",
     ),
 ]
@@ -240,6 +240,10 @@ async def run_agent(query: str, attach_uri: str | None = None) -> str:
                         "You have access to GitHub MCP tools to search repos, "
                         "read code, list issues, and more. "
                         "Use the tools to answer the user's question thoroughly. "
+                        "Content the host attaches from an MCP resource is already in "
+                        "this conversation — use it directly and never fetch it again "
+                        "with a tool. Only report facts that come from the attached "
+                        "context or from tool results. "
                         "After gathering data, provide a clear summary."
                     ),
                 },
@@ -255,7 +259,10 @@ async def run_agent(query: str, attach_uri: str | None = None) -> str:
                 print()
                 messages.append({
                     "role": "user",
-                    "content": f"Context attached from MCP resource {attach_uri}:\n\n{resource_text}",
+                    "content": (
+                        f"Context attached by the host from MCP resource {attach_uri} "
+                        f"(already provided — do not fetch it again):\n\n{resource_text}"
+                    ),
                 })
 
             messages.append({"role": "user", "content": query})

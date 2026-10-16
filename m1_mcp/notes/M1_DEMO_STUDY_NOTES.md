@@ -295,10 +295,13 @@ python m1_mcp/github_agent_client.py --attach repo://modelcontextprotocol/python
 # requires OPENAI_API_KEY + a real GITHUB_TOKEN (read access to public repos is enough)
 ```
 
-### Actual output (gpt-4o-mini, sample query 2)
+### Actual output (gpt-4o, sample query 2)
 
 ```
 [Agent] Connecting to https://api.githubcopilot.com/mcp/readonly ...
+[Agent] Query: Answer in two parts. 1) Using the attached README, explain in two sentences what the
+        MCP Python SDK provides. 2) Use your tools to get the latest release of
+        modelcontextprotocol/python-sdk and its 3 most recent open issues (number and title).
 
 [Agent] TOOLS (29) — model-controlled: the LLM decides when to call them
         e.g. get_commit, get_copilot_job_status, get_file_contents, get_label, get_latest_release, get_me, ...
@@ -314,15 +317,36 @@ python m1_mcp/github_agent_client.py --attach repo://modelcontextprotocol/python
 [Host]  resources/read repo://modelcontextprotocol/python-sdk/contents/README.md
 [Host]  attached 4,561 chars as context for the LLM
 
-[Agent] Iteration 1: calling gpt-4o-mini...
-[Agent]   -> Calling: list_issues({"owner": "modelcontextprotocol", "repo": "python-sdk", "state": "OPEN", "perPage": 3, ...})
-[Agent]   -> Calling: get_file_contents({"owner": "modelcontextprotocol", "repo": "python-sdk", "path": "README.md"})
+[Agent] Iteration 1: calling gpt-4o...
+[Agent]   -> Calling: get_latest_release({"owner": "modelcontextprotocol", "repo": "python-sdk"})
+[Agent]   -> Calling: list_issues({"owner": "modelcontextprotocol", "repo": "python-sdk", "state": "OPEN", "perPage": 3})
 
-[Agent] Iteration 2: calling gpt-4o-mini...
-AGENT ANSWER: "The MCP Python SDK provides a framework for building servers and clients ... Open issues mentioning resources: #3718 ..., #3715 ..., #3714 ..."
+[Agent] Iteration 2: calling gpt-4o...
+
+AGENT ANSWER
+1) The MCP Python SDK provides a framework for building and connecting to servers that expose data and
+   functionality to LLM applications in a secure, standardized way ... It supports building MCP servers and
+   clients, handling standard transports like stdio, Streamable HTTP, and SSE ...
+2) The latest release of the MCP Python SDK is version v2.3.0 ... The three most recent open issues are:
+   - Issue #3718: "Align Skills extension with updated spec (2026-07-28): directory caching and skill metadata"
+   - Issue #3715: "Client: expose an outbound request seam (the send_raw_request TODO) so observers can see ..."
+   - Issue #3714: "stdio_client with strict decoding withholds fatal read errors until peer stdout EOF"
 ```
 
-Sample query 1 ("Find popular real estate Python projects on GitHub") attaches nothing; the model calls `search_repositories` and summarizes the results.
+Part 1 comes only from the attached resource (no tool reads the README); part 2 comes only from tool results. In three consecutive runs the tool calls and answers were identical, and the release and issues matched the GitHub API (titles and numbers will change over time as the repo moves on).
+
+Sample query 1 ("Find popular Python repositories about real estate on GitHub.") attaches nothing; the model calls `search_repositories({"query": "real estate language:python", "sort": "stars", ...})` and summarizes the results (HomeHarvest, ...).
+
+### Why the sample queries are worded this way
+
+Earlier versions of this demo showed two failure modes worth knowing about:
+
+| Problem | What happened | Fix in the client |
+|---|---|---|
+| Model re-fetched the attached resource | It called `get_file_contents` on the README the host had already attached, so you couldn't tell which source it used | The system prompt and the attachment message say the content is already provided and must not be fetched again |
+| Model invented an answer | Asked for issues "that mention resources", gpt-4o-mini called `list_issues` (no title filter) and claimed the newest 3 issues matched — they didn't. The hosted `search_issues` tool returned **0** results for that search (with any token), even though GitHub's REST search finds 13 | Query 2 now asks only for things the tools answer exactly (latest release, most recent issues); the model was switched to gpt-4o; the system prompt says to report only facts from the attached context or tool results |
+
+Teaching point: an agent is only as reliable as its tools. When a tool returns nothing or the wrong data, a model will often fill the gap — so demo questions should be ones the tools can actually answer, and outputs should be checked.
 
 ### The agentic loop pattern
 
@@ -352,11 +376,11 @@ async with streamablehttp_client(GITHUB_MCP_URL, headers={"Authorization": f"Bea
 
 ### Key observations
 
-1. **One server, three primitives, three controllers.** Tools are *model-controlled* (the LLM picked `list_issues`), resources are *application-controlled* (this script decided to read the README), and prompts are *user-controlled* (a person would pick `issue_to_fix_workflow` from a menu — the script only lists them).
+1. **One server, three primitives, three controllers.** Tools are *model-controlled* (the LLM picked `get_latest_release` and `list_issues`), resources are *application-controlled* (this script decided to read the README), and prompts are *user-controlled* (a person would pick `issue_to_fix_workflow` from a menu — the script only lists them).
 
 2. **Resources are addressed by URI templates.** `repo://{owner}/{repo}/contents{/path*}` lets the host read any file in any repo it has access to — the same idea as `inventory://floor-prices` in Demo 03, but parameterized.
 
-3. **The same data can arrive both ways.** In the run above the model also called `get_file_contents` on the README even though the host had attached it. A resource is the host *pushing* context up front; a tool is the model *pulling* it on demand.
+3. **Pushed vs pulled context.** A resource is the host *pushing* context up front; a tool is the model *pulling* data on demand. The same README is also reachable as a tool (`get_file_contents`) — the host tells the model it's already attached so it doesn't pull it again, and the answer cleanly splits into "from the resource" (part 1) and "from tools" (part 2).
 
 4. **Remote server, no install.** Streamable HTTP plus a Bearer token — the transport from Demo 05, against a production server.
 
@@ -661,7 +685,7 @@ for iteration in range(1, max_iterations + 1):
 | **Primitives shown** | Tools + resource templates + prompts; the host reads a resource | Tools |
 | **Multi-server** | No (single GitHub server) | Yes (`--both` connects to pricing + inventory) |
 | **Tool loop** | Identical | Identical |
-| **LLM calls** | gpt-4o-mini | GPT-4o |
+| **LLM calls** | gpt-4o | gpt-4o-mini |
 
 ### Key observations
 
