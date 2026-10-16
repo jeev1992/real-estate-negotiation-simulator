@@ -4,7 +4,7 @@
   "url": "http://localhost:8000/a2a/seller_agent",
   "version": "1.0.0",
   "capabilities": {
-    "streaming": false,
+    "streaming": true,
     "pushNotifications": false
   },
   "defaultInputModes": ["text/plain"],

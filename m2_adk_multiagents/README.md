@@ -49,6 +49,8 @@ m2_adk_multiagents/
     a2a_11_context_threading.py    contextId across rounds
     a2a_12_parts_and_artifacts.py  multi-part messages + artifacts
     a2a_13_orchestrated_negotiation.py  full buyer↔seller negotiation over A2A
+    a2a_14_result_delivery.py      polling (buyer) / streaming (seller) / push (negotiation)
+    negotiation_a2a_server.py      A2A server for the negotiation agent, with push notifications (:8003)
   exercises/
   solution/
   notes/
@@ -140,15 +142,24 @@ adk web m2_adk_multiagents/negotiation_agents/
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 ```
 
-With `--a2a`, each agent gets an Agent Card at:
+With `--a2a`, agents that have an `agent.json` get an Agent Card at:
 - `http://localhost:8000/a2a/buyer_agent/.well-known/agent-card.json`
 - `http://localhost:8000/a2a/seller_agent/.well-known/agent-card.json`
-- `http://localhost:8000/a2a/negotiation/.well-known/agent-card.json`
 
-### A2A protocol demos (10–12) — terminal scripts
+The `negotiation` agent is served over A2A by its own server instead — `python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py` → `http://localhost:8003/.well-known/agent-card.json` — because it demonstrates push notifications, which `adk web --a2a` doesn't send (its card is `negotiation/a2a_card.json`, so `adk web` doesn't also publish it).
+
+Each agent's card advertises one way to receive results:
+
+| Agent | Card `capabilities` | Results via |
+|---|---|---|
+| `buyer_agent` | `streaming: false`, `pushNotifications: false` | **Polling** — `message/send` (non-blocking) + `tasks/get` |
+| `seller_agent` | `streaming: true` | **Streaming** — `message/stream` |
+| `negotiation` | `pushNotifications: true` | **Push** — server POSTs task updates to your webhook |
+
+### A2A protocol demos (10–14) — terminal scripts
 
 ```bash
-# Terminal 1 — start agents with A2A endpoints
+# Terminal 1 — start agents with A2A endpoints (buyer + seller)
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # Terminal 2 — run the A2A demos
@@ -158,6 +169,13 @@ python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py --seller-url h
 
 # A2A orchestrated negotiation (buyer ↔ seller via Agent Cards)
 python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
+
+# Polling / streaming / push — push also needs the negotiation server (another terminal):
+python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
+python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode polling     # buyer
+python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode streaming   # seller
+python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode refusal     # buyer can't stream
+python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode push        # negotiation, ~30-60 s
 ```
 
 ---
@@ -191,10 +209,11 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 | 07 | `AgentTool` | Wrap an agent as a callable tool — hierarchical delegation |
 | 08 | Callbacks | `before_agent` (turn count), `before_model` (SSN redaction), `before_tool` (allowlist block), `after_tool` (strip confidential field), `after_model` (scrub phone numbers) |
 | 09 | Event stream | See ADK events: tool calls, state deltas, final response markers — in the UI, or printed by `run_event_stream.py` |
-| 10 | A2A wire format | Hand-craft JSON-RPC, see Agent Card discovery, task state transitions |
+| 10 | A2A wire format | Agent Card discovery, the JSON-RPC `message/send` body, task state in the response |
 | 11 | A2A context threading | `contextId` ties multiple rounds into one conversation |
 | 12 | A2A parts & artifacts | Multi-part Messages (TextPart + DataPart), inspect Artifacts |
 | 13 | A2A orchestration | Full buyer↔seller negotiation — Agent Card discovery + multi-round A2A messages |
+| 14 | A2A result delivery | Each agent's card advertises one mechanism: buyer → polling (`tasks/get`), seller → streaming (`message/stream`), negotiation → push (webhook); asking the buyer to stream is refused |
 
 ---
 
@@ -222,10 +241,11 @@ Each solution lives in `solution/<exercise_name>/` as a self-contained, runnable
 ## A2A in one diagram
 
 ```
-adk web --a2a negotiation_agents/
-  ├─ buyer_agent   → GET /.well-known/agent-card.json
-  ├─ seller_agent  → GET /.well-known/agent-card.json
-  └─ negotiation   → GET /.well-known/agent-card.json
+adk web --a2a negotiation_agents/                     (:8000)
+  ├─ buyer_agent   → GET /a2a/buyer_agent/.well-known/agent-card.json    (polling)
+  └─ seller_agent  → GET /a2a/seller_agent/.well-known/agent-card.json   (streaming)
+a2a_demos/negotiation_a2a_server.py                   (:8003)
+  └─ negotiation   → GET /.well-known/agent-card.json                    (push)
 
 Demo 10 (terminal):
   1. GET /a2a/seller_agent/.well-known/agent-card.json  → discover capabilities
@@ -236,6 +256,11 @@ Demo 11 (terminal):
   Round 1: POST → get contextId from response
   Round 2: POST + contextId → threaded conversation
   Round 3: POST + contextId → agreement or deadlock
+
+Demo 14 (terminal):
+  buyer:       message/send (blocking=false) → tasks/get … until completed
+  seller:      message/stream → events: working, tool calls, artifact, completed
+  negotiation: message/send + webhook → server POSTs each task update to the webhook
 ```
 
 Companion notes: [a2a_protocols.md](notes/a2a_protocols.md), [google_adk_overview.md](notes/google_adk_overview.md), [adk_quick_reference.md](notes/adk_quick_reference.md).

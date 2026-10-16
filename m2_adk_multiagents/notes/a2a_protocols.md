@@ -3,7 +3,7 @@
 
 > **Audience:** Engineers who have built one agent and need to connect it to *other* agents — built by other teams, in other languages, on other clouds — without sharing code or memory.
 > **Prerequisites:** Comfort with HTTP and JSON. Familiarity with [`mcp_deep_dive.md`](../../m1_mcp/notes/mcp_deep_dive.md) helps because A2A reuses the same JSON-RPC envelope as MCP.
-> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_13_orchestrated_negotiation.py` in `m2_adk_multiagents/a2a_demos/`. Seeing the wire frames first is essential.
+> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_14_result_delivery.py` in `m2_adk_multiagents/a2a_demos/`. Seeing the wire frames first is essential.
 > **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) for how ADK exposes A2A endpoints automatically via `adk web --a2a`.
 >
 > **TL;DR:**
@@ -801,6 +801,12 @@ python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py \
 python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py \
     --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
+# Terminal 3 — negotiation agent's A2A server (push notifications), port 8003
+python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
+
+# Terminal 2 — polling (buyer), streaming (seller), refusal, push (negotiation)
+python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode all
+
 ```
 
 Key files:
@@ -810,6 +816,8 @@ Key files:
 - `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` (raw A2A wire format)
 - `m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py` (contextId threading)
 - `m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py` (multi-part messages)
+- `m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py` (polling / streaming / push)
+- `m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py` (ADK agent behind a custom A2A server with a push sender)
 
 ---
 
@@ -1008,6 +1016,7 @@ Then run:
 python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py
 python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py
 python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py
+python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode polling   # also: streaming, refusal, push
 ```
 
 ---
@@ -1197,6 +1206,11 @@ The request envelope is plain JSON-RPC 2.0:
 this envelope by hand — no SDK helpers — so you can see the exact wire
 shape.
 
+**Demo (`tasks/get`):** `a2a_14_result_delivery.py --mode polling` sends
+`message/send` with `configuration.blocking: false` to the buyer — the
+response comes back immediately with the task `submitted` — then calls
+`tasks/get`, pausing a second between calls, until the task reaches a final state.
+
 ---
 
 ## 16. Task Lifecycle and Status Updates
@@ -1261,8 +1275,10 @@ whether the server supports `message/stream`:
 ```
 
 **If a client calls `message/stream` against a server with
-`capabilities.streaming: false`, the server returns HTTP 400** — there is
-no automatic fallback to `message/send`. **Robust clients fetch the Agent
+`capabilities.streaming: false`, the a2a-sdk server refuses it** — HTTP 200
+with a JSON-RPC error `{"code": -32603, "message": "Streaming is not supported
+by the agent"}` — and there is no automatic fallback to `message/send`.
+**Robust clients fetch the Agent
 Card first, check the capability, and either proceed or fail loudly.** The
 relevant snippet looks like:
 
@@ -1276,9 +1292,18 @@ if not card.get("capabilities", {}).get("streaming", False):
     )
 ```
 
-**Capabilities are the contract.** This applies symmetrically to push
-notifications, blob upload, and any other capability the spec adds —
-always check the card before relying on a feature.
+**Capabilities are the contract.** This applies to push notifications and
+any other capability the spec adds — always check the card before relying
+on a feature. (How strictly a server checks varies: the a2a-sdk handler
+checks `capabilities.pushNotifications` on `tasks/pushNotificationConfig/set`,
+but not on a `message/send` that carries a push config inline.)
+
+**Demo:** `a2a_14_result_delivery.py --mode streaming` streams from the
+seller (whose card has `streaming: true`) and prints each event: `submitted`,
+`working`, the seller's MCP tool calls and results (as DataParts), its reply
+text, a `TaskArtifactUpdateEvent` with the same text, then `completed` with
+`final: true`. `--mode refusal` sends `message/stream` to the buyer
+(`streaming: false`) and prints the error above.
 
 ### 17.2 Push notifications (webhooks)
 
@@ -1287,9 +1312,20 @@ for, A2A defines a `pushNotificationConfig` mechanism. The client supplies
 a webhook URL (and optional auth) and the server POSTs lifecycle events
 to it.
 
-The workshop server doesn't enable push notifications
-(`pushNotifications=False` in capabilities). The notes here describe the
-shape so you can recognize it in the spec.
+In the a2a-sdk server, each POST body is the full Task (status, history,
+artifacts), and if the client supplied a `token` it comes back in an
+`X-A2A-Notification-Token` header so the webhook can reject POSTs that
+aren't from the server it registered with.
+
+**In this workshop:** the `negotiation` agent's card advertises
+`pushNotifications: true`. ADK's built-in A2A server (`adk web --a2a`,
+`to_a2a()`) stores push configs but never sends them — it has no push
+sender — so negotiation runs on its own small server,
+`a2a_demos/negotiation_a2a_server.py` (port 8003), which wires in a2a-sdk's
+`BasePushNotificationSender`. `a2a_14_result_delivery.py --mode push` starts
+a local webhook, sends one non-blocking `message/send` with the webhook in
+`configuration.pushNotificationConfig`, and then just receives POSTs — one
+per task update — until the negotiation completes.
 
 ---
 

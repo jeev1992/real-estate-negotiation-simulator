@@ -1669,20 +1669,23 @@ network services. The bridge is `adk web --a2a`.
 ### How it works
 
 ```
-agent.py                          adk web --a2a
-─────────                         ─────────────────────────
-root_agent = LlmAgent(            Reads root_agent →
-    name="seller_agent",            Generates Agent Card:
-    description="...",                name: "seller_agent"
-    tools=[MCPToolset(...)],          description: "..."
-)                                     skills: [from tools]
-                                      url: "http://host:port/seller_agent"
+agent.py + agent.json             adk web --a2a
+─────────────────────             ─────────────────────────
+root_agent = LlmAgent(            For each agent folder that has an
+    name="seller_agent",            agent.json (others are skipped):
+    tools=[MCPToolset(...)],        serves agent.json as the Agent Card
+)                                   (name, url, capabilities, skills)
+                                    and wraps root_agent in a Runner +
+                                    A2aAgentExecutor
 
-                                    Serves:
+                                    Serves (under /a2a/seller_agent):
                                       GET /.well-known/agent-card.json
                                       POST / (message/send JSON-RPC)
-                                      POST / (message/stream SSE)
+                                      POST / (message/stream SSE, if the card says streaming: true)
 ```
+
+(`google.adk.a2a.utils.agent_to_a2a.to_a2a(root_agent)` does the same for a
+single agent and *generates* the card from the agent if you don't pass one.)
 
 ### The agent as MCP client AND A2A server
 
@@ -1711,7 +1714,7 @@ Compare with the traditional approach (what we deleted):
 | Aspect | Old approach | New approach |
 |--------|-------------|-------------|
 | Server code | Manual server code | 0 lines (`adk web --a2a`) |
-| Agent Card | Manually constructed `AgentCard(...)` | Auto-generated |
+| Agent Card | Manually constructed `AgentCard(...)` | `agent.json` next to `agent.py` |
 | Request handling | Custom `AgentExecutor` subclass | Built into ADK |
 | Task lifecycle | Manual `TaskUpdater` calls | Automatic |
 | MCP lifecycle | `__aenter__`/`__aexit__` context managers | Managed by MCPToolset |
@@ -1719,6 +1722,7 @@ Compare with the traditional approach (what we deleted):
 ### When you need a custom server
 
 `adk web --a2a` covers most cases. You'd write a custom A2A server when:
+- You need **push notifications** — ADK's built-in A2A server (`adk web --a2a` and `to_a2a()`) stores push configs but has no push sender, so it never POSTs to a webhook. `a2a_demos/negotiation_a2a_server.py` is the workshop's example: the same `Runner` + `A2aAgentExecutor`, plus a2a-sdk's `DefaultRequestHandler` with a `BasePushNotificationSender` (about 20 lines)
 - You need custom HTTP middleware (rate limiting, custom auth)
 - You need to transform messages before they reach the agent
 - You need to run multiple agents behind a single endpoint with custom routing
@@ -1728,6 +1732,7 @@ Compare with the traditional approach (what we deleted):
 - `a2a_demos/a2a_10_wire_lifecycle.py` — client talking to `adk web --a2a`
 - `a2a_demos/a2a_11_context_threading.py` — multi-turn via contextId
 - `a2a_demos/a2a_12_parts_and_artifacts.py` — multi-part messages
+- `a2a_demos/a2a_14_result_delivery.py` — polling (buyer), streaming (seller), push (negotiation, via `negotiation_a2a_server.py`)
 
 ---
 

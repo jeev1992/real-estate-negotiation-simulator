@@ -55,11 +55,13 @@ real-estate-negotiation-simulator/
 │   │   ├── seller_agent/agent.py        # Seller LlmAgent + MCPToolset (pricing + inventory)
 │   │   └── negotiation/agent.py         # LoopAgent + SequentialAgent + MCP tools + submit_decision
 │   ├── adk_demos/                      # adk web-launchable demos (d01–d09)
-│   ├── a2a_demos/                      # A2A terminal scripts (10–13), run against adk web --a2a
+│   ├── a2a_demos/                      # A2A terminal scripts (10–14), run against adk web --a2a
 │   │   ├── a2a_10_wire_lifecycle.py       # Agent Card discovery + message/send
 │   │   ├── a2a_11_context_threading.py    # contextId across rounds
 │   │   ├── a2a_12_parts_and_artifacts.py  # multi-part messages + artifacts
-│   │   └── a2a_13_orchestrated_negotiation.py  # A2A multi-round buyer↔seller negotiation
+│   │   ├── a2a_13_orchestrated_negotiation.py  # A2A multi-round buyer↔seller negotiation
+│   │   ├── a2a_14_result_delivery.py      # polling (buyer) / streaming (seller) / push (negotiation)
+│   │   └── negotiation_a2a_server.py      # negotiation agent's own A2A server, with push (:8003)
 │   ├── exercises/                      # Hands-on coding exercises for Module 2
 │   ├── solution/                       # Worked solutions for Module 2 exercises
 │   └── notes/
@@ -82,7 +84,7 @@ Modules 1 and 2 ship a `demos/` folder of small, single-purpose, runnable script
 
 - [m1_mcp/demos/](m1_mcp/demos/) — MCP handshake, tool loop trace, primitives, content types, Streamable HTTP
 - [m2_adk_multiagents/adk_demos/](m2_adk_multiagents/adk_demos/) — ADK concept demos (basic agent, MCP tools, sessions, sequential, parallel, loop, agent-as-tool, callbacks, event stream)
-- [m2_adk_multiagents/a2a_demos/](m2_adk_multiagents/a2a_demos/) — A2A protocol scripts (wire format, context threading, parts/artifacts, orchestrated negotiation)
+- [m2_adk_multiagents/a2a_demos/](m2_adk_multiagents/a2a_demos/) — A2A protocol scripts (wire format, context threading, parts/artifacts, orchestrated negotiation, polling/streaming/push)
 
 ### Notes live inside each module
 
@@ -101,7 +103,7 @@ you'll see is whether it's the right one for you right now.
 |---|---|---|
 | **While running M1 demos** | [`m1_mcp/notes/M1_DEMO_STUDY_NOTES.md`](m1_mcp/notes/M1_DEMO_STUDY_NOTES.md) | Per-demo narration of all 5 MCP demos plus the GitHub + SSE clients |
 | **After M1** | [`m1_mcp/notes/mcp_deep_dive.md`](m1_mcp/notes/mcp_deep_dive.md) | Full MCP protocol reference — primitives, transports, design patterns |
-| **While running M2 demos** | [`m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md`](m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md) | Per-demo narration of all 9 ADK demos + the 3 A2A demos + the negotiation system |
+| **While running M2 demos** | [`m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md`](m2_adk_multiagents/notes/M2_DEMO_STUDY_NOTES.md) | Per-demo narration of all 9 ADK demos + the A2A demos (10–14) + the negotiation system |
 | **After M2 (start here)** | [`m2_adk_multiagents/notes/adk_quick_reference.md`](m2_adk_multiagents/notes/adk_quick_reference.md) | One-page lookup for every ADK + A2A construct |
 | **After M2 (go deep)** | [`m2_adk_multiagents/notes/google_adk_overview.md`](m2_adk_multiagents/notes/google_adk_overview.md) | Full ADK reference — every agent type, callbacks, sessions, event stream |
 | **After M2 (network layer)** | [`m2_adk_multiagents/notes/a2a_protocols.md`](m2_adk_multiagents/notes/a2a_protocols.md) | Full A2A reference — wire format, contextId, parts, artifacts, streaming, production patterns |
@@ -217,13 +219,16 @@ python m1_mcp/demos/05_streamable_http_transport.py
 adk web m2_adk_multiagents/adk_demos/               # ADK demos d01–d09 in dropdown
 python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py  # d09 in the terminal: print every ADK Event
 adk web m2_adk_multiagents/negotiation_agents/       # buyer, seller, negotiation in dropdown
-adk web --a2a m2_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Agent Cards
+adk web --a2a m2_adk_multiagents/negotiation_agents/ # same + A2A endpoints + Agent Cards (buyer, seller)
 # A2A protocol demos (run in a second terminal against adk web --a2a):
 python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py --seller-url http://127.0.0.1:8000/a2a/seller_agent
 # A2A orchestrated negotiation (buyer ↔ seller via Agent Cards):
 python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
+# Polling (buyer) / streaming (seller) / push (negotiation) — push needs the negotiation server too:
+python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
+python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode all
 ```
 
 ### 9. Module Exercises
@@ -286,10 +291,11 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 
 | # | Run | What it means (one line) |
 |---|---|---|
-| 10 | `python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py --seller-url …/a2a/seller_agent` | Hand-crafted JSON-RPC `message/send` — see Agent Card discovery and task-state transitions. |
+| 10 | `python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py --seller-url …/a2a/seller_agent` | Agent Card discovery, then the JSON-RPC `message/send` request the SDK sends and the task state in the response. |
 | 11 | `python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py --seller-url …/a2a/seller_agent` | Reuse `contextId` across rounds — multiple A2A calls become **one threaded conversation**. |
 | 12 | `python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py --seller-url …/a2a/seller_agent` | Multi-part Messages (`TextPart` + `DataPart`) and inspecting Artifacts returned by the agent. |
 | 13 | `python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py` | Full **buyer ↔ seller multi-round negotiation** over A2A — Agent Card discovery + threaded `message/send`. |
+| 14 | `python m2_adk_multiagents/a2a_demos/a2a_14_result_delivery.py --mode polling\|streaming\|push\|refusal` | Three ways to get results, one per agent card: buyer → **polling** (`tasks/get`), seller → **streaming** (`message/stream`), negotiation → **push** (webhook; start `negotiation_a2a_server.py` first). |
 
 **Negotiation agents — interactive Web UI** (`adk web m2_adk_multiagents/negotiation_agents/`)
 
@@ -320,11 +326,15 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
     └── negotiation (negotiation_agents/negotiation/agent.py)
           └── root_agent = LoopAgent(sub_agents=[SequentialAgent(buyer, seller)])
 
-A2A endpoints (auto-generated):
-  GET /buyer_agent/.well-known/agent-card.json
-  POST /buyer_agent                              (message/send)
-  GET /seller_agent/.well-known/agent-card.json
-  POST /seller_agent
+A2A endpoints (cards from each agent.json):
+  GET  /a2a/buyer_agent/.well-known/agent-card.json     (results by polling: tasks/get)
+  POST /a2a/buyer_agent                                 (message/send)
+  GET  /a2a/seller_agent/.well-known/agent-card.json    (streaming: true)
+  POST /a2a/seller_agent                                (message/send, message/stream)
+
+negotiation over A2A — own server with push notifications:
+  python m2_adk_multiagents/a2a_demos/negotiation_a2a_server.py
+  GET  http://localhost:8003/.well-known/agent-card.json  (pushNotifications: true)
 ```
 
 ### MCP Data Flow
