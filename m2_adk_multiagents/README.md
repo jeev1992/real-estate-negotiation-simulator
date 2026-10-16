@@ -12,7 +12,7 @@ This module teaches Google's Agent Development Kit (ADK) from first principles, 
 |---|---|
 | `LlmAgent` — the core building block | Demo 01 (basic agent) |
 | `MCPToolset` — auto-discover MCP tools | Demo 02, `negotiation_agents/buyer_agent`, `negotiation_agents/seller_agent` |
-| Sessions & state — persistence across turns | Demo 03 |
+| Sessions & state — session, `user:`, and `app:` scope, many users on one DB | Demo 03 |
 | `SequentialAgent`, `ParallelAgent`, `LoopAgent` | Demos 04–06 |
 | `AgentTool` — agent-as-a-callable-tool | Demo 07 |
 | Callbacks — policy hooks (PII, allowlists, result filtering, output guardrails) | Demo 08 |
@@ -36,7 +36,8 @@ m2_adk_multiagents/
   adk_demos/                       ← adk web adk_demos/  (9 agents in dropdown)
     d01_basic_agent/agent.py       Bare LlmAgent + function tool
     d02_mcp_tools/agent.py         LlmAgent + MCPToolset (pricing server)
-    d03_sessions_state/agent.py    ToolContext: read/write session state
+    d03_sessions_state/agent.py    ToolContext: session, user:, and app: state
+    d03_sessions_state/run_multi_user.py  Terminal script: several users, one session.db
     d04_sequential/agent.py        SequentialAgent pipeline
     d05_parallel/agent.py          ParallelAgent fan-out
     d06_loop/agent.py              LoopAgent with escalation callback
@@ -114,6 +115,12 @@ adk web m2_adk_multiagents/adk_demos/
 # Open http://localhost:8000, pick a demo from the dropdown, chat with it
 ```
 
+Demo 03 also has a terminal script that runs the same agent as several users (alice, bob) on the **same** `.adk/session.db` the web UI uses, then prints the `sessions`, `user_states`, and `app_states` tables — the web UI itself always runs as one user:
+
+```bash
+python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py --reset   # then open adk web
+```
+
 Demo 09 also has a terminal version that drives the same agent with an explicit `Runner` and prints every `Event` it yields (author, tool calls, tool results, state deltas, final-response flag):
 
 ```bash
@@ -176,7 +183,7 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 |---|---|---|
 | 01 | `LlmAgent` + function tool | Simplest possible agent — declare and go |
 | 02 | `MCPToolset` | ADK spawns MCP server, discovers tools automatically |
-| 03 | `ToolContext` + state | Tools can read/write session state that persists across turns |
+| 03 | `ToolContext` + state | The key prefix picks the scope: session (this conversation), `user:` (this user), `app:` (everyone) — `run_multi_user.py` shows several users in one DB |
 | 04 | `SequentialAgent` | Pipeline: each agent's `output_key` feeds the next via `{placeholder}` |
 | 05 | `ParallelAgent` | Fan-out: concurrent agents write to different state keys |
 | 06 | `LoopAgent` | Iterate until `callback_context.actions.escalate = True` |

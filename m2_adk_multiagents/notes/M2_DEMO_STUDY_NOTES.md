@@ -90,9 +90,9 @@ If Alice and Bob both use the app:
 |-----|-----------|----------|
 | `offer_history` (no prefix) | Alice's current session offers | Bob's current session offers |
 | `user:total_offers` | Alice's lifetime total (e.g., 5) | Bob's lifetime total (e.g., 3) |
-| `app:negotiations_run` | 42 (same for everyone) | 42 (same for everyone) |
+| `app:total_offers` | 42 (same for everyone) | 42 (same for everyone) |
 
-In `adk web`, the `user_id` defaults to `"user"` for everyone — so in a workshop, `user:` and `app:` behave the same since there's only one user. The distinction matters in production with multiple users.
+In `adk web`, the `user_id` is always `"user"` — the UI has no way to switch users — so on its own it can't show the difference between `user:` and `app:`. Demo 03's `run_multi_user.py` drives the agent as alice and bob on the same `session.db` and prints these tables; see the Demo 03 section below.
 
 **d01 specific data:**
 
@@ -373,154 +373,140 @@ Session 2 (1 query — demonstrates missing tool capability):
 
 ## Demo 03 — Sessions & State (`d03_sessions_state`)
 
-**File:** `adk_demos/d03_sessions_state/agent.py` (~55 lines)
+**Files:**
+- `adk_demos/d03_sessions_state/agent.py` (~100 lines) — the agent (`adk web`)
+- `adk_demos/d03_sessions_state/run_multi_user.py` (~140 lines) — terminal script that runs the same agent as several users on the same database
 
 ### What it teaches
-How tools read and write session state via `ToolContext`, and how state scoping (`user:` prefix) controls what persists across sessions.
+How tools read and write state via `ToolContext`, and how the **key prefix picks the scope** — who the value is shared with and which table of `session.db` it lands in:
+
+| Prefix | Key in this demo | Shared with | Table in `.adk/session.db` |
+|---|---|---|---|
+| *(none)* | `offer_history` | This conversation only | `sessions` (one row per user per session) |
+| `user:` | `user:total_offers` | This user, across all their sessions | `user_states` (one row per user) |
+| `app:` | `app:total_offers`, `app:buyers`, `app:highest_offer` | Every user of this agent | `app_states` (one row per agent) |
+
+(`temp:` keys exist too — visible only during the current invocation and never saved.)
 
 ### How to run
 
+The `adk web` UI always runs as one user, `"user"` — it has no login or user switcher — so **multiple users are shown with the terminal script**, which writes to the *same* database file the UI uses.
+
 ```bash
+# 1) Several users, one database (prints the tables at the end)
+python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py --reset
+
+# 2) Then the web UI on the same database
 adk web m2_adk_multiagents/adk_demos/
 ```
 
-Open http://localhost:8000, select `d03_sessions_state` from the dropdown.
+Stop `adk web` before running the script with `--reset` (it deletes the database file).
 
-### Questions to try in order
+### Step 1 — the multi-user script (actual run, gpt-4o)
+
+Scenario: alice makes two offers, bob makes one, then alice comes back in a **new** conversation.
+
+```
+alice: new session 1
+  I offer $430,000.    -> offers_this_session: 1, your_total_offers: 1, all_buyers_total_offers: 1
+  I offer $445,000.    -> offers_this_session: 2, your_total_offers: 2, all_buyers_total_offers: 2
+bob: new session 1
+  I offer $440,000.    -> offers_this_session: 1, your_total_offers: 1, all_buyers_total_offers: 3
+alice: new session 2
+  I offer $450,000.    -> offers_this_session: 1, your_total_offers: 3, all_buyers_total_offers: 4
+
+ONE DATABASE FOR EVERY USER: .../d03_sessions_state/.adk/session.db
+
+sessions  (no prefix — one row per user per conversation)
+  alice    324355df  {"offer_history":[430000,445000]}
+  alice    477d9506  {"offer_history":[450000]}
+  bob      df3c3a0e  {"offer_history":[440000]}
+
+user_states  (user: prefix — one row per user, prefix stripped)
+  alice    {"total_offers":3}
+  bob      {"total_offers":1}
+
+app_states  (app: prefix — ONE row shared by all users, prefix stripped)
+  {"total_offers":4,"buyers":["alice","bob"],"highest_offer":{"price":450000,"user_id":"alice"}}
+
+events per user (full conversation history, same table for everyone)
+  alice    12 events
+  bob      4 events
+```
+
+Read it row by row:
+- **Session scope**: alice's second conversation starts with an empty `offer_history` — her first conversation's offers are in a different row.
+- **User scope**: alice's `total_offers` is 3 across both conversations; bob has his own row with 1. Neither sees the other's.
+- **App scope**: a single row holds 4 offers from both buyers. Every user, in every session, reads and writes this same row.
+
+### Step 2 — the web UI on the same database
+
+Open `adk web`, pick `d03_sessions_state`, and try:
 
 | # | Question | Expected behavior | What it teaches |
 |---|----------|-------------------|-----------------|
-| 1 | "Offer $430,000" | Calls `record_offer` + `get_offer_history`. State tab shows `offer_history: [430000]` | ToolContext state writes |
-| 2 | "$445,000" | State grows: `offer_history: [430000, 445000]` | State accumulates across turns |
-| 3 | "Offer $440,000" | LLM notices $440K < previous $445K — warns about regression | LLM reasons about state data |
-| 4 | "What's my offer history?" | Calls `get_offer_history`, returns all 3 offers | State read without write |
-| 5 | Click **New Session** → "How many offers?" | `offers: []` (session cleared) but `total_across_sessions: 3` (user: persisted) | Session vs user scope |
-| 6 | Same new session → "Offer $455,000" | `offers_this_session: 1` but `total_across_sessions: 4` — the lifetime counter keeps counting | Updating `user:` state correctly |
+| 1 | "I offer $452,000" | `offers_this_session: 1`, `your_total_offers: 1`, **`all_buyers_total_offers: 5`**. State tab: `app:buyers` = `["alice", "bob", "user"]`, `app:highest_offer` = $452,000 by `user` | The UI's `"user"` starts with fresh session and `user:` state, but **shares** `app:` state with alice and bob |
+| 2 | "I offer $455,000" | `offers_this_session: 2`, `your_total_offers: 2`, `all_buyers_total_offers: 6` | All three scopes grow together |
+| 3 | "How much activity has there been on this property?" | Calls `get_offer_history` and separates this conversation, this buyer, and all buyers | Reading all three scopes |
+| 4 | Click **New Session** → "I offer $458,000" | `offers_this_session: 1` (new conversation), `your_total_offers: 3`, `all_buyers_total_offers: 7` | Session state resets; `user:` and `app:` carry on |
 
-> **Questions 5 and 6 are the key moments.** Question 5 proves `user:` prefixed state survives "New Session" while unprefixed state is cleared. Question 6 proves it is *updated* correctly from a new session, not overwritten.
+(Verified through the `adk` server with the database above: after the script, the UI user's first offer returned `all_buyers_total_offers: 5` and `app:buyers: ["alice", "bob", "user"]`.)
 
 ### Key code elements
 
 ```python
-from google.adk.tools.tool_context import ToolContext
-
 def record_offer(price: int, tool_context: ToolContext) -> dict:
-    """Record the user's latest offer price in session state."""
-    history = [*tool_context.state.get("offer_history", []), price]   # new list, not mutated in place
-    tool_context.state["offer_history"] = history                      # session-scoped (no prefix)
-    total = tool_context.state.get("user:total_offers", 0) + 1
-    tool_context.state["user:total_offers"] = total                    # user-scoped (survives New Session)
-    return {"recorded_price": price, "offers_this_session": len(history),
-            "total_across_sessions": total, "all_offers": history}
+    state = tool_context.state
 
-def get_offer_history(tool_context: ToolContext) -> dict:
-    """Retrieve the full history of offers made in this session."""
-    history = tool_context.state.get("offer_history", [])
-    total = tool_context.state.get("user:total_offers", 0)
-    return {"offers": history, "total_across_sessions": total}
+    history = [*state.get("offer_history", []), price]          # session scope — new list, not mutated
+    state["offer_history"] = history
+
+    user_total = state.get("user:total_offers", 0) + 1         # user scope — increment its own value
+    state["user:total_offers"] = user_total
+
+    state["app:total_offers"] = state.get("app:total_offers", 0) + 1     # app scope — all users
+    buyers = state.get("app:buyers", [])
+    if tool_context.user_id not in buyers:                      # who is calling
+        state["app:buyers"] = [*buyers, tool_context.user_id]
+    ...
+```
+
+The script uses the same storage class and file as `adk web`:
+
+```python
+runner = Runner(agent=root_agent, app_name="d03_sessions_state",
+                session_service=SqliteSessionService(db_path=".../d03_sessions_state/.adk/session.db"))
+await runner.run_async(user_id="alice", session_id=..., new_message=...)
 ```
 
 ### Concepts introduced
 
 | Concept | Detail |
 |---------|--------|
-| **`ToolContext`** | ADK injects this into any tool that declares `tool_context: ToolContext` as a parameter. It gives tools access to session state, artifacts, and actions. ADK hides it from the LLM's JSON schema — the LLM never sees it |
-| **`tool_context.state`** | A dict that persists across turns within the same session. Tools can read and write it freely |
-| **Session-scoped state** (no prefix) | `offer_history` — lives in the `sessions` table, cleared on "New Session" |
-| **User-scoped state** (`user:` prefix) | `user:total_offers` — lives in the `user_states` table, survives across sessions for the same user |
-| **Update user state from its own value** | `user:total_offers` is incremented (`get(...) + 1`), never derived from session data. An earlier version set it to `len(offer_history)`; since `offer_history` starts empty in each new session, the first offer there reset the lifetime total to 1 |
-| **State tab** | The ADK web UI's State tab shows the session state dict live — updates after every message |
-| **Parallel tool calls** | The LLM called BOTH `record_offer` AND `get_offer_history` in a single turn (visible in events 2–3). ADK supports parallel tool calls |
+| **`ToolContext`** | ADK injects this into any tool that declares `tool_context: ToolContext`. ADK hides it from the LLM's JSON schema — the LLM never sees it |
+| **One `state` view, three scopes** | Tools read and write `tool_context.state` like one dict; ADK routes each key by prefix to the `sessions`, `user_states`, or `app_states` table, and merges them back when loading the session |
+| **`tool_context.user_id`** | Identifies the caller. `adk web` always passes `"user"`; your own app (or the script) passes real user IDs |
+| **Prefix stripped in storage** | `user:total_offers` is stored as `total_offers` in the `user_states` row — the table itself is the scope |
+| **Update shared state from its own value** | `user:` and `app:` counters are incremented, never derived from session data. Setting `user:total_offers = len(offer_history)` would reset it in every new session, because `offer_history` starts empty there |
+| **App state is shared and unguarded** | Every user can read and write `app:` keys. Here that exposes the highest offer and buyer IDs to everyone — fine for a demo, but a privacy decision in a real app |
 
-### What happens under the hood
+### Key observations
 
-```
-User: "Offer $430,000"
-  → LLM decides to call record_offer(price=430000) + get_offer_history()
-  → ADK executes both tools
-  → record_offer writes: state["offer_history"] = [430000], state["user:total_offers"] = 1
-  → get_offer_history reads: offers=[430000], total=1
-  → LLM receives both results, produces strategic advice
-  → State tab now shows: offer_history: [430000]
+1. **One file, every user.** The `sessions`, `user_states`, `app_states`, and `events` tables are all keyed by `app_name` (and `user_id` where relevant). Many users don't need many databases — the keys keep their data apart.
 
-User: "Offer $440,000" (after $445K)
-  → record_offer writes: state["offer_history"] = [430000, 445000, 440000]
-  → LLM notices $440K < previous $445K and warns about regression
-     (Note: regression warning logic is in Exercise 02, not in this demo's code.
-      The LLM noticed the regression from the offer history and warned on its own.)
+2. **Scope decides who sees a value, not which tool wrote it.** The same `record_offer` call writes to three tables at once.
 
-Click "New Session" → "How many offers?"
-  → get_offer_history reads: offers=[] (session cleared), total_across_sessions=3 (user: persisted)
-  → LLM says: "3 offers across all sessions, none in current session"
+3. **The UI is one user among many.** After the script, the web UI's `"user"` sees `all_buyers_total_offers: 5` on its very first offer — that's alice's and bob's activity reaching it through `app:` state.
 
-Same new session → "Offer $455,000"
-  → record_offer writes: state["offer_history"] = [455000], state["user:total_offers"] = 3 + 1 = 4
-  → offers_this_session=1, total_across_sessions=4 (the lifetime count keeps going)
-```
-
-### session.db after running
-
-| Table | Contents |
-|-------|----------|
-| **sessions** | 2 rows — session 1 has `offer_history: [430000, 445000, 440000]`, session 2 has empty state |
-| **events** | 20 events across 2 sessions (5 queries) |
-| **app_states** | Empty — no `app:` scoped state |
-| **user_states** | **1 row!** `{"total_offers": 3}` — first time we see data here. Persisted across sessions |
-
-**Full event flow (20 events, 5 queries):**
-
-```
-Session 1 (4 queries — offer sequence):
-
-  Event 1  | user:           "Offer $430,000"
-  Event 2  | stateful_agent: tool_call: record_offer({"price": 430000}) + get_offer_history({})
-  Event 3  | stateful_agent: tool_results: {recorded: 430K, total: 1} + {offers: [430K], total: 1}
-  Event 4  | stateful_agent: "You've made an offer of $430,000... At $430K you're 11% below asking..."
-
-  Event 5  | user:           "$445,000"
-  Event 6  | stateful_agent: tool_call: record_offer({"price": 445000}) + get_offer_history({})
-  Event 7  | stateful_agent: tool_results: {recorded: 445K, total: 2} + {offers: [430K, 445K], total: 2}
-  Event 8  | stateful_agent: "You've increased to $445,000..."
-
-  Event 9  | user:           "Offer $440,000"
-  Event 10 | stateful_agent: tool_call: record_offer({"price": 440000}) + get_offer_history({})
-  Event 11 | stateful_agent: tool_results: {recorded: 440K, total: 3} + {offers: [430K, 445K, 440K], total: 3}
-  Event 12 | stateful_agent: "Your new offer is $440,000..." (LLM noticed regression from $445K)
-
-  Event 13 | user:           "What's my offer history?"
-  Event 14 | stateful_agent: tool_call: get_offer_history({})
-  Event 15 | stateful_agent: tool_result: {offers: [430K, 445K, 440K], total: 3}
-  Event 16 | stateful_agent: "Here's your complete offer history: 1. $430K, 2. $445K, 3. $440K"
-
-Session 2 (1 query — proves user-scoped persistence):
-
-  Event 17 | user:           "How many offers?"
-  Event 18 | stateful_agent: tool_call: get_offer_history({})
-  Event 19 | stateful_agent: tool_result: {offers: [], total_across_sessions: 3}  ← KEY MOMENT
-  Event 20 | stateful_agent: "3 offers across all sessions, none in current session"
-```
-
-**Key observations:**
-
-1. **Parallel tool calls**: Events 2–3 show the LLM calling `record_offer` AND `get_offer_history` in a single turn. ADK executes both and returns both results. The LLM didn't need to be told to do this — it decided on its own.
-
-2. **State accumulation**: The `offer_history` array grew across turns: `[430K]` → `[430K, 445K]` → `[430K, 445K, 440K]`. Each turn's tool call could read the previous turns' state.
-
-3. **Regression detection by LLM**: The LLM noticed that $440K < $445K and warned about it — even though our demo code doesn't have explicit regression warning logic (that's Exercise 02). The LLM reasoned about the data.
-
-4. **Session vs user scope proven**: Event 19 is the proof. `offers: []` (session state cleared on New Session) but `total_across_sessions: 3` (`user:total_offers` persisted in `user_states` table).
-
-5. **`user_states` table has data**: `{"total_offers": 3}` — first demo where this table is populated. This is the `user:` prefix at work.
-
-6. **session.state shows the dict**: Session 1's state in the `sessions` table contains the full `offer_history` array — this is what the State tab in the UI shows.
+4. **The State tab shows the merged view.** It lists session keys plus `user:` and `app:` keys (with prefixes) for the current user — the same merged dict the tools see.
 
 ### Key teaching points for class
 
-1. **"ToolContext is the magic parameter."** Add `tool_context: ToolContext` to any tool function and ADK injects it. The LLM never sees it — it's hidden from the schema.
-2. **"State scope = where it lives."** No prefix → session table (cleared on New Session). `user:` → user_states table (survives forever for this user). `app:` → app_states (global). `temp:` → memory only (one turn).
-3. **"Watch the State tab."** After each message, the State tab updates live. This is session state — the same dict the tools read and write.
-4. **"This is how the negotiation agents track rounds."** The `negotiation/agent.py` orchestrator uses `output_key` (writes to session state) and `{placeholder}` (reads from session state) — same mechanism, different syntax.
-5. **"The LLM called two tools in one turn."** It decided on its own to call both `record_offer` and `get_offer_history` simultaneously. ADK supports parallel tool calls.
+1. **"ToolContext is the magic parameter."** Add `tool_context: ToolContext` to any tool function and ADK injects it.
+2. **"The prefix is the scope."** No prefix → this conversation. `user:` → this user, forever. `app:` → everyone. `temp:` → this invocation only.
+3. **"One database serves every user."** Show the script's table dump: three users' data side by side, separated only by key columns.
+4. **"`adk web` is single-user."** It always uses `user_id="user"`. To demo multiple users, drive the agent yourself with a `Runner` — exactly what a production app (FastAPI, Slack bot, …) does with real user IDs.
+5. **"This is how the negotiation agents track rounds."** The `negotiation/agent.py` orchestrator writes session state through tools (`submit_offer`, `submit_decision`) and `output_key`, and reads it back with `{placeholder}`. Exercise 08 uses `app:` state for shared market data.
 
 ---
 

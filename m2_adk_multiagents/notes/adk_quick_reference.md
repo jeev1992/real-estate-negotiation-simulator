@@ -273,4 +273,5 @@ def bump_offer_counter(tool_context: ToolContext) -> dict:
 > **Intuition:** ToolContext is how a tool talks back to the runtime —
 > not just to the model. State is for memory; actions are for control flow.
 
-Demo: `m2_adk_multiagents/adk_demos/d03_sessions_state/agent.py`.
+Demo: `m2_adk_multiagents/adk_demos/d03_sessions_state/agent.py` (session, `user:`, and `app:` keys);
+`run_multi_user.py` in the same folder runs it as several users on one `session.db`.
