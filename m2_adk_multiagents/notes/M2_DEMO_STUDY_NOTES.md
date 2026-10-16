@@ -1620,7 +1620,6 @@ Open http://localhost:8000, select `buyer_agent` from the dropdown.
 _BUYER_ALLOWED_TOOLS = {
     "get_market_price",
     "calculate_discount",
-    "get_property_tax_estimate",
 }
 
 def _enforce_buyer_allowlist(tool, args, tool_context):
@@ -1718,7 +1717,6 @@ root_agent = LlmAgent(
 |------|-------|--------|
 | `get_market_price` | Yes | Yes |
 | `calculate_discount` | Yes | Yes |
-| `get_property_tax_estimate` | Yes | No |
 | `get_inventory_level` | No | Yes |
 | `get_minimum_acceptable_price` | **No** | **Yes** |
 

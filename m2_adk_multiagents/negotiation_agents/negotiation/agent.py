@@ -41,7 +41,6 @@ _INVENTORY_SERVER = str(_REPO_ROOT / "m1_mcp" / "inventory_server.py")
 _BUYER_ALLOWED_TOOLS = {
     "get_market_price",
     "calculate_discount",
-    "get_property_tax_estimate",
     "submit_offer",  # structured offer signal
 }
 

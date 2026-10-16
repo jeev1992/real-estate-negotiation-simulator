@@ -28,7 +28,7 @@ solution/ex08_shared_market_intel/
 
 Requirements:
 
-1. **Cache tool results in app state** — write an `after_tool_callback` that fires after any pricing tool call (`get_market_price`, `calculate_discount`, `get_property_tax_estimate`) and caches the result:
+1. **Cache tool results in app state** — write an `after_tool_callback` that fires after any pricing tool call (`get_market_price`, `calculate_discount`) and caches the result:
    ```python
    state["app:price_cache"] = {
        "742-evergreen-austin-78701": {
