@@ -1,30 +1,27 @@
 """
 Demo 09 — ADK Event Stream
 ============================
-An agent with tools that demonstrates the ADK event stream — the sequence
-of Events emitted by Runner.run_async(). Every model call and tool call
-produces an Event with content, actions, and metadata.
-
-This demo prints all events to the terminal so you can see:
-  - Which agent authored each event
-  - Tool call requests and tool results as they happen
-  - State deltas attached to events
-  - The final response marker
+An agent with two state-writing tools that demonstrates the ADK event
+stream — the sequence of Events emitted by Runner.run_async(). Every user
+message, model tool-call request, tool result, and final answer is an
+Event carrying content, actions, and metadata.
 
 ADK CONCEPTS:
   - Event: the unit of output from Runner.run_async()
-  - event.author: which agent produced this event
+  - event.author: who produced this event ("user" or the agent's name)
   - event.content.parts: text, function_call, or function_response
   - event.actions: state_delta, escalate, transfer_to_agent
-  - event.is_final_response(): marks the last text output
-  - ToolContext state writes appear as state deltas in events
+  - event.is_final_response(): marks the last text output of a turn
+  - ToolContext state writes appear as state deltas on tool-result events
 
-Run:
-    adk web m2_adk_multiagents/adk_demos/d09_event_stream/
+Two ways to run it:
 
-Note: The event details are visible in the adk web UI's "Events" panel
-on the right side. This agent also prints events to the terminal for
-instructor walkthroughs.
+  1. Web UI — click events in the left-panel inspector, watch the State tab:
+       adk web m2_adk_multiagents/adk_demos/
+
+  2. Terminal — drive this same root_agent with Runner.run_async() and
+     print every Event as it is yielded:
+       python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py
 """
 
 from google.adk.agents import LlmAgent
@@ -73,7 +70,7 @@ root_agent = LlmAgent(
         "You are a real estate pricing assistant.\n\n"
         "When the user asks about a property:\n"
         "1. Call lookup_comps with the address\n"
-        "2. Call estimate_offer with the avg_comp_price and a 5%% discount\n"
+        "2. Call estimate_offer with the avg_comp_price and a 5% discount\n"
         "3. Summarize: comps found, average, and your recommended offer\n\n"
         "Always call both tools in order."
     ),
