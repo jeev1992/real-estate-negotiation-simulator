@@ -15,7 +15,7 @@ This module teaches Google's Agent Development Kit (ADK) from first principles, 
 | Sessions & state — persistence across turns | Demo 03 |
 | `SequentialAgent`, `ParallelAgent`, `LoopAgent` | Demos 04–06 |
 | `AgentTool` — agent-as-a-callable-tool | Demo 07 |
-| Callbacks — policy hooks (PII, allowlists) | Demo 08 |
+| Callbacks — policy hooks (PII, allowlists, result filtering, output guardrails) | Demo 08 |
 | ADK event stream — tool calls, state deltas | Demo 09 |
 | A2A wire format & task lifecycle | Demo 10 (terminal script) |
 | A2A context threading | Demo 11 (terminal script) |
@@ -41,7 +41,7 @@ m2_adk_multiagents/
     d05_parallel/agent.py          ParallelAgent fan-out
     d06_loop/agent.py              LoopAgent with escalation callback
     d07_agent_as_tool/agent.py     AgentTool wrapper
-    d08_callbacks/agent.py         before_model / before_tool / after_tool
+    d08_callbacks/agent.py         before_agent / before_model / before_tool / after_tool / after_model
     d09_event_stream/agent.py      ADK event stream: tool calls, state deltas, markers
     d09_event_stream/run_event_stream.py  Terminal script: Runner.run_async() + print every Event
     a2a_10_wire_lifecycle.py       Terminal script: raw JSON-RPC + task states
@@ -181,7 +181,7 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 | 05 | `ParallelAgent` | Fan-out: concurrent agents write to different state keys |
 | 06 | `LoopAgent` | Iterate until `callback_context.actions.escalate = True` |
 | 07 | `AgentTool` | Wrap an agent as a callable tool — hierarchical delegation |
-| 08 | Callbacks | `before_model` (PII redaction), `before_tool` (allowlist), `after_tool` (logging) |
+| 08 | Callbacks | `before_agent` (turn count), `before_model` (SSN redaction), `before_tool` (allowlist block), `after_tool` (strip confidential field), `after_model` (scrub phone numbers) |
 | 09 | Event stream | See ADK events: tool calls, state deltas, final response markers — in the UI, or printed by `run_event_stream.py` |
 | 10 | A2A wire format | Hand-craft JSON-RPC, see Agent Card discovery, task state transitions |
 | 11 | A2A context threading | `contextId` ties multiple rounds into one conversation |

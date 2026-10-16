@@ -270,7 +270,7 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 | d05 | `d05_parallel` | `ParallelAgent` fan-out — concurrent agents writing to different state keys. |
 | d06 | `d06_loop` | `LoopAgent` that iterates until a callback sets `actions.escalate = True`. |
 | d07 | `d07_agent_as_tool` | `AgentTool` — wrap a whole agent as a callable tool for hierarchical delegation. |
-| d08 | `d08_callbacks` | `before_model` / `before_tool` / `after_tool` hooks — PII redaction, allowlists, logging. |
+| d08 | `d08_callbacks` | Five hooks enforcing policy the prompt doesn't state — `before_agent` (turn count), `before_model` (SSN redaction), `before_tool` (allowlist block), `after_tool` (strip a confidential field), `after_model` (scrub phone numbers from replies). |
 | d09 | `d09_event_stream` | Inspect ADK's event stream — tool calls, state deltas, final-response markers. Terminal version: `python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py` prints every `Event` from `Runner.run_async()`. |
 
 **A2A protocol demos — terminal scripts** (start `adk web --a2a m2_adk_multiagents/negotiation_agents/` first)

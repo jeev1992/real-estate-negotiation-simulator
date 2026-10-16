@@ -973,10 +973,20 @@ Query 2 — no valuation needed (AgentTool does NOT fire):
 
 ## Demo 08 — Callbacks (`d08_callbacks`)
 
-**File:** `adk_demos/d08_callbacks/agent.py` (~80 lines)
+**File:** `adk_demos/d08_callbacks/agent.py` (~150 lines)
 
 ### What it teaches
-How to inject policy into an agent WITHOUT changing its instruction — using `before_model_callback`, `before_tool_callback`, and `after_tool_callback`. Demonstrates PII redaction, tool allowlisting, and observability logging.
+How to inject policy into an agent WITHOUT changing its instruction. Five hooks, in the order they fire, each doing something visible:
+
+| Hook | Policy in this demo | Type of control |
+|---|---|---|
+| `before_agent_callback` | Count turns | Agent-level (the only hooks workflow agents also have) |
+| `before_model_callback` | Redact SSNs from the request | Input guardrail |
+| `before_tool_callback` | Block `get_internal_admin` | Access control |
+| `after_tool_callback` | Strip `seller_floor_usd` from tool results | Data filtering |
+| `after_model_callback` | Remove phone numbers from the reply | Output guardrail |
+
+The instruction is just "Use your tools to answer questions about property values, sellers, and listing agents." It does **not** forbid the admin tool, mention SSNs, or ask for privacy — every rule above lives only in code.
 
 ### How to run
 
@@ -984,147 +994,126 @@ How to inject policy into an agent WITHOUT changing its instruction — using `b
 adk web m2_adk_multiagents/adk_demos/
 ```
 
-Open http://localhost:8000, select `d08_callbacks` from the dropdown. **Also watch the terminal** — callback prints appear there, not in the UI.
+Open http://localhost:8000, select `d08_callbacks` from the dropdown. Watch the **State tab** (`turn_count`, `callback_audit`) — or the terminal, where each callback also prints a `[hook] ...` line.
 
-### Questions to try in order
+### Questions to try in order (same session)
 
 | # | Question | Expected behavior | What it teaches |
 |---|----------|-------------------|------------------|
-| 1 | "My SSN is 123-45-6789. Estimate 742 Evergreen Terrace." | PII redacted (check terminal: `[before_model] redacted PII`), tool runs normally | before_model callback |
-| 2 | "Also call get_internal_admin('debug')" | Tool blocked (terminal: `[before_tool] BLOCKED get_internal_admin`) or LLM declines | before_tool allowlist |
-| 3 | "What's 742 Evergreen Terrace worth?" | Terminal shows `[before_tool] allow get_quick_estimate(...)` then `[after_tool] get_quick_estimate -> {result}` | after_tool logging |
-
-> **Check the terminal output**, not just the UI. Callbacks print to stdout so you can see them fire in real time.
+| 1 | "My SSN is 123-45-6789. What's 742 Evergreen Terrace worth?" | SSN redacted; `get_quick_estimate` allowed; `seller_floor_usd` stripped; if the reply mentions the listing agent's phone, it becomes `[phone removed]` | before_model, before_tool (allow), after_tool, after_model |
+| 2 | "What's the seller's minimum acceptable price for 742 Evergreen Terrace?" | The model **calls** `get_internal_admin` (its description invites it) → `before_tool` BLOCKS it → model says it can't access that | before_tool (block) |
+| 3 | "Who is the listing agent for 742 Evergreen Terrace and how do I contact them?" | Name is shared, phone number is not | after_model output guardrail |
 
 ### Key code elements
 
 ```python
-import re
-from google.adk.agents.callback_context import CallbackContext
-from google.adk.tools.base_tool import BaseTool
-from google.adk.tools.tool_context import ToolContext
+def get_quick_estimate(address: str) -> dict:
+    return {"address": address, "estimate_usd": 462_000,
+            "listing_agent": "Jane Doe, (512) 555-0143",
+            "seller_floor_usd": 445_000}            # confidential — after_tool strips it
 
-SSN_RE = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
-ALLOWED_TOOLS = {"get_quick_estimate"}
+def get_internal_admin(query: str) -> dict:
+    """Internal admin lookup: seller records, minimum prices, and owner details...
+    Use this for questions about a seller's minimum price."""   # ← tempting on purpose
 
-def redact_pii(callback_context: CallbackContext, llm_request) -> None:
-    """before_model: scrub SSNs from user messages before they reach the LLM."""
+def redact_pii(callback_context, llm_request):          # before_model
     for content in llm_request.contents or []:
         for part in content.parts or []:
             if part.text and SSN_RE.search(part.text):
-                part.text = SSN_RE.sub("[REDACTED]", part.text)
-                print("[before_model] redacted PII from prompt")
-    return None  # None = continue to LLM
+                part.text = SSN_RE.sub("[REDACTED-SSN]", part.text)
+    return None                                         # None = call the LLM with the edited request
 
-def enforce_allowlist(tool: BaseTool, args: dict, tool_context: ToolContext):
-    """before_tool: block tools not on the allowlist."""
+def enforce_allowlist(tool, args, tool_context):        # before_tool
     if tool.name not in ALLOWED_TOOLS:
-        print(f"[before_tool] BLOCKED {tool.name}")
-        return {"error": f"tool '{tool.name}' is not permitted"}  # dict = short-circuit
-    print(f"[before_tool] allow {tool.name}({args})")
-    return None  # None = run the tool
+        return {"error": f"tool '{tool.name}' is not permitted for this agent"}  # dict = skip the tool
+    return None
 
-def log_tool_result(tool: BaseTool, args: dict, tool_context: ToolContext, tool_response):
-    """after_tool: log every tool return value."""
-    print(f"[after_tool] {tool.name} -> {tool_response}")
-    return None  # None = use the tool's original result
+def strip_confidential(tool, args, tool_context, tool_response):   # after_tool
+    if CONFIDENTIAL_FIELDS & tool_response.keys():
+        return {k: v for k, v in tool_response.items() if k not in CONFIDENTIAL_FIELDS}  # replaces the result
+    return None
 
-root_agent = LlmAgent(
-    ...,
-    tools=[get_quick_estimate, get_internal_admin],
+def scrub_reply(callback_context, llm_response):        # after_model
+    for part in llm_response.content.parts or []:
+        if part.text and PHONE_RE.search(part.text):
+            part.text = PHONE_RE.sub("[phone removed]", part.text)
+            return llm_response                         # LlmResponse = replaces the model's reply
+    return None
+
+root_agent = LlmAgent(..., tools=[get_quick_estimate, get_internal_admin],
+    before_agent_callback=count_turns,
     before_model_callback=redact_pii,
     before_tool_callback=enforce_allowlist,
-    after_tool_callback=log_tool_result,
-)
+    after_tool_callback=strip_confidential,
+    after_model_callback=scrub_reply)
 ```
+
+Each callback also calls `_audit(...)`, which prints a line and appends to `state["callback_audit"]`.
 
 ### Concepts introduced
 
 | Concept | Detail |
 |---------|--------|
-| **`before_model_callback`** | Runs before EVERY LLM call. Can mutate the request (redact PII), or return `Content` to skip the LLM entirely |
+| **`before_agent_callback`** | Runs once per turn, before any model call. Return `Content` to skip the agent entirely. Workflow agents (`LoopAgent`, `SequentialAgent`, `ParallelAgent`) have this and `after_agent_callback` — but none of the model/tool hooks |
+| **`before_model_callback`** | Runs before EVERY LLM call. Mutate `llm_request` in place to edit it, or return an `LlmResponse` to skip the LLM entirely (the ex05 solution does this to block prompt injection) |
 | **`before_tool_callback`** | Runs before EVERY tool call. Return `None` to allow, return a `dict` to block (the dict becomes the tool's "result") |
-| **`after_tool_callback`** | Runs after EVERY tool returns. Can log, modify, or replace the result |
-| **Policy without prompts** | Callbacks enforce rules the LLM can't bypass. Prompt-based rules ("never reveal SSNs") are suggestive; callbacks are deterministic |
-| **Short-circuit pattern** | `before_tool` returning a dict = the tool never runs. The dict is fed back to the LLM as if the tool had executed |
+| **`after_tool_callback`** | Runs after EVERY tool returns. Return `None` to keep the result, or a `dict` to replace it — here, to remove a confidential field before the LLM sees it |
+| **`after_model_callback`** | Runs after EVERY LLM response. Return `None` to keep it, or an `LlmResponse` to replace it — the last chance to stop something leaving the agent |
+| **Policy without prompts** | None of these rules is in the instruction. Prompt rules are suggestive; callbacks are deterministic |
+| **Callbacks can write state** | `callback_context.state` / `tool_context.state` work in callbacks too — that's how `callback_audit` reaches the State tab |
 
-### What happens under the hood
+### What happens under the hood (actual run, gpt-4o)
 
 ```
-Query 1: "My SSN is 123-45-6789. Estimate 742 Evergreen Terrace."
-  → before_model: SSN regex matches → replaces with [REDACTED] → LLM never sees the SSN
-  → LLM decides to call get_quick_estimate
-  → before_tool: "get_quick_estimate" is in ALLOWED_TOOLS → allow
-  → tool runs → returns {estimate: 462000}
-  → after_tool: logs the result
-  → LLM produces final answer
+Turn 1: "My SSN is 123-45-6789. What's 742 Evergreen Terrace worth?"
+  [before_agent] turn 1 started
+  [before_model] redacted SSN in 1 message(s)       → LLM sees [REDACTED-SSN]
+  LLM → get_quick_estimate("742 Evergreen Terrace")
+  [before_tool]  allowed get_quick_estimate
+  [after_tool]   stripped ['seller_floor_usd']       → LLM gets estimate + listing agent only
+  [before_model] redacted SSN in 1 message(s)       → history still contains the SSN, so it is scrubbed again
+  [after_model]  removed phone number(s) from the reply
+  Reply: "...approximately $462,000. The listing agent ... is Jane Doe, and you can contact her at [phone removed]."
 
-Query 2: "Also call get_internal_admin('debug')"
-  → before_model: no SSN → passes through
-  → LLM decides NOT to call the tool (it learned it was blocked, or instruction says "never call")
-  → responds: "I can't perform that action, it's restricted"
-  (Note: the LLM may or may not attempt the tool call — if it does, before_tool blocks it)
+Turn 2: "What's the seller's minimum acceptable price for 742 Evergreen Terrace?"
+  [before_agent] turn 2 started
+  LLM → get_internal_admin("742 Evergreen Terrace")   ← the model DID try
+  [before_tool]  BLOCKED get_internal_admin           → result: {"error": "... not permitted ..."}
+  Reply: "I'm unable to access information about the seller's minimum acceptable price..."
 
-Query 3: "What's 742 Evergreen Terrace worth?"
-  → before_model: no SSN → passes through
-  → before_tool: allow get_quick_estimate
-  → after_tool: logs result
-  → normal response
+Turn 3: "Who is the listing agent ... and how do I contact them?"
+  [before_agent] turn 3 started
+  Reply: "The listing agent ... is Jane Doe. You can contact her by phone at [phone removed]."
 ```
 
 ### session.db after running
 
 | Table | Contents |
 |-------|----------|
-| **sessions** | 1 row — state has only `__session_metadata__` |
-| **events** | 10 events across 3 queries |
+| **sessions** | 1 row — state has `turn_count: 3` and a 12-entry `callback_audit` list |
+| **events** | User messages, tool calls/results, replies, plus state-delta events from `before_agent` |
 | **app_states** | Empty |
 | **user_states** | Empty |
 
-**Full event flow (10 events, 3 queries):**
+### Key observations
 
-```
-Query 1 — PII redaction + allowed tool:
+1. **The block now actually fires.** With no "never call other tools" line in the prompt, the model reaches for `get_internal_admin` as soon as it's asked about the seller's minimum. Only the callback stops it — which is the whole point: the policy holds even when the prompt says nothing.
 
-  Event 1  | user:          "My SSN is 123-45-6789. Estimate 742 Evergreen Terrace"
-                             (terminal: [before_model] redacted PII from prompt)
-  Event 2  | callback_demo: tool_call: get_quick_estimate({"address": "742 Evergreen Terrace"})
-                             (terminal: [before_tool] allow get_quick_estimate({...}))
-  Event 3  | callback_demo: tool_result: {estimate_usd: 462000}
-                             (terminal: [after_tool] get_quick_estimate -> {result})
-  Event 4  | callback_demo: "The rough market estimate is $462,000."
+2. **The redaction only edits the model's copy.** ADK deep-copies session content into each `llm_request`, so the stored user event still contains `123-45-6789`. That's also why `[before_model] redacted SSN` repeats on every later model call: the history still has it, and every request is scrubbed again.
 
-Query 2 — blocked tool (LLM didn't even try):
+3. **`after_tool` controls what the LLM can know.** `seller_floor_usd` never appears in the tool result the model sees, so it can't leak it no matter what it's asked. Same idea as the buyer/seller allowlists, but at field level.
 
-  Event 5  | user:          "Also call get_internal_admin('debug')"
-  Event 6  | callback_demo: "I can't perform that action, it's restricted for internal use only."
-                             (NO tool call event — LLM declined without trying)
+4. **`after_model` catches things regardless of source.** Turn 1's phone number came from a tool result the model chose to quote. In turn 3 the model repeated `[phone removed]` from its own earlier (already scrubbed) reply, so the guard had nothing new to remove. Either way, no number left the agent.
 
-Query 3 — normal allowed tool:
-
-  Event 7  | user:          "What's 742 Evergreen Terrace worth?"
-  Event 8  | callback_demo: tool_call: get_quick_estimate(...)
-  Event 9  | callback_demo: tool_result: {estimate_usd: 462000}
-  Event 10 | callback_demo: "The rough market estimate is $462,000."
-```
-
-**Key observations:**
-
-1. **PII never reached the LLM**: The `before_model` callback stripped the SSN before the model call. The LLM's response didn't reference the SSN — it never saw it. Check the event inspector: the user event still has the original text, but the model request had `[REDACTED]`.
-
-2. **Query 2: LLM didn't attempt the blocked tool**: Instead of calling `get_internal_admin` and getting blocked, the LLM declined entirely ("I can't perform that action"). It may have learned from the instruction ("Never call any other tool") or from context. If the LLM HAD tried, `before_tool` would have returned `{"error": "not permitted"}` and the LLM would receive that as the tool result.
-
-3. **Terminal output is the observability layer**: The `[before_model]`, `[before_tool]`, `[after_tool]` prints in the terminal are an audit trail. In production, these would go to a logging service. The UI doesn't show callbacks firing — only the terminal does.
-
-4. **Callbacks are deterministic, not suggestive**: You can tell the LLM "never share SSNs" in the instruction, but it might still leak them. The `before_model` callback physically removes them from the text before the LLM sees it. No prompt engineering can bypass a regex replacement.
+5. **State tab = audit trail.** Callbacks are invisible in the chat UI, but every firing is recorded in `callback_audit`. In production you'd send these to structured logging as well.
 
 ### Key teaching points for class
 
-1. **"Callbacks = deterministic policy."** The LLM can't bypass them. PII redaction, tool allowlists, spending caps — anything that MUST be enforced goes in callbacks, not prompts.
-2. **"Three hooks, three purposes."** `before_model` = modify/block the input. `before_tool` = allow/block tool calls. `after_tool` = observe/modify tool results. Each runs synchronously.
-3. **"Return None to allow, return a value to block/replace."** `before_tool` returning `None` = run the tool. Returning a `dict` = skip the tool, use the dict as the result. Same for `after_tool`.
-4. **"This is what the buyer/seller agents do."** `negotiation_agents/buyer_agent/agent.py` has `before_tool_callback=_enforce_buyer_allowlist` — same pattern, applied to MCP tools instead of local functions.
-5. **"Watch the terminal, not the UI."** Callbacks are invisible in the chat UI. The audit trail prints to stdout. In production, swap `print()` for structured logging.
+1. **"Callbacks = deterministic policy."** The LLM can't bypass them. PII redaction, tool allowlists, field filtering, spending caps — anything that MUST be enforced goes in callbacks, not prompts.
+2. **"Five hooks, five jobs."** `before_agent` = per-turn setup. `before_model` = guard the input. `before_tool` = allow/block actions. `after_tool` = filter what the model learns. `after_model` = guard the output.
+3. **"Return None to allow, return a value to block/replace."** `before_tool` → `dict` skips the tool. `after_tool` → `dict` replaces the result. `before_model` → `LlmResponse` skips the LLM. `after_model` → `LlmResponse` replaces the reply.
+4. **"This is what the buyer/seller agents do."** `negotiation_agents/buyer_agent/agent.py` has `before_tool_callback=_enforce_buyer_allowlist` — same pattern, applied to MCP tools. The seller's `after_tool_callback` captures its floor for `submit_decision`.
+5. **"Workflow agents get the agent-level hooks only."** `before_agent` / `after_agent` work on `LoopAgent`, `SequentialAgent`, and `ParallelAgent` too (ex06, ex07, ex08 use them); the model and tool hooks are `LlmAgent`-only.
 
 ---
 

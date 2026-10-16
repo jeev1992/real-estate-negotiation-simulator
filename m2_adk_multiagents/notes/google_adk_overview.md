@@ -1287,7 +1287,8 @@ permits `get_minimum_acceptable_price`.
 ## 17. Callbacks
 
 Callbacks are how you plug *policy* into an agent without changing its
-instruction. They run synchronously around model and tool calls.
+instruction. They run around agent, model, and tool calls (plain functions
+or `async` functions both work).
 
 The mental model: **instructions are *suggestive*, callbacks are *deterministic*.**
 You can tell the LLM "never offer above $460,000" in its instruction — and most
@@ -1302,7 +1303,7 @@ When you can tolerate suggestions, use the instruction.**
 |----------------------------|-------------------------------------|---------------------------------------------------------|
 | `before_agent_callback`    | before the agent's first model turn | None = continue; `Content` = use this instead of running the agent |
 | `after_agent_callback`     | after the agent's last event        | None = continue; `Content` = replace final response     |
-| `before_model_callback`    | before each LLM request             | None = continue; mutate `llm_request` in place          |
+| `before_model_callback`    | before each LLM request             | None = continue (mutate `llm_request` in place to edit it); `LlmResponse` = skip the LLM call |
 | `after_model_callback`     | after each LLM response             | None = continue; return `LlmResponse` to replace        |
 | `before_tool_callback`     | before each tool call               | None = run the tool; `dict` = short-circuit with this result |
 | `after_tool_callback`      | after each tool returns             | None = use the tool's result; return value replaces it   |
@@ -1310,14 +1311,22 @@ When you can tolerate suggestions, use the instruction.**
 Each callback receives a `CallbackContext` (or `ToolContext` for tool
 callbacks) with the same state/artifact/actions surface as `ToolContext`.
 
+Only `before_agent_callback` and `after_agent_callback` exist on workflow
+agents (`LoopAgent`, `SequentialAgent`, `ParallelAgent`) — they never call a
+model or tool themselves. The model and tool hooks are `LlmAgent`-only.
+
 In our agents, `negotiation_agents/buyer_agent/agent.py` and
 `negotiation_agents/seller_agent/agent.py` use `before_tool_callback`
 to enforce a tool allowlist — the buyer can never accidentally call the
 seller-private inventory tools, even if the model tries.
 
-**Demo:** `m2_adk_multiagents/adk_demos/d08_callbacks/agent.py` wires
-`before_model` (PII redaction), `before_tool` (allowlist), and
-`after_tool` (logging) into a single agent.
+**Demo:** `m2_adk_multiagents/adk_demos/d08_callbacks/agent.py` wires five
+hooks into one agent, none of whose policies appear in its instruction:
+`before_agent` (turn counter), `before_model` (SSN redaction),
+`before_tool` (allowlist — the model *does* try the blocked admin tool),
+`after_tool` (strips a confidential field from the result), and
+`after_model` (removes phone numbers from the reply). Each one also appends
+to `state["callback_audit"]`, visible in the `adk web` State tab.
 
 ---
 
@@ -1704,7 +1713,7 @@ These pieces land in our module as follows:
 | Workflow agents (Seq/Par/Loop) | `adk_demos/d04–d06`                                            |
 | `AgentTool`                  | `adk_demos/d07_agent_as_tool`                                    |
 | `ToolContext` scoped state   | `adk_demos/d03_sessions_state`                                   |
-| Callbacks (PII / allowlist / logging) | `adk_demos/d08_callbacks`                               |
+| Callbacks (guardrails / allowlist / result filtering) | `adk_demos/d08_callbacks`                 |
 | Event stream + state deltas  | `adk_demos/d09_event_stream` (`run_event_stream.py` prints each `Event`) |
 | Agent discovery convention   | `__init__.py` + `agent.py` + `root_agent` in every package       |
 | ADK ↔ A2A bridge             | `adk web --a2a negotiation_agents/`                              |
