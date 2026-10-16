@@ -115,10 +115,11 @@ adk web m2_adk_multiagents/adk_demos/
 # Open http://localhost:8000, pick a demo from the dropdown, chat with it
 ```
 
-Demo 03 also has a terminal script that runs the same agent as several users (alice, bob) on the **same** `.adk/session.db` the web UI uses, then prints the `sessions`, `user_states`, and `app_states` tables — the web UI itself always runs as one user:
+Demo 03 also has a terminal script that runs the same agent as several users (alice, bob) on the **same** `.adk/session.db` the web UI uses, then prints the `sessions`, `user_states`, and `app_states` tables — the web UI itself always runs as one user. In class: do the single-user walkthrough in `adk web` first, stop it, then run the script **without** `--reset` so the class's data and alice's/bob's share the tables (full flow in the Demo 03 section of the study notes):
 
 ```bash
-python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py --reset   # then open adk web
+python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py            # adds alice + bob to the existing DB
+python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py --reset    # wipes the DB first
 ```
 
 Demo 09 also has a terminal version that drives the same agent with an explicit `Runner` and prints every `Event` it yields (author, tool calls, tool results, state deltas, final-response flag):

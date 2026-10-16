@@ -388,69 +388,86 @@ How tools read and write state via `ToolContext`, and how the **key prefix picks
 
 (`temp:` keys exist too — visible only during the current invocation and never saved.)
 
-### How to run
+### How to run (class flow)
 
-The `adk web` UI always runs as one user, `"user"` — it has no login or user switcher — so **multiple users are shown with the terminal script**, which writes to the *same* database file the UI uses.
+The demo has two parts. **Part A** is the main demo in `adk web` with one user. **Part B** is optional (if time allows): a script plays other users against the *same* database, because the `adk web` UI always runs as one user, `"user"`, with no login or user switcher.
 
-```bash
-# 1) Several users, one database (prints the tables at the end)
-python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py --reset
+| | When | Command |
+|---|---|---|
+| Before class | Start from an empty database (with `adk web` stopped) | Delete `m2_adk_multiagents/adk_demos/d03_sessions_state/.adk/` (or run the script with `--reset`, which also adds alice/bob data) |
+| Part A | Main demo | `adk web m2_adk_multiagents/adk_demos/` → pick `d03_sessions_state`, keep the **State tab** open |
+| Part B | Optional | Stop `adk web` → `python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py` (**no `--reset`**) → restart `adk web` |
 
-# 2) Then the web UI on the same database
-adk web m2_adk_multiagents/adk_demos/
-```
+### Part A — one user in `adk web` (actual run, gpt-4o, empty database)
 
-Stop `adk web` before running the script with `--reset` (it deletes the database file).
+| # | Type | Tool result | State tab afterwards | Point to make |
+|---|------|-------------|----------------------|---------------|
+| 1 | "I offer $430,000" | `offers_this_session: 1`, `your_total_offers: 1`, `all_buyers_total_offers: 1` | `offer_history: [430000]`, `user:total_offers: 1`, `app:total_offers: 1`, `app:buyers: ["user"]` | One tool call writes three scopes |
+| 2 | "I offer $445,000" | 2 / 2 / 2 | `offer_history: [430000, 445000]`, both counters 2 | State persists across turns |
+| 3 | **New Session** (before typing) | — | No `offer_history`; `user:total_offers: 2` and the `app:` keys are already there | Session state is per conversation; `user:` and `app:` outlive it |
+| 4 | "How many offers have I made?" | `get_offer_history` → `this_session: []`, `this_buyer: 2`, `all_buyers: 2` | Unchanged | Reading all three scopes |
+| 5 | "I offer $450,000" | `offers_this_session: 1`, `your_total_offers: 3`, `all_buyers_total_offers: 3` | `offer_history: [450000]`, `user:total_offers: 3`, `app:total_offers: 3` | User state keeps counting in the new session |
 
-### Step 1 — the multi-user script (actual run, gpt-4o)
+With one user, `user:` and `app:` always move together — they *look* the same. That is the cue for Part B.
 
-Scenario: alice makes two offers, bob makes one, then alice comes back in a **new** conversation.
+### Part B — several users, one database (optional)
+
+Stop `adk web`, then run the script **without `--reset`**. It plays alice (two conversations) and bob into the same `session.db` that already holds the class's `"user"` data, then prints the tables. Actual run, continuing from Part A:
 
 ```
 alice: new session 1
-  I offer $430,000.    -> offers_this_session: 1, your_total_offers: 1, all_buyers_total_offers: 1
-  I offer $445,000.    -> offers_this_session: 2, your_total_offers: 2, all_buyers_total_offers: 2
+  I offer $430,000.    -> offers_this_session: 1, your_total_offers: 1, all_buyers_total_offers: 4
+  I offer $445,000.    -> offers_this_session: 2, your_total_offers: 2, all_buyers_total_offers: 5
 bob: new session 1
-  I offer $440,000.    -> offers_this_session: 1, your_total_offers: 1, all_buyers_total_offers: 3
+  I offer $440,000.    -> offers_this_session: 1, your_total_offers: 1, all_buyers_total_offers: 6
 alice: new session 2
-  I offer $450,000.    -> offers_this_session: 1, your_total_offers: 3, all_buyers_total_offers: 4
+  I offer $450,000.    -> offers_this_session: 1, your_total_offers: 3, all_buyers_total_offers: 7
 
 ONE DATABASE FOR EVERY USER: .../d03_sessions_state/.adk/session.db
 
 sessions  (no prefix — one row per user per conversation)
-  alice    324355df  {"offer_history":[430000,445000]}
-  alice    477d9506  {"offer_history":[450000]}
-  bob      df3c3a0e  {"offer_history":[440000]}
+  alice    c7ae81aa  {"offer_history":[430000,445000]}
+  alice    62a76c41  {"offer_history":[450000]}
+  bob      92c2dde0  {"offer_history":[440000]}
+  user     2c338b22  {"offer_history":[430000,445000]}
+  user     d03bb069  {"offer_history":[450000]}
 
 user_states  (user: prefix — one row per user, prefix stripped)
   alice    {"total_offers":3}
   bob      {"total_offers":1}
+  user     {"total_offers":3}
 
 app_states  (app: prefix — ONE row shared by all users, prefix stripped)
-  {"total_offers":4,"buyers":["alice","bob"],"highest_offer":{"price":450000,"user_id":"alice"}}
+  {"total_offers":7,"buyers":["user","alice","bob"],"highest_offer":{"price":450000,"user_id":"user"}}
 
 events per user (full conversation history, same table for everyone)
   alice    12 events
   bob      4 events
+  user     16 events
 ```
 
 Read it row by row:
-- **Session scope**: alice's second conversation starts with an empty `offer_history` — her first conversation's offers are in a different row.
-- **User scope**: alice's `total_offers` is 3 across both conversations; bob has his own row with 1. Neither sees the other's.
-- **App scope**: a single row holds 4 offers from both buyers. Every user, in every session, reads and writes this same row.
+- **`sessions`**: five rows — the two conversations from Part A (`user`) sit next to alice's two and bob's one, each with its own `offer_history`.
+- **`user_states`**: one row per person. alice's 3 and the class's 3 are separate counts; bob has 1. Nobody sees anyone else's.
+- **`app_states`**: **one** row with all 7 offers from `["user", "alice", "bob"]`. alice's first offer already reported `all_buyers_total_offers: 4` — the 3 from Part A were in this row.
 
-### Step 2 — the web UI on the same database
+Then restart `adk web`, pick `d03_sessions_state`, click **New Session**, and type "I offer $452,000". Actual result:
 
-Open `adk web`, pick `d03_sessions_state`, and try:
+```
+record_offer -> offers_this_session: 1, your_total_offers: 4, all_buyers_total_offers: 8
+State tab    -> offer_history: [452000], user:total_offers: 4,
+                app:total_offers: 8, app:buyers: ["user", "alice", "bob"], app:highest_offer: $452,000 by user
+```
 
-| # | Question | Expected behavior | What it teaches |
-|---|----------|-------------------|-----------------|
-| 1 | "I offer $452,000" | `offers_this_session: 1`, `your_total_offers: 1`, **`all_buyers_total_offers: 5`**. State tab: `app:buyers` = `["alice", "bob", "user"]`, `app:highest_offer` = $452,000 by `user` | The UI's `"user"` starts with fresh session and `user:` state, but **shares** `app:` state with alice and bob |
-| 2 | "I offer $455,000" | `offers_this_session: 2`, `your_total_offers: 2`, `all_buyers_total_offers: 6` | All three scopes grow together |
-| 3 | "How much activity has there been on this property?" | Calls `get_offer_history` and separates this conversation, this buyer, and all buyers | Reading all three scopes |
-| 4 | Click **New Session** → "I offer $458,000" | `offers_this_session: 1` (new conversation), `your_total_offers: 3`, `all_buyers_total_offers: 7` | Session state resets; `user:` and `app:` carry on |
+The class's user continues its **own** count (4) but the app-wide count (8) includes alice's and bob's offers — they reached this user only through `app:` state.
 
-(Verified through the `adk` server with the database above: after the script, the UI user's first offer returned `all_buyers_total_offers: 5` and `app:buyers: ["alice", "bob", "user"]`.)
+### If something goes wrong
+
+| Symptom | Fix |
+|---|---|
+| State doesn't change after an offer | The model answered without calling `record_offer`. Repeat with an explicit amount: "I offer $430,000" |
+| Script or `--reset` fails with "file in use" / database locked | `adk web` is still running — stop it first |
+| Counts don't start at 1 in Part A | Old rehearsal data. Stop `adk web` and delete the `.adk/` folder |
 
 ### Key code elements
 
@@ -496,7 +513,7 @@ await runner.run_async(user_id="alice", session_id=..., new_message=...)
 
 2. **Scope decides who sees a value, not which tool wrote it.** The same `record_offer` call writes to three tables at once.
 
-3. **The UI is one user among many.** After the script, the web UI's `"user"` sees `all_buyers_total_offers: 5` on its very first offer — that's alice's and bob's activity reaching it through `app:` state.
+3. **The UI is one user among many.** Back in `adk web` after the script, the class's `"user"` continues its own count (`your_total_offers: 4`) while `all_buyers_total_offers` jumps to 8 — alice's and bob's activity reaching it through `app:` state.
 
 4. **The State tab shows the merged view.** It lists session keys plus `user:` and `app:` keys (with prefixes) for the current user — the same merged dict the tools see.
 
@@ -504,7 +521,7 @@ await runner.run_async(user_id="alice", session_id=..., new_message=...)
 
 1. **"ToolContext is the magic parameter."** Add `tool_context: ToolContext` to any tool function and ADK injects it.
 2. **"The prefix is the scope."** No prefix → this conversation. `user:` → this user, forever. `app:` → everyone. `temp:` → this invocation only.
-3. **"One database serves every user."** Show the script's table dump: three users' data side by side, separated only by key columns.
+3. **"One database serves every user."** Show the script's table dump: the class's own `user` rows sit next to alice's and bob's, separated only by key columns.
 4. **"`adk web` is single-user."** It always uses `user_id="user"`. To demo multiple users, drive the agent yourself with a `Runner` — exactly what a production app (FastAPI, Slack bot, …) does with real user IDs.
 5. **"This is how the negotiation agents track rounds."** The `negotiation/agent.py` orchestrator writes session state through tools (`submit_offer`, `submit_decision`) and `output_key`, and reads it back with `{placeholder}`. Exercise 08 uses `app:` state for shared market data.
 

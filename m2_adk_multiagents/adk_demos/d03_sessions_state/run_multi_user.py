@@ -11,18 +11,20 @@ Scenario:
     bob    session 1   offers $440,000
     alice  session 2   offers $450,000 (a brand-new conversation)
 
+In class, run it AFTER the single-user adk web walkthrough and WITHOUT
+--reset: alice and bob are added to the same database, so the tables show
+the class's own "user" rows next to theirs, and app: totals include everyone.
+
 What to look for in the output:
     sessions     one row per (user, session) — offer_history differs per row
-    user_states  one row per user — alice: 3 offers, bob: 1
-    app_states   ONE row for the agent — 4 offers from 2 buyers, shared by all
+    user_states  one row per user — each user's own lifetime total
+    app_states   ONE row for the agent — every user's offers combined
 
 Run:
     python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py
-    python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py --reset   # start from an empty DB
+    python m2_adk_multiagents/adk_demos/d03_sessions_state/run_multi_user.py --reset   # wipe the DB first
 
-Then open adk web, pick d03_sessions_state, and offer a price as the UI's
-"user": its session and user: state start empty, but app:total_offers carries
-on from what alice and bob did. (Stop adk web before using --reset.)
+Stop adk web before running the script (and always before --reset).
 """
 
 import argparse
@@ -123,9 +125,9 @@ async def main() -> None:
         await runner.close()
     show_tables()
     print(
-        "\nNext: adk web m2_adk_multiagents/adk_demos/ → d03_sessions_state → \"I offer $452,000\".\n"
-        "The UI runs as user 'user': empty offer_history and user:total_offers, but "
-        "app:total_offers continues from the count above."
+        "\nNext: adk web m2_adk_multiagents/adk_demos/ → d03_sessions_state → New Session → \"I offer $452,000\".\n"
+        "The UI runs as user 'user': the new session's offer_history starts empty, user:total_offers "
+        "continues from user's own earlier offers, and app:total_offers includes every user above."
     )
 
 
