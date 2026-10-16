@@ -216,57 +216,76 @@ async for event in runner.run_async(
 
 ## Demo 02 — MCP Tools (`d02_mcp_tools`)
 
-**File:** `adk_demos/d02_mcp_tools/agent.py` (~50 lines)
+**File:** `adk_demos/d02_mcp_tools/agent.py` (~90 lines)
 
 ### What it teaches
-How ADK connects to external MCP servers and auto-discovers tools. The LLM sees MCP tools exactly like local Python functions — the source is invisible to the model.
+How ADK connects to an MCP server and auto-discovers its tools — here a **remote** server over **Streamable HTTP** that requires a **signed token**. The LLM sees MCP tools exactly like local Python functions, and the server decides what this caller may do:
 
-### How to run
+| Layer | Enforced by | Rule | What you see in d02 |
+|---|---|---|---|
+| Authentication | Pricing server (JWT check) | Valid, unexpired token signed with `PRICING_JWT_SECRET` | Bad token → **401**, ADK loads **no tools** |
+| Server authorization | Pricing server | Token must have `pricing:read` | `guest` token → **403**, no tools |
+| Tool authorization | Inside each tool | `get_market_price` → `pricing:read`; `calculate_discount` → `pricing:analyze` | `buyer` token: market price ✅, discount ❌ "forbidden" |
+
+### How to run (two terminals)
 
 ```bash
+# once: put a random PRICING_JWT_SECRET in .env (see .env.example)
+
+# Terminal 1 — the pricing MCP server, protected
+python m1_mcp/pricing_server.py --http                        # → http://127.0.0.1:8001/mcp
+
+# Pick an identity — writes PRICING_MCP_TOKEN into .env
+python m1_mcp/pricing_auth.py --role buyer --write-env         # pricing:read
+#   or: --role analyst (pricing:read pricing:analyze) / --role guest (no scopes)
+
+# Terminal 2 — ADK
 adk web m2_adk_multiagents/adk_demos/
 ```
 
-Open http://localhost:8000, select `d02_mcp_tools` from the dropdown.
+Open http://localhost:8000 and select `d02_mcp_tools`. **To switch identity**, mint another role with `--write-env` and restart `adk web` (the token is read when the agent loads).
 
-### Questions to try in order
+### Walkthrough (actual runs, gpt-4o)
 
-| # | Question | Expected behavior | What it teaches |
-|---|----------|-------------------|------------------|
-| 1 | "What's 742 Evergreen Terrace worth?" | Calls `get_market_price` → rich data (comps, value, $/sqft) | MCP tool discovery + execution works |
-| 2 | "Calculate a discount for a $485K property in a balanced market" | Calls `calculate_discount` → discount ranges, negotiation tips | LLM picks the right tool from multiple options |
-| 3 | "What's the crime rate near 742 Evergreen Terrace?" | Does NOT call any tool — says it doesn't have crime data | **Key moment**: no crime/safety tool exists on the server. LLM checks its available tools, finds none relevant, and honestly declines. Proves auto-discovery is real |
-| 4 | "Is this property overpriced?" | May call `get_market_price` then reason about listing vs estimated value | LLM chains reasoning on top of tool results |
+| # | Token | Question | What happened | What it teaches |
+|---|-------|----------|---------------|-----------------|
+| 1 | buyer | "What's 742 Evergreen Terrace, Austin, TX 78701 worth?" | Calls `get_market_price` → comps, $462K estimate, details | Discovery + an allowed call |
+| 2 | buyer | "Calculate the discount range for a 485000 dollar listing in a balanced market, 18 days on market, good condition." | Calls `calculate_discount` → `{"isError": true, "text": "... forbidden: 'buyer-agent' lacks scope 'pricing:analyze' required by this tool (token scopes: pricing:read)"}`. Reply: *"…The specific permission missing is 'pricing:analyze'…"* | **Tool-level authorization**: the tool is listed but not callable for this token |
+| 3 | analyst | Same discount question | Calls `calculate_discount` → 2%–5% discount range, suggested offers | Same agent, more scopes, more allowed |
+| 4 | invalid | "What's 742 Evergreen Terrace … worth?" | Server log: `401 Unauthorized`; ADK log: `Failed to get tools from toolset MCPToolset`. Reply: *"I can't reach the pricing tools: the MCP server at http://127.0.0.1:8001/mcp rejected the connection or is not running, so no tools were loaded…"* | **Authentication**: no valid token, no tools at all |
+| 5 | any valid | "What's the crime rate near 742 Evergreen Terrace?" | No tool call — the agent says it has no crime data | The LLM only knows tools MCPToolset actually discovered |
 
-> **Question 3 is the most important.** It proves the LLM only knows about tools MCPToolset actually discovered. The server has just 2 tools (`get_market_price`, `calculate_discount`) — no crime/safety tool, so the LLM can't answer.
+To try case 4 without editing `.env`, start `adk web` with a bad token in the environment (environment variables win over `.env`): PowerShell `$env:PRICING_MCP_TOKEN='not-a-valid-jwt'; adk web m2_adk_multiagents/adk_demos/`. For a 403, mint `--role guest`.
+
+> If you ask for a discount without giving days on market and condition, the model may ask for them instead of calling the tool. Give all inputs (as in question 2) to make the authorization check happen.
 
 ### Key code elements
 
 ```python
-from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
-    StdioConnectionParams,
-    StdioServerParameters,
-)
+PRICING_MCP_URL = os.environ.get("PRICING_MCP_URL", "http://127.0.0.1:8001/mcp")
+PRICING_MCP_TOKEN = os.environ.get("PRICING_MCP_TOKEN", "").strip()
+_headers = {"Authorization": f"Bearer {PRICING_MCP_TOKEN}"} if PRICING_MCP_TOKEN else {}
 
-_PRICING_SERVER = str(
-    Path(__file__).resolve().parents[3] / "m1_mcp" / "pricing_server.py"
-)
+def _require_tools(callback_context, llm_request):
+    """before_model: if the server rejected us, ADK loaded no tools — answer for the model."""
+    if llm_request.tools_dict:
+        return None
+    return LlmResponse(content=types.Content(role="model", parts=[types.Part(text="I can't reach the pricing tools: ...")]))
 
 root_agent = LlmAgent(
     name="mcp_tools_agent",
     model="openai/gpt-4o",
+    instruction="... If a tool returns an authorization error, tell the user exactly which permission (scope) is missing ...",
     tools=[
-        MCPToolset(                          # ← replaces local function tools
-            connection_params=StdioConnectionParams(
-                server_params=StdioServerParameters(
-                    command=sys.executable,   # python
-                    args=[_PRICING_SERVER],   # m1_mcp/pricing_server.py
-                ),
-                timeout=30.0,                 # allow for slow cold starts (Windows)
+        MCPToolset(                                       # ← replaces local function tools
+            connection_params=StreamableHTTPConnectionParams(
+                url=PRICING_MCP_URL,
+                headers=_headers,                          # bearer token on every request
+                timeout=30.0,
             )
         )
     ],
+    before_model_callback=_require_tools,
 )
 ```
 
@@ -274,18 +293,19 @@ root_agent = LlmAgent(
 
 | Concept | Detail |
 |---------|--------|
-| **`MCPToolset`** | ADK's bridge to MCP servers. Spawns the server, runs `initialize` + `tools/list`, wraps discovered tools for the LLM. All automatic |
-| **`StdioConnectionParams`** | Tells ADK to connect via stdio (subprocess). The alternative is `SseConnectionParams` for HTTP-based MCP servers |
-| **`StdioServerParameters`** | Specifies the command + args to spawn the MCP server subprocess. `sys.executable` = the current Python interpreter |
+| **`MCPToolset`** | ADK's bridge to MCP servers. Connects, runs `initialize` + `tools/list`, wraps discovered tools for the LLM. All automatic |
+| **`StreamableHTTPConnectionParams`** | Connect to a running server by URL, with HTTP headers. The alternatives are `StdioConnectionParams` (ADK spawns the server as a subprocess — what the negotiation agents use) and `SseConnectionParams` (legacy HTTP transport) |
+| **Bearer token in headers** | ADK sends `headers` with every MCP request, so the server can authenticate and authorize each call |
 | **Auto-discovery** | You don't list tool names anywhere in `agent.py`. ADK discovers them from the server at startup via `tools/list`. Add a new `@mcp.tool()` to the server → ADK picks it up on next restart |
+| **Authorization errors are tool results** | A denied call comes back as an MCP error result (`isError: true`); ADK hands it to the model like any tool output, so the model can explain it |
+| **Failed connection = no tools** | On 401/403 ADK logs a warning and continues with zero tools from that toolset. The `before_model_callback` turns that into a clear message instead of the model pretending to look things up |
 | **Tool source transparency** | The LLM doesn't know (or care) whether a tool is a local Python function (d01) or a remote MCP server (d02). The function-calling interface is identical |
-| **Cross-module dependency** | `_PRICING_SERVER` points to `m1_mcp/pricing_server.py` — M2 consumes tools built in M1. No code changes needed in M1 |
 
 ### d01 vs d02 — the key comparison
 
 ```
-d01: tools=[get_quick_estimate]         → you wrote the function, ADK reads its signature
-d02: tools=[MCPToolset(...)]            → ADK spawns the server, discovers tools via MCP protocol
+d01: tools=[get_quick_estimate]                                → you wrote the function, ADK reads its signature
+d02: tools=[MCPToolset(StreamableHTTPConnectionParams(...))]   → ADK connects to the server, discovers tools via MCP
 ```
 
 The LLM sees identical function schemas in both cases.
@@ -295,79 +315,34 @@ The LLM sees identical function schemas in both cases.
 ```
 adk web starts
   → imports agent.py, sees MCPToolset in tools list
-  → spawns pricing_server.py as subprocess (stdio pipe)
-  → MCP handshake: initialize → tools/list
-  → discovers: get_market_price, calculate_discount
+  → POST http://127.0.0.1:8001/mcp  initialize   (Authorization: Bearer <token>)
+      pricing server: verify JWT (signature, exp, iss, aud)    → 401 if bad
+                      require scope pricing:read                → 403 if missing
+  → tools/list → get_market_price, calculate_discount
   → LlmAgent now has 2 callable tools
 
-User: "What's 742 Evergreen Terrace worth?"
-  → GPT-4o sees 2 tool schemas, decides to call get_market_price
-  → ADK sends tools/call to pricing_server.py via stdio
-  → Server runs Python function, returns JSON result
-  → ADK feeds result back to GPT-4o
-  → GPT-4o produces final answer with real data
-
-adk web shuts down
-  → ADK kills the pricing_server.py subprocess (no orphans)
+User: "Calculate the discount range ..."  (buyer token)
+  → GPT-4o decides to call calculate_discount
+  → ADK sends tools/call with the same bearer token
+  → tool runs _require_scope("pricing:analyze") → token has only pricing:read → PermissionError
+  → MCP error result → ADK → GPT-4o → "the permission missing is 'pricing:analyze'"
 ```
 
 ### ADK Web UI — what to notice
 
-| UI Element | What's different from d01 |
-|------------|--------------------------|
-| **Info tab** | Shows MCP-discovered tool schemas — notice the tool descriptions come from the `@mcp.tool()` docstrings in `pricing_server.py`, not from this file |
-| **Tool call badges** | `⚡ get_market_price` → `✓ get_market_price` — same as d01 but the tool ran on the MCP server, not locally |
-| **Event count** | Much higher (~300+) because MCP protocol frames and streaming tokens are counted |
+| UI Element | What to look for |
+|------------|------------------|
+| **Info tab** | MCP-discovered tool schemas — descriptions come from the `@mcp.tool()` docstrings in `pricing_server.py`. With a bad token, there are none |
+| **Tool call badges** | `⚡ calculate_discount` → `✓ calculate_discount` even when denied — click the result to see the `forbidden` error |
+| **Pricing server terminal** | `[auth] rejected token: ...` lines for bad tokens |
 
 ### Key teaching points for class
 
-1. **"Same agent pattern, different tool source."** Compare d01 and d02 side by side — the `LlmAgent` declaration is nearly identical. Only `tools=` changed.
-2. **"You didn't touch the MCP server."** `pricing_server.py` was built in M1. It works with ADK without modification — that's the power of a protocol standard.
-3. **"Auto-discovery means zero wiring."** Add a new `@mcp.tool()` to the server, restart `adk web`, and the LLM can call it. No agent code changes needed (this is exactly what Exercise 02 in M1 teaches).
-4. **The high event count is normal.** MCP runs an entire subprocess protocol under the hood. Students should focus on the right panel, not the event counter.
-5. **This is what the buyer/seller agents do.** `negotiation_agents/buyer_agent/agent.py` uses the same `MCPToolset` pattern — this demo is the simplified version.
-
-### session.db after running
-
-| Table | Contents |
-|-------|----------|
-| **sessions** | 2 rows — one per "New Session" click. Each has `app_name=d02_mcp_tools`, state only has `__session_metadata__` with `displayName` |
-| **events** | 10 events across 2 sessions. Three queries exercised all available tools + one that revealed a missing tool capability |
-| **app_states** | Empty — no `app:` scoped state |
-| **user_states** | Empty — no `user:` scoped state |
-
-**Full event flow (10 events, 3 queries):**
-
-```
-Session 1 (3 queries in same session):
-
-  Event 1  | user:           "What's 742 Evergreen Terrace worth?"
-  Event 2  | mcp_tools_agent | tool_call: get_market_price({"address": "742 Evergreen..."})
-  Event 3  | mcp_tools_agent | tool_result: get_market_price -> {address, property_details, estimated_value...}
-  Event 4  | mcp_tools_agent | final answer: "The property at 742 Evergreen... single-family, 4BR, 2400 sqft..."
-
-  Event 5  | user:           "Calculate a discount for a $485K property in a balanced market"
-  Event 6  | mcp_tools_agent | tool_call: calculate_discount({"base_price": 485000, "market_condition": "balanced"...})
-  Event 7  | mcp_tools_agent | tool_result: calculate_discount -> {inputs, discount_analysis...}
-  Event 8  | mcp_tools_agent | final answer: "For a property listed at $485,000 in a balanced market..."
-
-Session 2 (1 query — demonstrates missing tool capability):
-
-  Event 9  | user:           "What's the crime rate near 742 Evergreen Terrace?"
-  Event 10 | mcp_tools_agent | final answer (NO tool call): "I don't have access to crime data..."
-```
-
-**Key observations:**
-
-1. **Query 1 & 2**: The LLM correctly chose `get_market_price` for valuation and `calculate_discount` for pricing — without the instruction naming these tools. Auto-discovery works.
-
-2. **Query 3 (the revealing one)**: Asked about crime rates. The LLM did NOT call any tool — it responded directly saying it doesn't have crime data. The server only exposes `get_market_price` and `calculate_discount` — no crime/safety tool exists. The LLM checked its available tools, found none relevant, and honestly declined. **This proves auto-discovery is real** — the LLM only knows about tools MCPToolset actually discovered.
-
-3. **No tool names in instruction**: After removing hardcoded tool names from the instruction, the LLM still found and used the right tools. The function-calling schemas (visible in the Info tab) are what the LLM reads, not the instruction text.
-
-4. **MCP content wrapping**: Tool results have `{"content": [{"type": "text", "text": "..."}]}` — the MCP protocol envelope around the actual data. Compare to d01 where tool results were plain dicts.
-
-5. **The LLM added arguments the user didn't provide**: For `calculate_discount`, the user said "balanced market" but the LLM also supplied `days_on_market: 18` and `property_condition: "good"` — it inferred reasonable defaults from the tool's JSON schema.
+1. **"Same agent pattern, different tool source."** Compare d01 and d02 — only `tools=` changed.
+2. **"You didn't touch the tools."** `pricing_server.py`'s tools were built in M1; adding auth was a server-side switch (`--http`) plus one scope check per tool.
+3. **"401, 403, forbidden — three different layers."** Authentication (who are you), server authorization (may you use this server), tool authorization (may you use this tool).
+4. **"Scopes travel in the token."** Switching from buyer to analyst changes nothing in the agent — only the token.
+5. **"stdio would bypass all of this."** The negotiation agents launch the same server over stdio, where there's no HTTP request to authenticate — see the M1 study notes ("pricing_server.py --http").
 
 ---
 

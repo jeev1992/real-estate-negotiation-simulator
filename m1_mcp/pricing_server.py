@@ -16,6 +16,23 @@ TRANSPORT OPTIONS:
   SSE (HTTP)      — runs as standalone HTTP server, multiple clients
     python pricing_server.py --sse --port 8001
 
+  Streamable HTTP + AUTH — HTTP server that requires a signed JWT
+    python pricing_server.py --http --port 8001      → http://127.0.0.1:8001/mcp
+
+AUTHENTICATION & AUTHORIZATION (--http mode only):
+  Authentication — every HTTP request needs "Authorization: Bearer <JWT>".
+    The token's signature, expiry, issuer and audience are checked
+    (pricing_auth.JwtTokenVerifier). Bad or missing token → 401.
+  Server-level authorization — the token must carry scope pricing:read → else 403.
+  Tool-level authorization — each tool checks its own scope:
+      get_market_price    needs pricing:read
+      calculate_discount  needs pricing:analyze
+  Mint tokens with: python m1_mcp/pricing_auth.py --role buyer|analyst|guest
+
+  stdio and --sse are NOT protected: there is no HTTP request carrying a
+  token. The MCP spec only defines authorization for HTTP transports; a stdio
+  server is trusted by whoever can launch the process.
+
 INSPECT VISUALLY (MCP Inspector — browser GUI host, needs Node.js 18+):
   npx @modelcontextprotocol/inspector python pricing_server.py
     Opens a UI at http://localhost:6274 with separate Tools / Resources /
@@ -53,7 +70,10 @@ from typing import Literal
 
 # FastMCP is the Pythonic way to build MCP servers
 # Install: pip install mcp
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.fastmcp import FastMCP
+
+from pricing_auth import SCOPE_ANALYZE, SCOPE_READ
 
 
 # ─── Initialize FastMCP Server ────────────────────────────────────────────────
@@ -61,6 +81,28 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP(
     "real-estate-pricing"
 )
+
+# Set to True only in --http mode, where every request carries a verified token.
+_AUTH_ENABLED = False
+
+
+def _require_scope(scope: str) -> None:
+    """Tool-level authorization: the caller's token must include `scope`.
+
+    get_access_token() returns the token the HTTP middleware already verified
+    for this request. In stdio/SSE mode there is no token and auth is off, so
+    the check is skipped — those transports are not protected.
+    """
+    if not _AUTH_ENABLED:
+        return
+    token = get_access_token()
+    if token is None:
+        raise PermissionError("unauthenticated: no verified access token for this request")
+    if scope not in token.scopes:
+        raise PermissionError(
+            f"forbidden: '{token.client_id}' lacks scope '{scope}' required by this tool "
+            f"(token scopes: {' '.join(token.scopes) or 'none'})"
+        )
 
 
 # ─── Simulated Data Store ─────────────────────────────────────────────────────
@@ -185,6 +227,8 @@ def get_market_price(
         Comprehensive pricing data including comparables, market analysis,
         and negotiation context.
     """
+    _require_scope(SCOPE_READ)
+
     # Step 1) Normalize input so equivalent address strings map consistently.
     # Example: extra spaces/casing differences should still hit the same record.
     normalized = address.lower().strip()
@@ -327,6 +371,8 @@ def calculate_discount(
     Returns:
         Discount analysis with suggested offer ranges and negotiation tips.
     """
+    _require_scope(SCOPE_ANALYZE)
+
     # Step 1) Start with baseline discount bands from market temperature.
     base_rates: dict[str, dict[str, float]] = {
         "hot":      {"min": 0.000, "max": 0.020},   # 0–2%   (seller's market)
@@ -482,7 +528,7 @@ def negotiation_tactics_prompt(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Real Estate Pricing MCP Server — supports stdio and SSE transports"
+        description="Real Estate Pricing MCP Server — stdio, SSE, or Streamable HTTP with auth"
     )
     parser.add_argument(
         "--check",
@@ -495,16 +541,21 @@ if __name__ == "__main__":
         help="Use SSE transport instead of stdio. Runs as HTTP server."
     )
     parser.add_argument(
+        "--http",
+        action="store_true",
+        help="Use Streamable HTTP with JWT authentication and scope-based authorization."
+    )
+    parser.add_argument(
         "--port",
         type=int,
         default=8001,
-        help="Port number for SSE transport (default: 8001)"
+        help="Port number for SSE / HTTP transport (default: 8001)"
     )
     parser.add_argument(
         "--host",
         type=str,
-        default="0.0.0.0",
-        help="Host for SSE transport (default: 0.0.0.0)"
+        default=None,
+        help="Host to bind (default: 0.0.0.0 for SSE, 127.0.0.1 for --http)"
     )
     args = parser.parse_args()
 
@@ -513,12 +564,38 @@ if __name__ == "__main__":
         tools = list(mcp._tool_manager._tools.keys())
         print(f"pricing_server OK  tools={tools}")
         sys.exit(0)
+    elif args.http:
+        # Streamable HTTP mode with authentication + authorization.
+        from mcp.server.auth.settings import AuthSettings
+
+        from pricing_auth import ISSUER, JwtTokenVerifier
+
+        host = args.host or "127.0.0.1"
+        resource_url = f"http://127.0.0.1:{args.port}/mcp"
+        _AUTH_ENABLED = True
+        mcp.settings.host = host
+        mcp.settings.port = args.port
+        mcp.settings.auth = AuthSettings(
+            issuer_url=ISSUER,                 # who issues tokens (advertised in metadata)
+            resource_server_url=resource_url,  # this server, as an OAuth protected resource
+            required_scopes=[SCOPE_READ],      # server-level authorization for every request
+        )
+        # FastMCP reads the verifier when it builds the HTTP app; it has no
+        # public setter, so we attach it here to keep stdio/SSE mode unchanged.
+        mcp._token_verifier = JwtTokenVerifier()
+        print("Real Estate Pricing MCP Server (Streamable HTTP + auth)")
+        print(f"   Listening on: http://{host}:{args.port}/mcp")
+        print(f"   Requires: Authorization: Bearer <JWT with scope {SCOPE_READ}>")
+        print(f"   Tool scopes: get_market_price={SCOPE_READ}, calculate_discount={SCOPE_ANALYZE}")
+        print("   Mint a token: python m1_mcp/pricing_auth.py --role buyer|analyst")
+        mcp.run(transport="streamable-http")
     elif args.sse:
         # SSE mode: run as HTTP endpoint for network clients and multi-client setups.
-        mcp.settings.host = args.host
+        host = args.host or "0.0.0.0"
+        mcp.settings.host = host
         mcp.settings.port = args.port
         print(f"Real Estate Pricing MCP Server (SSE mode)")
-        print(f"   Listening on: http://{args.host}:{args.port}/sse")
+        print(f"   Listening on: http://{host}:{args.port}/sse")
         print(f"   Connect via: SseServerParams(url='http://localhost:{args.port}/sse')")
         mcp.run(transport="sse")
     else:

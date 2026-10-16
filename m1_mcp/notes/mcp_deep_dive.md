@@ -771,19 +771,32 @@ python m1_mcp/pricing_server.py --sse --port 8001
 
 ### Authentication
 
-MCP itself doesn't define authentication — servers implement it however they need:
+For **HTTP transports**, the MCP spec defines authorization on top of OAuth 2.1: the server is a *protected resource*, the client sends `Authorization: Bearer <token>` on every request, and the server answers `401` (with a `WWW-Authenticate` header pointing to its protected-resource metadata) when the token is missing or invalid. For **stdio**, the spec says not to use this flow — there are no HTTP requests; a stdio server trusts whoever launched it and reads any credentials from environment variables.
 
 ```python
 # GitHub MCP (hosted): token sent as an HTTP header on every request
 headers={"Authorization": "Bearer <your GitHub token>"}
 
-# Custom server: could check an API key in initialize params
-@mcp.server.initialize_handler()
-async def handle_initialize(params):
-    api_key = params.get("api_key")
-    if api_key != os.environ["EXPECTED_API_KEY"]:
-        raise McpError(ErrorCode.Unauthorized, "Invalid API key")
+# Our pricing server (python m1_mcp/pricing_server.py --http):
+from mcp.server.auth.settings import AuthSettings
+from mcp.server.auth.middleware.auth_context import get_access_token
+
+mcp.settings.auth = AuthSettings(
+    issuer_url=ISSUER,                                   # who issues tokens
+    resource_server_url="http://127.0.0.1:8001/mcp",     # this server
+    required_scopes=["pricing:read"],                    # server-level authorization → 403
+)
+mcp._token_verifier = JwtTokenVerifier()                 # authentication: checks signature/exp/iss/aud → 401
+
+@mcp.tool()
+def calculate_discount(...):
+    token = get_access_token()                           # the verified token for THIS request
+    if "pricing:analyze" not in token.scopes:            # tool-level authorization
+        raise PermissionError("forbidden: lacks scope 'pricing:analyze'")
+    ...
 ```
+
+See `m1_mcp/pricing_auth.py` for the JWT verifier and token minting, and the "pricing_server.py --http" section of `M1_DEMO_STUDY_NOTES.md` for the verified 401 / 403 / forbidden results.
 
 ### Discovery (list_tools)
 

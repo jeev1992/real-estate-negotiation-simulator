@@ -609,6 +609,61 @@ async with streamablehttp_client(url) as (read, write, _):
 
 ---
 
+## pricing_server.py --http — Authentication & Authorization
+
+**Files:** `m1_mcp/pricing_server.py` (the `--http` mode), `m1_mcp/pricing_auth.py` (token minting + verification)
+
+### What it teaches
+How a remote MCP server protects itself. Once a server is reachable over HTTP, anyone who can reach the URL can call it — so it has to check **who** is calling (authentication) and **what they may do** (authorization). The MCP spec models the server as an OAuth 2.1 **protected resource**: the client sends a bearer token, the server validates it, and tells unauthenticated clients where to get one.
+
+### How to run
+```bash
+# once: put a random PRICING_JWT_SECRET in .env (see .env.example)
+python m1_mcp/pricing_server.py --http                 # → http://127.0.0.1:8001/mcp
+python m1_mcp/pricing_auth.py --role buyer             # prints a signed token (pricing:read)
+python m1_mcp/pricing_auth.py --role analyst           # pricing:read pricing:analyze
+```
+
+The full agent experience is ADK demo **d02** (M2), which connects to this server with a token from `.env`.
+
+### Three layers of checks
+
+| Layer | Where in the code | Rule | Failure |
+|---|---|---|---|
+| **Authentication** | `pricing_auth.JwtTokenVerifier.verify_token()` — plugged into FastMCP as its token verifier | JWT signature, `exp`, `iss`, `aud` must all be valid | **401** + `WWW-Authenticate` header |
+| **Server authorization** | `AuthSettings(required_scopes=["pricing:read"])` | Token must carry `pricing:read` to use the server at all | **403** |
+| **Tool authorization** | `_require_scope(...)` at the top of each tool, reading `get_access_token()` | `get_market_price` → `pricing:read`; `calculate_discount` → `pricing:analyze` | Tool error the model can read: "forbidden: … lacks scope 'pricing:analyze'" |
+
+### Actual results (live test against `--http`)
+
+| Request | Result |
+|---|---|
+| Raw POST, no token | `401`, `WWW-Authenticate: Bearer error="invalid_token", … resource_metadata="http://127.0.0.1:8001/.well-known/oauth-protected-resource/mcp"` |
+| `GET /.well-known/oauth-protected-resource/mcp` | `200` — `{"resource": ".../mcp", "authorization_servers": ["https://auth.real-estate-workshop.example/"], "scopes_supported": ["pricing:read"], ...}` |
+| No token / forged signature / expired token | `401` — never reaches any tool |
+| `guest` token (no scopes) | `403` |
+| `buyer` token | Connects and lists both tools; `get_market_price` ✅; `calculate_discount` → `forbidden: 'buyer-agent' lacks scope 'pricing:analyze' required by this tool (token scopes: pricing:read)` |
+| `analyst` token | Both tools ✅ |
+| **stdio, no token at all** | **Both tools ✅** |
+
+### Key observations
+
+1. **Authentication happens before MCP.** Bad tokens are rejected by HTTP middleware — the request never becomes a `tools/list` or `tools/call`. The 401 response points to the protected-resource metadata so a client can discover which authorization server issues tokens.
+
+2. **Listing ≠ permission.** The buyer can *see* `calculate_discount` in `tools/list` but can't *run* it. Enforcement happens at call time, inside the tool, so the model gets a readable error and can explain what's missing. (Hiding tools per token is also possible, but then the model never tries them.)
+
+3. **stdio is not protected.** The last row is the same server code, launched over stdio: no HTTP request means no `Authorization` header, so nothing is checked. The MCP spec defines authorization only for HTTP transports; a stdio server trusts whoever can start the process (credentials, if any, come from environment variables). That's why the server only switches auth on in `--http` mode, and why the ADK negotiation agents — which launch it over stdio — still work without tokens.
+
+4. **Demo shortcut vs production.** Here one shared secret both mints and verifies tokens. In production an identity provider (Entra ID, Auth0, …) issues tokens — typically signed with a private key — and the MCP server only verifies them.
+
+### Key teaching points for class
+
+1. **"Authentication = who are you; authorization = what may you do."** 401 vs 403 vs per-tool "forbidden".
+2. **"Scopes travel inside the token."** The server doesn't look anything up — `pricing:read pricing:analyze` is a signed claim it can trust.
+3. **"Transport decides whether auth even exists."** Same file, same tools: protected over HTTP, unprotected over stdio.
+
+---
+
 ## sse_agent_client.py — SSE Transport + Agentic Loop
 
 **File:** `m1_mcp/sse_agent_client.py` (~350 lines)
@@ -757,6 +812,9 @@ for iteration in range(1, max_iterations + 1):
 ---
 
 ## Questions students might ask
+
+**"If an agent connects to the pricing server over stdio, is authentication/authorization enforced?"**
+No. Auth in MCP is defined for HTTP transports: the token arrives in each request's `Authorization` header and is checked by HTTP middleware. Over stdio there is no HTTP request and no header — the client launches the server as a child process and talks over its stdin/stdout — so there is nothing to check. A stdio server trusts whoever can start it; if it needs credentials it reads them from environment variables. `pricing_server.py` therefore enables auth only in `--http` mode (see the section above).
 
 **"Why three transports? Why not just one?"**
 Each serves a different deployment pattern. stdio is simplest — the client spawns the server as a subprocess, no networking. SSE is for existing HTTP infrastructure. Streamable HTTP is the spec's recommended production transport — it's cleaner than SSE and supports bidirectional streaming. Use stdio for development, HTTP for production.

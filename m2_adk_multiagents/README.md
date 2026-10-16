@@ -35,7 +35,7 @@ m2_adk_multiagents/
     negotiation/agent.py           LoopAgent ↔ SequentialAgent + MCP tools + submit_decision
   adk_demos/                       ← adk web adk_demos/  (9 agents in dropdown)
     d01_basic_agent/agent.py       Bare LlmAgent + function tool
-    d02_mcp_tools/agent.py         LlmAgent + MCPToolset (pricing server)
+    d02_mcp_tools/agent.py         LlmAgent + MCPToolset (pricing server over HTTP, with token auth)
     d03_sessions_state/agent.py    ToolContext: session, user:, and app: state
     d04_sequential/agent.py        SequentialAgent pipeline
     d05_parallel/agent.py          ParallelAgent fan-out
@@ -114,6 +114,13 @@ adk web m2_adk_multiagents/adk_demos/
 # Open http://localhost:8000, pick a demo from the dropdown, chat with it
 ```
 
+Demo 02 connects to the pricing MCP server over Streamable HTTP with a token, so start that first (in another terminal):
+
+```bash
+python m1_mcp/pricing_server.py --http                    # needs PRICING_JWT_SECRET in .env
+python m1_mcp/pricing_auth.py --role buyer --write-env     # or --role analyst / --role guest; restart adk web after switching
+```
+
 Demo 09 also has a terminal version that drives the same agent with an explicit `Runner` and prints every `Event` it yields (author, tool calls, tool results, state deltas, final-response flag):
 
 ```bash
@@ -175,7 +182,7 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 | # | ADK concept | Key takeaway |
 |---|---|---|
 | 01 | `LlmAgent` + function tool | Simplest possible agent — declare and go |
-| 02 | `MCPToolset` | ADK spawns MCP server, discovers tools automatically |
+| 02 | `MCPToolset` + auth | ADK connects to a remote MCP server over Streamable HTTP with a bearer token and discovers its tools; the server enforces authentication (401), server authorization (403) and per-tool scopes |
 | 03 | `ToolContext` + state | The key prefix picks the scope: session (this conversation), `user:` (this user), `app:` (everyone) |
 | 04 | `SequentialAgent` | Pipeline: each agent's `output_key` feeds the next via `{placeholder}` |
 | 05 | `ParallelAgent` | Fan-out: concurrent agents write to different state keys |

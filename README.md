@@ -197,6 +197,8 @@ If it runs cleanly, your Python environment is ready.
 python m1_mcp/github_agent_client.py      # GitHub MCP agent (needs GITHUB_TOKEN + OPENAI_API_KEY)
 python m1_mcp/pricing_server.py           # Run MCP server standalone (stdio)
 python m1_mcp/pricing_server.py --sse --port 8001  # SSE transport mode
+python m1_mcp/pricing_server.py --http             # Streamable HTTP + JWT auth (needed by ADK demo d02)
+python m1_mcp/pricing_auth.py --role buyer --write-env   # mint a token for d02 (buyer | analyst | guest)
 # MCP deep-dive demos (no API key needed unless noted):
 python m1_mcp/demos/01_initialize_handshake.py
 python m1_mcp/demos/02_tool_loop_trace.py
@@ -264,7 +266,7 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 | # | Pick from dropdown | What it means (one line) |
 |---|---|---|
 | d01 | `d01_basic_agent` | Bare `LlmAgent` + a Python function tool — the simplest possible ADK agent. |
-| d02 | `d02_mcp_tools` | `LlmAgent` + `MCPToolset` — ADK auto-spawns the MCP server and discovers its tools. |
+| d02 | `d02_mcp_tools` | `LlmAgent` + `MCPToolset` over Streamable HTTP — connects to `pricing_server.py --http` with a JWT and discovers its tools; shows authentication (401), server authorization (403) and tool-level scopes. Start the server and mint a token first. |
 | d03 | `d03_sessions_state` | `ToolContext` state at three scopes — session (this conversation), `user:` (this user), and `app:` (everyone). |
 | d04 | `d04_sequential` | `SequentialAgent` pipeline — each step's `output_key` feeds the next via `{placeholder}`. |
 | d05 | `d05_parallel` | `ParallelAgent` fan-out — concurrent agents writing to different state keys. |

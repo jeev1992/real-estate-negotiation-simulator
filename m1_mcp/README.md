@@ -93,7 +93,7 @@ This is the first custom MCP server. It wraps simulated real estate pricing data
 | `get_market_price(address, property_type)` | Returns comparable sales, estimated value, and market analysis | Both buyer and seller |
 | `calculate_discount(base_price, market_condition, days_on_market, property_condition)` | Returns suggested offer ranges and negotiation tips | Both buyer and seller |
 
-**Two transport modes (same server, different usage):**
+**Three transport modes (same server, different usage):**
 
 ```bash
 # stdio — default, client spawns this as a subprocess (used by Module 2's ADK agents)
@@ -101,9 +101,30 @@ python m1_mcp/pricing_server.py
 
 # SSE — HTTP server, multiple clients can connect at once
 python m1_mcp/pricing_server.py --sse --port 8001
+
+# Streamable HTTP + authentication & authorization (used by ADK demo d02)
+python m1_mcp/pricing_server.py --http            # → http://127.0.0.1:8001/mcp
 ```
 
-In Module 2, the ADK agents (via `MCPToolset`) start this server automatically as a subprocess. You don't need to run it manually — but you *can* to inspect it.
+In Module 2, the ADK negotiation agents (via `MCPToolset`) start this server automatically as a subprocess. You don't need to run it manually — but you *can* to inspect it. Demo d02 connects to the `--http` mode instead.
+
+**Authentication & authorization (`--http` only):**
+
+| Layer | Rule | Failure |
+|---|---|---|
+| Authentication | Every request needs `Authorization: Bearer <JWT>`; signature, expiry, issuer and audience are checked | **401** |
+| Server authorization | The token must carry scope `pricing:read` | **403** |
+| Tool authorization | `get_market_price` needs `pricing:read`; `calculate_discount` needs `pricing:analyze` | Tool error: "forbidden: lacks scope …" |
+
+Tokens are HS256-signed JWTs minted by [`pricing_auth.py`](pricing_auth.py) with the secret `PRICING_JWT_SECRET` from `.env`:
+
+```bash
+python m1_mcp/pricing_auth.py --role buyer                 # pricing:read           → print token
+python m1_mcp/pricing_auth.py --role analyst --write-env   # pricing:read + analyze → save as PRICING_MCP_TOKEN
+python m1_mcp/pricing_auth.py --role guest                 # no scopes (to see a 403)
+```
+
+> **stdio and `--sse` are not protected.** The MCP spec defines authorization only for HTTP transports — there's no HTTP request carrying a token over stdio, and a stdio server is trusted by whoever can launch the process. The same tools run without any token there.
 
 ---
 
@@ -179,6 +200,10 @@ python m1_mcp/inventory_server.py --sse --port 8002
 # Then connect with the SSE agent client (in another terminal)
 python m1_mcp/sse_agent_client.py                    # all sample queries (pricing only)
 python m1_mcp/sse_agent_client.py --both              # includes inventory queries too
+
+# Streamable HTTP with authentication + authorization (used by ADK demo d02)
+python m1_mcp/pricing_server.py --http                # needs PRICING_JWT_SECRET in .env
+python m1_mcp/pricing_auth.py --role buyer            # mint a token (buyer | analyst | guest)
 ```
 
 **What to expect from the GitHub agent:**

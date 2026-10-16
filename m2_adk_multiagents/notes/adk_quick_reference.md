@@ -103,6 +103,21 @@ root_agent = LlmAgent(
 
 > **Intuition:** This is the same MCP `tools/list` you'd otherwise call by hand. `MCPToolset` does it for you — and also runs MCP `tools/call` automatically when the LLM picks a tool. ADK manages the subprocess lifecycle.
 
+Remote server over Streamable HTTP, with a bearer token (demo d02):
+```python
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StreamableHTTPConnectionParams
+
+MCPToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url="http://127.0.0.1:8001/mcp",                       # pricing_server.py --http
+        headers={"Authorization": f"Bearer {os.environ['PRICING_MCP_TOKEN']}"},
+        timeout=30.0,
+    )
+)
+```
+
+> Auth only exists on HTTP transports: a bad token → 401 and ADK loads no tools; a token without a tool's scope → that tool call returns a "forbidden" error. Over stdio nothing is checked.
+
 ---
 
 ## 5. `adk web` — "Run and interact"
