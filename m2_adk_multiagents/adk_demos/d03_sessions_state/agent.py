@@ -21,13 +21,17 @@ from google.adk.tools.tool_context import ToolContext
 
 def record_offer(price: int, tool_context: ToolContext) -> dict:
     """Record the user's latest offer price in session state."""
-    history = tool_context.state.get("offer_history", [])
-    history.append(price)
+    # Build a new list rather than mutating the one stored in state.
+    history = [*tool_context.state.get("offer_history", []), price]
     tool_context.state["offer_history"] = history
-    tool_context.state["user:total_offers"] = len(history)
+    # user: state outlives the session, so increment it — len(history) would
+    # only count this session and reset the lifetime total in a new session.
+    total = tool_context.state.get("user:total_offers", 0) + 1
+    tool_context.state["user:total_offers"] = total
     return {
         "recorded_price": price,
-        "total_offers": len(history),
+        "offers_this_session": len(history),
+        "total_across_sessions": total,
         "all_offers": history,
     }
 

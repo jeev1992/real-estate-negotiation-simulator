@@ -395,8 +395,9 @@ Open http://localhost:8000, select `d03_sessions_state` from the dropdown.
 | 3 | "Offer $440,000" | LLM notices $440K < previous $445K — warns about regression | LLM reasons about state data |
 | 4 | "What's my offer history?" | Calls `get_offer_history`, returns all 3 offers | State read without write |
 | 5 | Click **New Session** → "How many offers?" | `offers: []` (session cleared) but `total_across_sessions: 3` (user: persisted) | Session vs user scope |
+| 6 | Same new session → "Offer $455,000" | `offers_this_session: 1` but `total_across_sessions: 4` — the lifetime counter keeps counting | Updating `user:` state correctly |
 
-> **Question 5 is the key moment.** It proves `user:` prefixed state survives "New Session" while unprefixed state is cleared.
+> **Questions 5 and 6 are the key moments.** Question 5 proves `user:` prefixed state survives "New Session" while unprefixed state is cleared. Question 6 proves it is *updated* correctly from a new session, not overwritten.
 
 ### Key code elements
 
@@ -405,11 +406,12 @@ from google.adk.tools.tool_context import ToolContext
 
 def record_offer(price: int, tool_context: ToolContext) -> dict:
     """Record the user's latest offer price in session state."""
-    history = tool_context.state.get("offer_history", [])
-    history.append(price)
-    tool_context.state["offer_history"] = history          # session-scoped (no prefix)
-    tool_context.state["user:total_offers"] = len(history) # user-scoped (survives New Session)
-    return {"recorded_price": price, "total_offers": len(history), "all_offers": history}
+    history = [*tool_context.state.get("offer_history", []), price]   # new list, not mutated in place
+    tool_context.state["offer_history"] = history                      # session-scoped (no prefix)
+    total = tool_context.state.get("user:total_offers", 0) + 1
+    tool_context.state["user:total_offers"] = total                    # user-scoped (survives New Session)
+    return {"recorded_price": price, "offers_this_session": len(history),
+            "total_across_sessions": total, "all_offers": history}
 
 def get_offer_history(tool_context: ToolContext) -> dict:
     """Retrieve the full history of offers made in this session."""
@@ -426,6 +428,7 @@ def get_offer_history(tool_context: ToolContext) -> dict:
 | **`tool_context.state`** | A dict that persists across turns within the same session. Tools can read and write it freely |
 | **Session-scoped state** (no prefix) | `offer_history` — lives in the `sessions` table, cleared on "New Session" |
 | **User-scoped state** (`user:` prefix) | `user:total_offers` — lives in the `user_states` table, survives across sessions for the same user |
+| **Update user state from its own value** | `user:total_offers` is incremented (`get(...) + 1`), never derived from session data. An earlier version set it to `len(offer_history)`; since `offer_history` starts empty in each new session, the first offer there reset the lifetime total to 1 |
 | **State tab** | The ADK web UI's State tab shows the session state dict live — updates after every message |
 | **Parallel tool calls** | The LLM called BOTH `record_offer` AND `get_offer_history` in a single turn (visible in events 2–3). ADK supports parallel tool calls |
 
@@ -449,6 +452,10 @@ User: "Offer $440,000" (after $445K)
 Click "New Session" → "How many offers?"
   → get_offer_history reads: offers=[] (session cleared), total_across_sessions=3 (user: persisted)
   → LLM says: "3 offers across all sessions, none in current session"
+
+Same new session → "Offer $455,000"
+  → record_offer writes: state["offer_history"] = [455000], state["user:total_offers"] = 3 + 1 = 4
+  → offers_this_session=1, total_across_sessions=4 (the lifetime count keeps going)
 ```
 
 ### session.db after running
