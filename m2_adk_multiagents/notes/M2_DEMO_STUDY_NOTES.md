@@ -243,7 +243,12 @@ python utils/pricing_auth.py --role buyer --write-env         # pricing:read
 adk web m2_adk_multiagents/adk_demos/
 ```
 
-Open http://localhost:8000 and select `d02_mcp_tools`. **To switch identity**, mint another role with `--write-env` and restart `adk web` (the token is read when the agent loads).
+Open http://localhost:8000 and select `d02_mcp_tools`. **To switch identity**, mint another role and restart `adk web` (the token is read when the agent loads):
+
+```bash
+python utils/pricing_auth.py --role analyst --write-env   # pricing:read pricing:analyze
+python utils/pricing_auth.py --role buyer --write-env     # back to pricing:read only
+```
 
 ### Walkthrough (actual runs, gpt-4o)
 
@@ -255,7 +260,7 @@ Open http://localhost:8000 and select `d02_mcp_tools`. **To switch identity**, m
 | 4 | invalid | "What's 742 Evergreen Terrace … worth?" | Server log: `401 Unauthorized`; ADK log: `Failed to get tools from toolset MCPToolset`. Reply: *"I can't reach the pricing tools: the MCP server at http://127.0.0.1:8001/mcp rejected the connection or is not running, so no tools were loaded…"* | **Authentication**: no valid token, no tools at all |
 | 5 | any valid | "What's the crime rate near 742 Evergreen Terrace?" | No tool call — the agent says it has no crime data | The LLM only knows tools MCPToolset actually discovered |
 
-To try case 4 without editing `.env`, start `adk web` with a bad token in the environment (environment variables win over `.env`): PowerShell `$env:PRICING_MCP_TOKEN='not-a-valid-jwt'; adk web m2_adk_multiagents/adk_demos/`. For a 403, mint `--role guest`.
+To try case 4 without editing `.env`, start `adk web` with a bad token in the environment (environment variables win over `.env`): PowerShell `$env:PRICING_MCP_TOKEN='not-a-valid-jwt'; adk web m2_adk_multiagents/adk_demos/` (run `Remove-Item Env:PRICING_MCP_TOKEN` afterwards). For a 403, run `python utils/pricing_auth.py --role guest --write-env` and restart `adk web`.
 
 > If you ask for a discount without giving days on market and condition, the model may ask for them instead of calling the tool. Give all inputs (as in question 2) to make the authorization check happen.
 

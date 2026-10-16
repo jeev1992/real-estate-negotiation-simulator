@@ -22,7 +22,8 @@ Run (two terminals):
     python utils/pricing_auth.py --role buyer --write-env      # buyer token → .env
     adk web m2_adk_multiagents/adk_demos/                       # terminal 2
 
-Switch identity: mint a different role with --write-env and restart adk web.
+Switch identity: python utils/pricing_auth.py --role analyst --write-env
+(or --role buyer / --role guest), then restart adk web.
 """
 
 import os
