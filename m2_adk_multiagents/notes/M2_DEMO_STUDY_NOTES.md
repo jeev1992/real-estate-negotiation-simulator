@@ -236,7 +236,7 @@ How ADK connects to an MCP server and auto-discovers its tools — here a **remo
 python m1_mcp/pricing_server.py --http                        # → http://127.0.0.1:8001/mcp
 
 # Pick an identity — writes PRICING_MCP_TOKEN into .env
-python m1_mcp/pricing_auth.py --role buyer --write-env         # pricing:read
+python utils/pricing_auth.py --role buyer --write-env         # pricing:read
 #   or: --role analyst (pricing:read pricing:analyze) / --role guest (no scopes)
 
 # Terminal 2 — ADK

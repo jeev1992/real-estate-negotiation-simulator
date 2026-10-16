@@ -21,7 +21,7 @@
 #                   (uses GitHub's hosted MCP server — no Node.js needed)
 #   Pricing server auth (--http) + ADK demo d02:
 #                   PRICING_JWT_SECRET in .env, then mint a token with
-#                   python m1_mcp/pricing_auth.py --role buyer --write-env
+#                   python utils/pricing_auth.py --role buyer --write-env
 # ═══════════════════════════════════════════════════════════════════════
 
 
@@ -67,7 +67,7 @@ aiofiles>=23.0.0
 # python-dotenv — load .env files for API keys
 python-dotenv>=1.0.0
 
-# PyJWT — signs/verifies the pricing MCP server's demo tokens (m1_mcp/pricing_auth.py)
+# PyJWT — signs/verifies the pricing MCP server's demo tokens (utils/pricing_auth.py)
 PyJWT>=2.8.0,<3.0.0
 
 # typing-extensions — backports of newer typing features

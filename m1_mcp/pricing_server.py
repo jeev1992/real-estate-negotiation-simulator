@@ -22,12 +22,12 @@ TRANSPORT OPTIONS:
 AUTHENTICATION & AUTHORIZATION (--http mode only):
   Authentication — every HTTP request needs "Authorization: Bearer <JWT>".
     The token's signature, expiry, issuer and audience are checked
-    (pricing_auth.JwtTokenVerifier). Bad or missing token → 401.
+    (utils/pricing_auth.py: JwtTokenVerifier). Bad or missing token → 401.
   Server-level authorization — the token must carry scope pricing:read → else 403.
   Tool-level authorization — each tool checks its own scope:
       get_market_price    needs pricing:read
       calculate_discount  needs pricing:analyze
-  Mint tokens with: python m1_mcp/pricing_auth.py --role buyer|analyst|guest
+  Mint tokens with: python utils/pricing_auth.py --role buyer|analyst|guest
 
   stdio and --sse are NOT protected: there is no HTTP request carrying a
   token. The MCP spec only defines authorization for HTTP transports; a stdio
@@ -66,6 +66,7 @@ HOW AGENTS USE THIS:
 import argparse
 import random
 import sys
+from pathlib import Path
 from typing import Literal
 
 # FastMCP is the Pythonic way to build MCP servers
@@ -73,7 +74,10 @@ from typing import Literal
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.fastmcp import FastMCP
 
-from pricing_auth import SCOPE_ANALYZE, SCOPE_READ
+# Clients launch this file directly (python .../pricing_server.py), so put the
+# repo root on the path to reach the shared utils/ package.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from utils.pricing_auth import SCOPE_ANALYZE, SCOPE_READ  # noqa: E402
 
 
 # ─── Initialize FastMCP Server ────────────────────────────────────────────────
@@ -568,7 +572,7 @@ if __name__ == "__main__":
         # Streamable HTTP mode with authentication + authorization.
         from mcp.server.auth.settings import AuthSettings
 
-        from pricing_auth import ISSUER, JwtTokenVerifier
+        from utils.pricing_auth import ISSUER, JwtTokenVerifier
 
         host = args.host or "127.0.0.1"
         resource_url = f"http://127.0.0.1:{args.port}/mcp"
@@ -587,7 +591,7 @@ if __name__ == "__main__":
         print(f"   Listening on: http://{host}:{args.port}/mcp")
         print(f"   Requires: Authorization: Bearer <JWT with scope {SCOPE_READ}>")
         print(f"   Tool scopes: get_market_price={SCOPE_READ}, calculate_discount={SCOPE_ANALYZE}")
-        print("   Mint a token: python m1_mcp/pricing_auth.py --role buyer|analyst")
+        print("   Mint a token: python utils/pricing_auth.py --role buyer|analyst")
         mcp.run(transport="streamable-http")
     elif args.sse:
         # SSE mode: run as HTTP endpoint for network clients and multi-client setups.

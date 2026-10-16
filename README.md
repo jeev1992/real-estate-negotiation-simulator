@@ -64,6 +64,8 @@ real-estate-negotiation-simulator/
 │       └── google_adk_overview.md     # Reference: Google ADK overview
 │
 ├── Week 6 _ ... Google ADK.pptx.pdf   # Workshop slide deck (97 slides)
+├── utils/
+│   └── pricing_auth.py                # Demo JWTs for the pricing server's --http mode: mint (CLI) + verify
 ├── .env.example                       # Copy to .env and add your API keys
 └── requirements.txt
 ```
@@ -198,7 +200,7 @@ python m1_mcp/github_agent_client.py      # GitHub MCP agent (needs GITHUB_TOKEN
 python m1_mcp/pricing_server.py           # Run MCP server standalone (stdio)
 python m1_mcp/pricing_server.py --sse --port 8001  # SSE transport mode
 python m1_mcp/pricing_server.py --http             # Streamable HTTP + JWT auth (needed by ADK demo d02)
-python m1_mcp/pricing_auth.py --role buyer --write-env   # mint a token for d02 (buyer | analyst | guest)
+python utils/pricing_auth.py --role buyer --write-env   # mint a token for d02 (buyer | analyst | guest)
 # MCP deep-dive demos (no API key needed unless noted):
 python m1_mcp/demos/01_initialize_handshake.py
 python m1_mcp/demos/02_tool_loop_trace.py

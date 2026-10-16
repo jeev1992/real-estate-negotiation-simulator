@@ -796,7 +796,7 @@ def calculate_discount(...):
     ...
 ```
 
-See `m1_mcp/pricing_auth.py` for the JWT verifier and token minting, and the "pricing_server.py --http" section of `M1_DEMO_STUDY_NOTES.md` for the verified 401 / 403 / forbidden results.
+See `utils/pricing_auth.py` for the JWT verifier and token minting, and the "pricing_server.py --http" section of `M1_DEMO_STUDY_NOTES.md` for the verified 401 / 403 / forbidden results.
 
 ### Discovery (list_tools)
 

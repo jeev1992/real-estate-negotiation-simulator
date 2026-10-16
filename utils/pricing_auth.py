@@ -1,10 +1,19 @@
 """
 Pricing MCP Server — demo authentication (signed JWTs)
 ========================================================
-Shared by `pricing_server.py --http` (which VERIFIES tokens) and the command
-line below (which MINTS them). In production the minting side is an identity
-provider (Entra ID, Auth0, ...) and the server only ever verifies; here one
-shared secret plays both roles so the whole flow fits on a laptop.
+Shared by `m1_mcp/pricing_server.py --http` (which VERIFIES tokens) and the
+command line below (which MINTS them). In production the minting side is an
+identity provider (Entra ID, Auth0, ...) and the server only ever verifies;
+here one shared secret plays both roles so the whole flow fits on a laptop.
+
+How a client such as ADK demo d02 gets a token — it never creates one:
+    1. MINT    python utils/pricing_auth.py --role buyer --write-env
+               → signs {sub, scope, iss, aud, exp} with PRICING_JWT_SECRET
+               → saves it in .env as PRICING_MCP_TOKEN
+    2. SEND    adk web loads .env; d02 puts "Authorization: Bearer <token>"
+               on every MCP request (StreamableHTTPConnectionParams headers)
+    3. VERIFY  pricing_server.py --http runs JwtTokenVerifier on each request,
+               then checks scopes (server-wide and per tool)
 
 Token = HS256-signed JWT with these claims:
     sub    who the caller is (e.g. "buyer-agent")
@@ -19,8 +28,8 @@ Roles (what each token is allowed to do):
     analyst  pricing:read pricing:analyze    → both tools
 
 Mint a token:
-    python m1_mcp/pricing_auth.py --role buyer                 # print it
-    python m1_mcp/pricing_auth.py --role analyst --write-env   # save as PRICING_MCP_TOKEN in .env
+    python utils/pricing_auth.py --role buyer                 # print it
+    python utils/pricing_auth.py --role analyst --write-env   # save as PRICING_MCP_TOKEN in .env
 
 Requires PRICING_JWT_SECRET in .env (see .env.example).
 """

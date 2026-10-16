@@ -116,12 +116,12 @@ In Module 2, the ADK negotiation agents (via `MCPToolset`) start this server aut
 | Server authorization | The token must carry scope `pricing:read` | **403** |
 | Tool authorization | `get_market_price` needs `pricing:read`; `calculate_discount` needs `pricing:analyze` | Tool error: "forbidden: lacks scope …" |
 
-Tokens are HS256-signed JWTs minted by [`pricing_auth.py`](pricing_auth.py) with the secret `PRICING_JWT_SECRET` from `.env`:
+Tokens are HS256-signed JWTs minted by [`utils/pricing_auth.py`](../utils/pricing_auth.py) with the secret `PRICING_JWT_SECRET` from `.env`:
 
 ```bash
-python m1_mcp/pricing_auth.py --role buyer                 # pricing:read           → print token
-python m1_mcp/pricing_auth.py --role analyst --write-env   # pricing:read + analyze → save as PRICING_MCP_TOKEN
-python m1_mcp/pricing_auth.py --role guest                 # no scopes (to see a 403)
+python utils/pricing_auth.py --role buyer                 # pricing:read           → print token
+python utils/pricing_auth.py --role analyst --write-env   # pricing:read + analyze → save as PRICING_MCP_TOKEN
+python utils/pricing_auth.py --role guest                 # no scopes (to see a 403)
 ```
 
 > **stdio and `--sse` are not protected.** The MCP spec defines authorization only for HTTP transports — there's no HTTP request carrying a token over stdio, and a stdio server is trusted by whoever can launch the process. The same tools run without any token there.
@@ -203,7 +203,7 @@ python m1_mcp/sse_agent_client.py --both              # includes inventory queri
 
 # Streamable HTTP with authentication + authorization (used by ADK demo d02)
 python m1_mcp/pricing_server.py --http                # needs PRICING_JWT_SECRET in .env
-python m1_mcp/pricing_auth.py --role buyer            # mint a token (buyer | analyst | guest)
+python utils/pricing_auth.py --role buyer            # mint a token (buyer | analyst | guest)
 ```
 
 **What to expect from the GitHub agent:**

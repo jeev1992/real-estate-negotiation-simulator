@@ -611,7 +611,7 @@ async with streamablehttp_client(url) as (read, write, _):
 
 ## pricing_server.py --http — Authentication & Authorization
 
-**Files:** `m1_mcp/pricing_server.py` (the `--http` mode), `m1_mcp/pricing_auth.py` (token minting + verification)
+**Files:** `m1_mcp/pricing_server.py` (the `--http` mode), `utils/pricing_auth.py` (token minting + verification)
 
 ### What it teaches
 How a remote MCP server protects itself. Once a server is reachable over HTTP, anyone who can reach the URL can call it — so it has to check **who** is calling (authentication) and **what they may do** (authorization). The MCP spec models the server as an OAuth 2.1 **protected resource**: the client sends a bearer token, the server validates it, and tells unauthenticated clients where to get one.
@@ -620,8 +620,8 @@ How a remote MCP server protects itself. Once a server is reachable over HTTP, a
 ```bash
 # once: put a random PRICING_JWT_SECRET in .env (see .env.example)
 python m1_mcp/pricing_server.py --http                 # → http://127.0.0.1:8001/mcp
-python m1_mcp/pricing_auth.py --role buyer             # prints a signed token (pricing:read)
-python m1_mcp/pricing_auth.py --role analyst           # pricing:read pricing:analyze
+python utils/pricing_auth.py --role buyer             # prints a signed token (pricing:read)
+python utils/pricing_auth.py --role analyst           # pricing:read pricing:analyze
 ```
 
 The full agent experience is ADK demo **d02** (M2), which connects to this server with a token from `.env`.
@@ -630,7 +630,7 @@ The full agent experience is ADK demo **d02** (M2), which connects to this serve
 
 | Layer | Where in the code | Rule | Failure |
 |---|---|---|---|
-| **Authentication** | `pricing_auth.JwtTokenVerifier.verify_token()` — plugged into FastMCP as its token verifier | JWT signature, `exp`, `iss`, `aud` must all be valid | **401** + `WWW-Authenticate` header |
+| **Authentication** | `utils/pricing_auth.py: JwtTokenVerifier.verify_token()` — plugged into FastMCP as its token verifier | JWT signature, `exp`, `iss`, `aud` must all be valid | **401** + `WWW-Authenticate` header |
 | **Server authorization** | `AuthSettings(required_scopes=["pricing:read"])` | Token must carry `pricing:read` to use the server at all | **403** |
 | **Tool authorization** | `_require_scope(...)` at the top of each tool, reading `get_access_token()` | `get_market_price` → `pricing:read`; `calculate_discount` → `pricing:analyze` | Tool error the model can read: "forbidden: … lacks scope 'pricing:analyze'" |
 

@@ -118,7 +118,7 @@ Demo 02 connects to the pricing MCP server over Streamable HTTP with a token, so
 
 ```bash
 python m1_mcp/pricing_server.py --http                    # needs PRICING_JWT_SECRET in .env
-python m1_mcp/pricing_auth.py --role buyer --write-env     # or --role analyst / --role guest; restart adk web after switching
+python utils/pricing_auth.py --role buyer --write-env     # or --role analyst / --role guest; restart adk web after switching
 ```
 
 Demo 09 also has a terminal version that drives the same agent with an explicit `Runner` and prints every `Event` it yields (author, tool calls, tool results, state deltas, final-response flag):

@@ -19,7 +19,7 @@ WHAT THE SERVER ENFORCES (m1_mcp/pricing_server.py --http):
 
 Run (two terminals):
     python m1_mcp/pricing_server.py --http                     # terminal 1
-    python m1_mcp/pricing_auth.py --role buyer --write-env      # buyer token → .env
+    python utils/pricing_auth.py --role buyer --write-env      # buyer token → .env
     adk web m2_adk_multiagents/adk_demos/                       # terminal 2
 
 Switch identity: mint a different role with --write-env and restart adk web.
@@ -57,7 +57,7 @@ def _require_tools(callback_context: CallbackContext, llm_request: LlmRequest):
         f"I can't reach the pricing tools: the MCP server at {PRICING_MCP_URL} rejected "
         "the connection or is not running, so no tools were loaded. Check that the server "
         "is started with --http and that PRICING_MCP_TOKEN is a valid, unexpired token "
-        "(python m1_mcp/pricing_auth.py --role buyer --write-env), then restart adk web."
+        "(python utils/pricing_auth.py --role buyer --write-env), then restart adk web."
     ))]))
 
 root_agent = LlmAgent(
