@@ -29,6 +29,7 @@ To demo:
     The deal_picker runs last and synthesizes a recommendation.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -77,33 +78,119 @@ def _enforce_seller_allowlist(tool: BaseTool, args: dict, tool_context: ToolCont
 
 
 # ─── Structured decision tools (one per negotiation to avoid state collision)
+#
+# Both tools enforce the seller's floor in code: an offer at or above it is
+# always recorded as ACCEPT, and nothing below it can be accepted or countered.
 
-def submit_decision_a(action: str, price: int, tool_context: ToolContext) -> dict:
+# 1234 Oak St isn't in the MCP inventory data, so seller B's floor is fixed
+# here (it is also stated in seller_b's instruction).
+_SELLER_B_FLOOR = 480_000
+
+
+def submit_decision_a(
+    action: str, price: int, buyer_offer: int, tool_context: ToolContext
+) -> dict:
     """Submit the seller's decision for negotiation A (742 Evergreen).
 
     Args:
         action: Exactly "ACCEPT" or "COUNTER".
         price: The price in dollars.
+        buyer_offer: The buyer's current offer in dollars, from their latest message.
     """
-    action_upper = action.strip().upper()
-    if action_upper not in ("ACCEPT", "COUNTER"):
-        return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
-    tool_context.state["seller_decision_a"] = {"action": action_upper, "price": price}
-    return {"recorded": action_upper, "price": price}
+    floor = tool_context.state.get("seller_floor_price_a")
+    return _record_decision(tool_context, "a", action, price, buyer_offer, floor)
 
 
-def submit_decision_b(action: str, price: int, tool_context: ToolContext) -> dict:
+def submit_decision_b(
+    action: str, price: int, buyer_offer: int, tool_context: ToolContext
+) -> dict:
     """Submit the seller's decision for negotiation B (1234 Oak St).
 
     Args:
         action: Exactly "ACCEPT" or "COUNTER".
         price: The price in dollars.
+        buyer_offer: The buyer's current offer in dollars, from their latest message.
     """
+    return _record_decision(tool_context, "b", action, price, buyer_offer, _SELLER_B_FLOOR)
+
+
+def _record_decision(
+    tool_context: ToolContext, suffix: str, action: str, price: int,
+    buyer_offer: int, floor: int | None,
+) -> dict:
     action_upper = action.strip().upper()
     if action_upper not in ("ACCEPT", "COUNTER"):
         return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
-    tool_context.state["seller_decision_b"] = {"action": action_upper, "price": price}
-    return {"recorded": action_upper, "price": price}
+    decision = _apply_floor_policy(action_upper, price, buyer_offer, floor)
+    if "error" in decision:
+        return decision
+    tool_context.state[f"seller_decision_{suffix}"] = {
+        "action": decision["action"],
+        "price": decision["price"],
+    }
+    response = {"recorded": decision["action"], "price": decision["price"]}
+    if decision["note"]:
+        response["note"] = decision["note"]
+    return response
+
+
+# ─── Seller floor policy (deterministic, like the buyer's budget check) ───────
+
+def _floor_from_tool_response(response) -> int | None:
+    """Read minimum_acceptable_price from a get_minimum_acceptable_price MCP result."""
+    if not isinstance(response, dict):
+        return None
+    candidates = [response, response.get("structuredContent")]
+    for block in response.get("content") or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            try:
+                candidates.append(json.loads(block.get("text", "")))
+            except ValueError:
+                pass
+    for candidate in candidates:
+        if isinstance(candidate, dict) and isinstance(candidate.get("result"), dict):
+            candidate = candidate["result"]
+        constraints = candidate.get("pricing_constraints") if isinstance(candidate, dict) else None
+        if isinstance(constraints, dict) and isinstance(constraints.get("minimum_acceptable_price"), int):
+            return constraints["minimum_acceptable_price"]
+    return None
+
+
+def _remember_seller_floor_a(tool: BaseTool, args: dict, tool_context: ToolContext, tool_response):
+    """after_tool_callback for seller_a: keep its floor in state for submit_decision_a.
+
+    Suffixed key, because both negotiations share one session. The buyers never
+    see it — no buyer prompt templates this key.
+    """
+    if tool.name == "get_minimum_acceptable_price":
+        floor = _floor_from_tool_response(tool_response)
+        if floor is not None:
+            tool_context.state["seller_floor_price_a"] = floor
+    return None
+
+
+def _apply_floor_policy(action: str, price: int, buyer_offer: int | None, floor: int | None) -> dict:
+    """Return {"action", "price", "note"} after enforcing the floor, or {"error"}.
+
+    - An offer at or above the floor MUST be accepted, at the buyer's price.
+    - Nothing may be accepted or countered below the floor.
+    """
+    if floor is None:
+        return {"error": "Call get_minimum_acceptable_price before submitting a decision."}
+    if buyer_offer is not None and buyer_offer >= floor:
+        note = None
+        if action != "ACCEPT" or price != buyer_offer:
+            note = (
+                f"The buyer's offer of ${buyer_offer:,} meets your minimum, so it was "
+                "recorded as ACCEPT at that price. Your reply MUST accept it, without "
+                "mentioning your minimum or that you have one."
+            )
+        return {"action": "ACCEPT", "price": buyer_offer, "note": note}
+    if action == "ACCEPT" and buyer_offer is not None:
+        return {"error": "The buyer's offer is below your minimum, so you cannot ACCEPT it. COUNTER instead."}
+    if price < floor:
+        return {"error": f"{action} at ${price:,} is below your minimum. Use a price at or above it."}
+    return {"action": action, "price": price, "note": None}
 
 
 # ─── Callbacks ────────────────────────────────────────────────────────────────
@@ -225,7 +312,9 @@ seller_a = LlmAgent(
         "- Start counter at $477,000, drop $5k-$8k per round; NEVER go below your minimum.\n"
         "- If the buyer's offer is at or above your minimum, ACCEPT.\n"
         "- Read {buyer_offer_a}, then ALWAYS call submit_decision_a with "
-        "action='ACCEPT' or 'COUNTER' and the price.\n\n"
+        "action='ACCEPT' or 'COUNTER', the price, and buyer_offer=<the buyer's current "
+        "offer>. It enforces your minimum in code: if it records a different decision "
+        "than you sent (see its 'note'), your reply MUST match what was recorded.\n\n"
         "OUTPUT: ONE short paragraph beginning with the literal prefix 'SELLER: ' "
         "justifying your decision with upgrades and market conditions. "
         "No preamble, no step-by-step thinking.\n\n"
@@ -235,6 +324,7 @@ seller_a = LlmAgent(
     ),
     tools=[_mcp(_PRICING_SERVER), _mcp(_INVENTORY_SERVER), submit_decision_a],
     before_tool_callback=_enforce_seller_allowlist,
+    after_tool_callback=_remember_seller_floor_a,
     output_key="seller_response_a",
     after_agent_callback=_check_agreement_a,
 )
@@ -298,7 +388,9 @@ seller_b = LlmAgent(
         "below $480,000.\n"
         "- If the buyer's offer is at or above $480,000, ACCEPT.\n"
         "- Read {buyer_offer_b}, then ALWAYS call submit_decision_b with "
-        "action='ACCEPT' or 'COUNTER' and the price.\n\n"
+        "action='ACCEPT' or 'COUNTER', the price, and buyer_offer=<the buyer's current "
+        "offer>. It enforces your minimum in code: if it records a different decision "
+        "than you sent (see its 'note'), your reply MUST match what was recorded.\n\n"
         "OUTPUT: ONE short paragraph beginning with the literal prefix 'SELLER: ' "
         "justifying your decision with market conditions and demand. "
         "No preamble, no step-by-step thinking.\n\n"

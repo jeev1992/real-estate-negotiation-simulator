@@ -1722,6 +1722,7 @@ root_agent = LlmAgent(
 | `calculate_discount` | Yes | Yes |
 | `get_inventory_level` | No | Yes |
 | `get_minimum_acceptable_price` | **No** | **Yes** |
+| `submit_decision` (floor enforced in code) | No | Yes |
 
 **session.db after running (2 queries):**
 
@@ -1778,12 +1779,23 @@ Open http://localhost:8000, select `negotiation` from the dropdown. Type "Start 
 
 ```python
 def submit_decision(action: str, price: int, tool_context: ToolContext) -> dict:
-    """Structured decision signal — writes to state, not prose."""
+    """Structured decision signal — writes to state, not prose.
+    Also enforces the seller's floor in code (see below)."""
     action_upper = action.strip().upper()
     if action_upper not in ("ACCEPT", "COUNTER"):
         return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
-    tool_context.state["seller_decision"] = {"action": action_upper, "price": price}
-    return {"recorded": action_upper, "price": price}
+    decision = _apply_floor_policy(action_upper, price,
+        buyer_offer=tool_context.state.get("buyer_offer_price"),   # from submit_offer
+        floor=tool_context.state.get("seller_floor_price"))       # from _remember_seller_floor
+    if "error" in decision:
+        return decision
+    tool_context.state["seller_decision"] = {"action": decision["action"], "price": decision["price"]}
+    return {"recorded": decision["action"], "price": decision["price"], "note": decision["note"]}
+
+def _remember_seller_floor(tool, args, tool_context, tool_response):
+    """after_tool_callback: store the floor from get_minimum_acceptable_price in state."""
+    if tool.name == "get_minimum_acceptable_price":
+        tool_context.state["seller_floor_price"] = _floor_from_tool_response(tool_response)
 
 def _check_agreement(callback_context):
     """Reads structured state — NOT free text."""
@@ -1801,6 +1813,7 @@ buyer = LlmAgent(output_key="buyer_offer",
 seller = LlmAgent(output_key="seller_response",
     tools=[MCPToolset(pricing), MCPToolset(inventory), submit_decision],
     before_tool_callback=_enforce_seller_allowlist,
+    after_tool_callback=_remember_seller_floor,
     after_agent_callback=_check_agreement, ...)
 
 negotiation_round = SequentialAgent(sub_agents=[buyer, seller])
@@ -1812,6 +1825,19 @@ root_agent = LoopAgent(sub_agents=[negotiation_round], max_iterations=5)
 **Why `submit_decision` instead of text parsing?**
 
 The seller's MCP tool `get_minimum_acceptable_price` returns data containing the word "acceptable." If the callback did `"ACCEPT" in response.upper()`, it would match "ACCEPTABLE" and false-trigger on every counter-offer that mentions the floor price. This is exactly the fragile parsing problem that an FSM with structured tool output avoids.
+
+**Why enforce the floor in code, not just in the prompt?**
+
+The seller's instruction says "if the offer is at or above your minimum, you MUST ACCEPT". In a live gpt-4o run the seller still countered a $448,480 offer (floor $445,000) at $463,000 — the model held out for more. A rule that *must* hold belongs in code, exactly like the buyer's $460K cap in `submit_offer`:
+
+| Situation | `submit_decision` records |
+|---|---|
+| Offer ≥ floor, seller sent COUNTER (or ACCEPT at another price) | **ACCEPT at the buyer's price**, with a `note` telling the seller its reply must accept |
+| Offer < floor, seller sent ACCEPT | Error — "you cannot ACCEPT it, COUNTER instead" |
+| Seller counters below its floor | Error — "use a price at or above your minimum" |
+| Floor not looked up yet | Error — "call get_minimum_acceptable_price first" |
+
+The floor comes from the seller's own MCP call: `_remember_seller_floor` (an `after_tool_callback`) copies it into `state["seller_floor_price"]`. No buyer prompt templates that key, so the buyer never sees it. The same pattern is used by the standalone `seller_agent` (A2A demos) and by every exercise solution with a seller.
 
 The `submit_decision` tool writes a structured dict: `{"action": "ACCEPT", "price": 445000}`. The callback reads `state["seller_decision"]["action"]` — a dict field, not prose. No substring matching, no regex, no false positives.
 

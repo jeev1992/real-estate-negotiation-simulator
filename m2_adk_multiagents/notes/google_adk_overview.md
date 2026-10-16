@@ -1369,10 +1369,34 @@ def submit_decision(
     return {"recorded": action_upper, "price": price}
 ```
 
-The seller's instruction says: *"After writing your response, you MUST call
-`submit_decision` with `action='ACCEPT'` or `action='COUNTER'` and the
-price."* Now the decision lives in `state['seller_decision']` as a typed
-dict, not in free-form text.
+The seller's instruction says: *"you MUST call `submit_decision` with
+`action='ACCEPT'` or `action='COUNTER'` and the price."* Now the decision
+lives in `state['seller_decision']` as a typed dict, not in free-form text.
+
+### Enforcing the rule, not just recording it
+
+Recording the decision in a typed dict fixes *reading* it, but the model
+can still *make* the wrong decision. In a live gpt-4o run the seller
+countered a $448,480 offer at $463,000 even though its floor was $445,000
+and its instruction said it MUST accept anything at or above the floor.
+
+So `submit_decision` also enforces the floor in code. An
+`after_tool_callback` copies the floor from the seller's own
+`get_minimum_acceptable_price` result into `state["seller_floor_price"]`,
+and the tool applies it:
+
+```python
+decision = _apply_floor_policy(action_upper, price,
+    buyer_offer=tool_context.state.get("buyer_offer_price"),
+    floor=tool_context.state.get("seller_floor_price"))
+# offer >= floor          -> recorded as ACCEPT at the buyer's price (+ a 'note')
+# ACCEPT below the floor  -> error: COUNTER instead
+# COUNTER below the floor -> error: use a price at or above your minimum
+```
+
+The tool's response tells the model what was recorded, and the instruction
+says its reply must follow it. This is the seller-side twin of the buyer's
+$460K cap in `submit_offer`.
 
 ### How the loop reads the decision
 
@@ -1408,7 +1432,7 @@ Used in our codebase by:
 
 - `negotiation_agents/negotiation/agent.py` — seller's `submit_decision(action, price)`
   signals ACCEPT vs COUNTER to the `_check_agreement` callback that drives
-  `LoopAgent` escalation.
+  `LoopAgent` escalation, and enforces the seller's floor.
 
 This complements (does not replace) the callback pattern. **Callbacks
 intercept and enforce. Structured-signal tools capture and record.**
