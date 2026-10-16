@@ -1553,6 +1553,32 @@ MCPToolset(
 )
 ```
 
+For a **remote** MCP server over Streamable HTTP, credentials travel as HTTP
+headers instead — ADK sends them on every MCP request. Demo d02 does this
+against `pricing_server.py --http`:
+
+```python
+MCPToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url="http://127.0.0.1:8001/mcp",
+        headers={"Authorization": f"Bearer {os.environ['PRICING_MCP_TOKEN']}"},
+        timeout=30.0,
+    )
+)
+```
+
+The two kinds of authorization complement each other:
+
+| | Where it runs | Example in the workshop |
+|---|---|---|
+| **Client-side** (agent decides what it may call) | ADK `before_tool_callback` | buyer/seller allowlists |
+| **Server-side** (server decides what this token may do) | MCP server checks the token's scopes | `pricing_server.py --http`: `pricing:read` for the server, `pricing:analyze` for `calculate_discount` |
+
+Server-side checks protect the server from *any* client; client-side checks
+keep *your* agent in its lane. A bad token makes ADK load no tools from that
+server (401/403); a missing scope comes back as a tool error the model can read.
+Over stdio there is no request to authenticate, so only client-side checks apply.
+
 ### A2A-level auth
 
 When using `adk web --a2a`, A2A endpoints inherit whatever HTTP auth

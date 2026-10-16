@@ -755,15 +755,21 @@ mcp.run(transport="sse", host="0.0.0.0", port=8001)
 
 ### Our Workshop Approach
 
-Our MCP servers support **both transports** via a command-line flag:
+Our pricing server supports **three transports** via a command-line flag:
 
 ```bash
-# stdio (default) — for simple_agents version
+# stdio (default) — the client spawns the server; used by M1 demos 01–03 and the
+# ADK negotiation agents. No authentication: there is no HTTP request to check.
 python m1_mcp/pricing_server.py
 
-# SSE — for ADK version or production
+# SSE — legacy HTTP transport; used by sse_agent_client.py. No authentication.
 python m1_mcp/pricing_server.py --sse --port 8001
+
+# Streamable HTTP + JWT auth (401 / 403 / per-tool scopes) — used by ADK demo d02
+python m1_mcp/pricing_server.py --http            # → http://127.0.0.1:8001/mcp
 ```
+
+The inventory server supports stdio and `--sse`.
 
 ---
 
