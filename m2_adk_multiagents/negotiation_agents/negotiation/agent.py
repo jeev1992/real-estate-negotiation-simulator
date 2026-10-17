@@ -3,17 +3,21 @@ Negotiation Orchestrator — Idiomatic ADK
 ==========================================
 LoopAgent wrapping a SequentialAgent (buyer → seller) to run multi-round
 negotiation with real MCP tools. The buyer calls pricing tools before each
-offer; the seller calls pricing + inventory tools (including the secret
-floor price) before each counter.
+offer. The seller is told to call its tools (market price, inventory, the
+secret floor price) every round; in practice it researches in round 1 and
+reuses that from its context afterwards — submit_decision enforces the floor
+every round regardless.
 
-Demonstrates: LoopAgent, SequentialAgent, MCPToolset, output_key state
+Demonstrates: LoopAgent, SequentialAgent, McpToolset, output_key state
 passing, after_agent_callback with escalation, before_tool_callback
-allowlists, information asymmetry.
+allowlists, information asymmetry (tool allowlists control what each agent
+can CALL; include_contents="none" on the buyer controls what it can READ).
 
 Run with:
     adk web m2_adk_multiagents/negotiation_agents/
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -21,7 +25,7 @@ from google.adk.agents import LlmAgent, LoopAgent, SequentialAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -41,7 +45,6 @@ _INVENTORY_SERVER = str(_REPO_ROOT / "m1_mcp" / "inventory_server.py")
 _BUYER_ALLOWED_TOOLS = {
     "get_market_price",
     "calculate_discount",
-    "get_property_tax_estimate",
     "submit_offer",  # structured offer signal
 }
 
@@ -112,6 +115,10 @@ def submit_decision(
 ) -> dict:
     """Submit the seller's final decision for this round.
 
+    The seller's minimum is enforced here, not left to the model: an offer at
+    or above it is always recorded as ACCEPT, and nothing below it can be
+    accepted or countered.
+
     Args:
         action: Exactly "ACCEPT" or "COUNTER" — no other values.
         price: The price in dollars (e.g. 445000 or 477000).
@@ -119,12 +126,87 @@ def submit_decision(
     action_upper = action.strip().upper()
     if action_upper not in ("ACCEPT", "COUNTER"):
         return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
+    decision = _apply_floor_policy(
+        action_upper,
+        price,
+        buyer_offer=tool_context.state.get("buyer_offer_price"),
+        floor=tool_context.state.get("seller_floor_price"),
+    )
+    if "error" in decision:
+        return decision
+    action_upper, price = decision["action"], decision["price"]
     tool_context.state["seller_decision"] = {
         "action": action_upper,
         "price": price,
     }
     _append_history(tool_context, "seller", action_upper, price)
-    return {"recorded": action_upper, "price": price}
+    response = {"recorded": action_upper, "price": price}
+    if decision["note"]:
+        response["note"] = decision["note"]
+    return response
+
+
+# --- Seller floor policy (deterministic, like the buyer's budget check) ---
+
+
+def _floor_from_tool_response(response) -> int | None:
+    """Read minimum_acceptable_price from a get_minimum_acceptable_price MCP result."""
+    if not isinstance(response, dict):
+        return None
+    candidates = [response, response.get("structuredContent")]
+    for block in response.get("content") or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            try:
+                candidates.append(json.loads(block.get("text", "")))
+            except ValueError:
+                pass
+    for candidate in candidates:
+        if isinstance(candidate, dict) and isinstance(candidate.get("result"), dict):
+            candidate = candidate["result"]
+        constraints = candidate.get("pricing_constraints") if isinstance(candidate, dict) else None
+        if isinstance(constraints, dict) and isinstance(constraints.get("minimum_acceptable_price"), int):
+            return constraints["minimum_acceptable_price"]
+    return None
+
+
+def _remember_seller_floor(
+    tool: BaseTool, args: dict, tool_context: ToolContext, tool_response
+):
+    """after_tool_callback: keep the floor in state so submit_decision can enforce it.
+
+    The buyer never sees it — no buyer prompt templates this key.
+    """
+    if tool.name == "get_minimum_acceptable_price":
+        floor = _floor_from_tool_response(tool_response)
+        if floor is not None:
+            tool_context.state["seller_floor_price"] = floor
+    return None
+
+
+def _apply_floor_policy(
+    action: str, price: int, buyer_offer: int | None, floor: int | None
+) -> dict:
+    """Return {"action", "price", "note"} after enforcing the floor, or {"error"}.
+
+    - An offer at or above the floor MUST be accepted, at the buyer's price.
+    - Nothing may be accepted or countered below the floor.
+    """
+    if floor is None:
+        return {"error": "Call get_minimum_acceptable_price before submit_decision."}
+    if buyer_offer is not None and buyer_offer >= floor:
+        note = None
+        if action != "ACCEPT" or price != buyer_offer:
+            note = (
+                f"The buyer's offer of ${buyer_offer:,} meets your minimum, so it was "
+                "recorded as ACCEPT at that price. Your reply MUST accept it, without "
+                "mentioning your minimum or that you have one."
+            )
+        return {"action": "ACCEPT", "price": buyer_offer, "note": note}
+    if action == "ACCEPT" and buyer_offer is not None:
+        return {"error": "The buyer's offer is below your minimum, so you cannot ACCEPT it. COUNTER instead."}
+    if price < floor:
+        return {"error": f"{action} at ${price:,} is below your minimum. Use a price at or above it."}
+    return {"action": action, "price": price, "note": None}
 
 
 # --- Callbacks ---
@@ -134,6 +216,8 @@ def _check_agreement(callback_context: CallbackContext):
     """After the seller responds, check the structured decision. Escalate on ACCEPT."""
     decision = callback_context.state.get("seller_decision")
     if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        # ADK drops a bare escalate: a callback only emits an event if it changes state.
+        callback_context.state["loop_exit_reason"] = f"ACCEPT at ${decision.get('price', 0):,}"
         callback_context.actions.escalate = True
     return None
 
@@ -141,6 +225,7 @@ def _check_agreement(callback_context: CallbackContext):
 def _check_walk_away(callback_context: CallbackContext):
     """After the buyer responds, end the negotiation if the buyer walked away."""
     if callback_context.state.get("buyer_walk_away"):
+        callback_context.state["loop_exit_reason"] = "BUYER_WALK_AWAY"
         callback_context.actions.escalate = True
     return None
 
@@ -165,6 +250,10 @@ def _init_round_state(callback_context: CallbackContext):
 
 buyer = LlmAgent(
     name="buyer",
+    # Don't give the buyer the shared session history: ADK shows every agent the
+    # other agents' turns as context — including the seller's tool results (its
+    # floor price). The buyer gets the seller's reply via {seller_response}.
+    include_contents="none",
     model=MODEL,
     instruction=(
         "You ARE the buyer's agent in a LIVE negotiation — not an assistant "
@@ -197,9 +286,10 @@ buyer = LlmAgent(
         "price' — you do NOT have that information.\n\n"
         "Do NOT write meta commentary such as "
         "'we will wait for the seller' or reminders/checklists — you ARE negotiating now."
+        "\n\nYour previous offer (empty in round 1):\n{buyer_offer?}"
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -235,7 +325,10 @@ seller = LlmAgent(
         "$477,000 and dropping $5k–$8k per round toward (but never below) your minimum "
         "from get_minimum_acceptable_price.\n"
         "3. Call submit_decision(action='ACCEPT' or 'COUNTER', price=<int>). "
-        "This is REQUIRED every single round — the negotiation cannot proceed without it.\n\n"
+        "This is REQUIRED every single round — the negotiation cannot proceed without it. "
+        "submit_decision enforces your minimum in code: if it records a different "
+        "decision than you sent (see its 'note'), your reply MUST match what was "
+        "recorded.\n\n"
         "The buyer's current offer is ${buyer_offer_price?}.\n"
         "Full buyer message:\n{buyer_offer}\n\n"
         "Then reply with ONE short paragraph justifying your decision, emphasizing "
@@ -250,7 +343,7 @@ seller = LlmAgent(
         "'we will wait for the buyer' or reminders/checklists — you ARE negotiating now."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -259,7 +352,7 @@ seller = LlmAgent(
                 timeout=30.0,
             )
         ),
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -271,6 +364,7 @@ seller = LlmAgent(
         submit_decision,
     ],
     before_tool_callback=_enforce_seller_allowlist,
+    after_tool_callback=_remember_seller_floor,
     output_key="seller_response",
     before_agent_callback=_skip_if_walked_away,
     after_agent_callback=_check_agreement,

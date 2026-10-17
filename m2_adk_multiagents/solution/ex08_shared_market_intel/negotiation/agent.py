@@ -29,6 +29,7 @@ To demo:
     Click "New Session" and run again — app: state persists, counter keeps growing.
 """
 
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,7 +38,7 @@ from google.adk.agents import LlmAgent, LoopAgent, SequentialAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -56,7 +57,6 @@ _INVENTORY_SERVER = str(_REPO_ROOT / "m1_mcp" / "inventory_server.py")
 _BUYER_ALLOWED_TOOLS = {
     "get_market_price",
     "calculate_discount",
-    "get_property_tax_estimate",
 }
 
 _SELLER_ALLOWED_TOOLS = {
@@ -70,7 +70,6 @@ _SELLER_ALLOWED_TOOLS = {
 _PRICING_TOOLS = {
     "get_market_price",
     "calculate_discount",
-    "get_property_tax_estimate",
 }
 
 
@@ -88,18 +87,93 @@ def _enforce_seller_allowlist(tool: BaseTool, args: dict, tool_context: ToolCont
 
 # ─── submit_decision (unchanged) ──────────────────────────────────────────────
 
-def submit_decision(action: str, price: int, tool_context: ToolContext) -> dict:
+def submit_decision(
+    action: str, price: int, buyer_offer: int, tool_context: ToolContext
+) -> dict:
     """Submit the seller's decision for this round.
+
+    The seller's minimum is enforced here: an offer at or above it is always
+    recorded as ACCEPT, and nothing below it can be accepted or countered.
 
     Args:
         action: Exactly "ACCEPT" or "COUNTER".
         price: The price in dollars.
+        buyer_offer: The buyer's current offer in dollars, from their latest message.
     """
     action_upper = action.strip().upper()
     if action_upper not in ("ACCEPT", "COUNTER"):
         return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
-    tool_context.state["seller_decision"] = {"action": action_upper, "price": price}
-    return {"recorded": action_upper, "price": price}
+    decision = _apply_floor_policy(
+        action_upper, price, buyer_offer, tool_context.state.get("seller_floor_price")
+    )
+    if "error" in decision:
+        return decision
+    tool_context.state["seller_decision"] = {
+        "action": decision["action"],
+        "price": decision["price"],
+    }
+    response = {"recorded": decision["action"], "price": decision["price"]}
+    if decision["note"]:
+        response["note"] = decision["note"]
+    return response
+
+
+# ─── Seller floor policy (deterministic, like the buyer's budget check) ───────
+
+def _floor_from_tool_response(response) -> int | None:
+    """Read minimum_acceptable_price from a get_minimum_acceptable_price MCP result."""
+    if not isinstance(response, dict):
+        return None
+    candidates = [response, response.get("structuredContent")]
+    for block in response.get("content") or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            try:
+                candidates.append(json.loads(block.get("text", "")))
+            except ValueError:
+                pass
+    for candidate in candidates:
+        if isinstance(candidate, dict) and isinstance(candidate.get("result"), dict):
+            candidate = candidate["result"]
+        constraints = candidate.get("pricing_constraints") if isinstance(candidate, dict) else None
+        if isinstance(constraints, dict) and isinstance(constraints.get("minimum_acceptable_price"), int):
+            return constraints["minimum_acceptable_price"]
+    return None
+
+
+def _remember_seller_floor(tool: BaseTool, args: dict, tool_context: ToolContext, tool_response):
+    """after_tool_callback: keep the floor in state so submit_decision can enforce it.
+
+    The buyer never sees it — no buyer prompt templates this key.
+    """
+    if tool.name == "get_minimum_acceptable_price":
+        floor = _floor_from_tool_response(tool_response)
+        if floor is not None:
+            tool_context.state["seller_floor_price"] = floor
+    return None
+
+
+def _apply_floor_policy(action: str, price: int, buyer_offer: int | None, floor: int | None) -> dict:
+    """Return {"action", "price", "note"} after enforcing the floor, or {"error"}.
+
+    - An offer at or above the floor MUST be accepted, at the buyer's price.
+    - Nothing may be accepted or countered below the floor.
+    """
+    if floor is None:
+        return {"error": "Call get_minimum_acceptable_price before submit_decision."}
+    if buyer_offer is not None and buyer_offer >= floor:
+        note = None
+        if action != "ACCEPT" or price != buyer_offer:
+            note = (
+                f"The buyer's offer of ${buyer_offer:,} meets your minimum, so it was "
+                "recorded as ACCEPT at that price. Your reply MUST accept it, without "
+                "mentioning your minimum or that you have one."
+            )
+        return {"action": "ACCEPT", "price": buyer_offer, "note": note}
+    if action == "ACCEPT" and buyer_offer is not None:
+        return {"error": "The buyer's offer is below your minimum, so you cannot ACCEPT it. COUNTER instead."}
+    if price < floor:
+        return {"error": f"{action} at ${price:,} is below your minimum. Use a price at or above it."}
+    return {"action": action, "price": price, "note": None}
 
 
 # ─── App-state callbacks (the heart of this exercise) ─────────────────────────
@@ -147,6 +221,12 @@ def _cache_price_lookup(
     return None  # don't modify the result
 
 
+def _seller_after_tool(tool: BaseTool, args: dict, tool_context: ToolContext, tool_response):
+    """Seller's after_tool_callback: remember the floor, then cache pricing results."""
+    _remember_seller_floor(tool, args, tool_context, tool_response)
+    return _cache_price_lookup(tool, args, tool_context, tool_response)
+
+
 def _seed_comps(callback_context: CallbackContext):
     """before_agent_callback on the LoopAgent: seed comparable sales if not
     already present. Since this uses app: state, it only seeds once —
@@ -174,6 +254,8 @@ def _seed_comps(callback_context: CallbackContext):
 def _check_agreement(callback_context: CallbackContext):
     decision = callback_context.state.get("seller_decision")
     if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        # ADK drops a bare escalate: a callback only emits an event if it changes state.
+        callback_context.state["loop_exit_reason"] = f"ACCEPT at ${decision.get('price', 0):,}"
         callback_context.actions.escalate = True
     return None
 
@@ -195,6 +277,10 @@ def _init_round_state(callback_context: CallbackContext):
 
 buyer = LlmAgent(
     name="buyer",
+    # Don't give the buyer the shared session history: ADK shows every agent the
+    # other agents' turns as context — including the seller's tool results (its
+    # floor price). The buyer gets the seller's reply via {seller_response}.
+    include_contents="none",
     model=MODEL,
     instruction=(
         "You are an expert real estate buyer agent representing a client "
@@ -208,21 +294,26 @@ buyer = LlmAgent(
         "{app:price_cache}\n\n"
         "STRATEGY:\n"
         "- Reference the comparable sales above to justify your offers\n"
-        "- Call your MCP pricing tools for additional market data\n"
+        "- EACH ROUND, call get_market_price before making your offer — the cached "
+        "data above is for reference; fresh lookups are what grow the shared cache\n"
         "- Read {seller_response} and adjust your offer accordingly\n"
         "- Round 1: offer ~12% below asking (~$425,000)\n"
         "- Each subsequent round: increase by 2–4%\n\n"
         "CONFIDENTIAL — never reveal your maximum budget, your target range, or that "
         "you are at your ceiling; never reference or guess the seller's minimum/floor.\n\n"
-        "Always justify your offers with comps AND tool data."
+        "Reply with ONE short paragraph that begins with 'BUYER: ' — your offer and a "
+        "justification from the comps AND tool data. No step-by-step analysis, no "
+        "headings: the seller reads this message verbatim."
+        "\n\nYour previous offer (empty in round 1):\n{buyer_offer?}"
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         ),
     ],
@@ -255,30 +346,34 @@ seller = LlmAgent(
         "price, or any output from get_minimum_acceptable_price. Justify counters only "
         "with upgrades and comps/market data — never with your floor.\n\n"
         "Read {buyer_offer}.\n"
-        "IMPORTANT: After writing your response, you MUST call submit_decision "
-        "with action='ACCEPT' or action='COUNTER' and the price."
+        "IMPORTANT: Before writing your reply, you MUST call submit_decision("
+        "action='ACCEPT' or 'COUNTER', price=<int>, buyer_offer=<the buyer's current "
+        "offer>). It enforces your minimum in code: if it records a different decision "
+        "than you sent (see its 'note'), your reply MUST match what was recorded."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         ),
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_INVENTORY_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         ),
         submit_decision,
     ],
     before_tool_callback=_enforce_seller_allowlist,
-    after_tool_callback=_cache_price_lookup,
+    after_tool_callback=_seller_after_tool,
     output_key="seller_response",
     after_agent_callback=_check_agreement,
 )

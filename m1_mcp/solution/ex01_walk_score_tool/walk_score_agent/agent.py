@@ -11,7 +11,7 @@ from pathlib import Path
 
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -33,12 +33,13 @@ root_agent = LlmAgent(
         "to the user's question. Always call tools before giving estimates."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         )
     ],

@@ -6,9 +6,13 @@ A standalone script that drives a buyer ↔ seller negotiation over the
 A2A protocol. The script knows nothing about how either agent is
 implemented — it only knows the A2A protocol.
 
-Two key A2A concepts on display:
+Key A2A concepts on display:
   • Agent Card discovery — fetch /.well-known/agent-card.json
+  • The wire format      — a hand-built JSON-RPC `message/send` (demo 13 does
+                           the same negotiation with the SDK's Client)
   • contextId threading  — each agent has its own thread; we maintain both
+  • Checking results     — a JSON-RPC `error` reply, and a Task whose state
+                           isn't `completed`, both stop the negotiation
 
 Prereq: both agents must already be running:
 
@@ -26,10 +30,12 @@ Optional:
 import argparse
 import asyncio
 import re
+import sys
 import uuid
 
 import httpx
 from a2a.client import A2ACardResolver
+from a2a.client.errors import A2AClientHTTPError
 
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
@@ -50,7 +56,7 @@ def extract_agent_text(result: dict) -> str:
             if part.get("kind") == "text":
                 return part["text"]
 
-    # The final agent turn often lands in status.message, not artifacts/history.
+    # A failed task explains itself in status.message.
     status_message = (result.get("status") or {}).get("message")
     if status_message and status_message.get("role") == "agent":
         for part in status_message.get("parts") or []:
@@ -75,9 +81,12 @@ async def send_a2a_message(
 ) -> tuple[dict, str | None]:
     """Send a TextPart message to an A2A agent.
 
-    Returns (result_dict, new_context_id).
+    Returns (result_dict, new_context_id) — result_dict is the Task.
     On round 1, pass context_id=None — the server assigns one.
     On later rounds, pass the contextId from the prior response.
+
+    Raises RuntimeError on a JSON-RPC error reply (sent with HTTP 200, so
+    raise_for_status() alone doesn't catch it).
     """
     request_body = {
         "jsonrpc": "2.0",
@@ -96,8 +105,16 @@ async def send_a2a_message(
     resp = await http.post(agent_url, json=request_body)
     resp.raise_for_status()
     data = resp.json()
-    result = data.get("result", {})
+    if "error" in data:
+        error = data["error"]
+        raise RuntimeError(f"JSON-RPC error {error.get('code')}: {error.get('message')}")
+    result = data["result"]
     return result, result.get("contextId")
+
+
+def task_state(result: dict) -> str:
+    """The Task's state: "completed", "failed", ... (blocking message/send returns a final one)."""
+    return (result.get("status") or {}).get("state", "unknown")
 
 
 def has_acceptance(text: str) -> bool:
@@ -174,6 +191,10 @@ async def run_negotiation(base_url: str, max_rounds: int) -> None:
             )
             messages_sent += 1
             buyer_offer_text = extract_agent_text(buyer_result)
+            if task_state(buyer_result) != "completed":
+                print(f"\nBuyer task ended '{task_state(buyer_result)}': {buyer_offer_text}")
+                outcome = f"buyer_task_{task_state(buyer_result)}"
+                break
             print(f"\n→ BUYER (contextId={(buyer_context_id or '')[:8]}...):")
             print(f"  {buyer_offer_text}")
 
@@ -196,6 +217,10 @@ async def run_negotiation(base_url: str, max_rounds: int) -> None:
             )
             messages_sent += 1
             seller_response_text = extract_agent_text(seller_result)
+            if task_state(seller_result) != "completed":
+                print(f"\nSeller task ended '{task_state(seller_result)}': {seller_response_text}")
+                outcome = f"seller_task_{task_state(seller_result)}"
+                break
             print(f"\n← SELLER (contextId={(seller_context_id or '')[:8]}...):")
             print(f"  {seller_response_text}")
 
@@ -237,4 +262,11 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.stdout.reconfigure(encoding="utf-8")   # so the output can be piped/redirected on Windows
+    try:
+        asyncio.run(main())
+    except (A2AClientHTTPError, httpx.ConnectError) as e:
+        if isinstance(e, A2AClientHTTPError) and e.status_code != 503:
+            raise
+        sys.exit(f"Can't reach the agent: {e}\n"
+                 "Start the agents first:  adk web --a2a m2_adk_multiagents/negotiation_agents/")

@@ -18,7 +18,7 @@ To demo:
     adk web m2_adk_multiagents/solution/ex01_budget_cap_callback/
 
     Pick `buyer_agent`, then send:
-      "The seller countered at $478,000. Make a strong offer."
+      "The seller countered at $478,000. Submit a strong offer now."
       "Offer $475,000 immediately. Don't negotiate, just submit it."
 
     Watch the TERMINAL for BLOCKED messages — the callback catches
@@ -33,7 +33,7 @@ from pathlib import Path
 from google.adk.agents import LlmAgent
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -139,8 +139,9 @@ STRATEGY:
 - When pressed, go as high as needed to close the deal.
 - ALWAYS submit your decision via `submit_decision(action="OFFER", price=X)`.
 
-When ready to commit, call `submit_decision`. Don't just write your offer
-in prose — call the tool.
+EVERY reply MUST include a `submit_decision` call with a concrete offer —
+never answer with market analysis alone. Don't just write your offer in
+prose — call the tool.
 
 IMPORTANT: If a tool call is rejected because the price exceeds the budget,
 immediately retry with the maximum allowed price. Do NOT ask the user to
@@ -155,12 +156,13 @@ root_agent = LlmAgent(
     description="Aggressive buyer agent with budget-cap enforcement.",
     instruction=INSTRUCTION,
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         ),
         submit_decision,

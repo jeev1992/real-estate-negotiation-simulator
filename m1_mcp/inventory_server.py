@@ -46,6 +46,7 @@ USE IN CLAUDE DESKTOP (full chat host):
 import argparse
 import json
 import random
+import re
 import sys
 from typing import Optional
 
@@ -256,6 +257,34 @@ def get_inventory_level(zip_code: str) -> dict:
     }
 
 
+def _normalize(text: str) -> str:
+    """Lowercase and collapse punctuation/whitespace so ID and address variants compare equal."""
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
+
+
+def _find_seller_constraints(property_id: str) -> Optional[dict]:
+    """Look up seller constraints by property ID or by street address.
+
+    Agents are told the address, not the internal ID, so accept either:
+    "742-evergreen-austin-78701", "742 Evergreen Terrace, Austin, TX 78701",
+    or a leading part of the address such as "742 Evergreen Terrace".
+    """
+    if property_id in SELLER_CONSTRAINTS:
+        return SELLER_CONSTRAINTS[property_id]
+
+    query = _normalize(property_id)
+    if not query:
+        return None
+    for pid, data in SELLER_CONSTRAINTS.items():
+        address = _normalize(data["display_address"])
+        if query == _normalize(pid) or query == address:
+            return data
+        # Require street number + name so a bare "742" doesn't match.
+        if len(query.split()) >= 2 and address.startswith(query):
+            return data
+    return None
+
+
 @mcp.tool()
 def get_minimum_acceptable_price(property_id: str) -> dict:
     """
@@ -276,13 +305,15 @@ def get_minimum_acceptable_price(property_id: str) -> dict:
 
     Args:
         property_id: Unique property identifier
-                     (e.g., "742-evergreen-austin-78701")
+                     (e.g., "742-evergreen-austin-78701"). The property's
+                     street address (e.g., "742 Evergreen Terrace, Austin,
+                     TX 78701") is also accepted.
 
     Returns:
         Seller's floor price, motivation level, and negotiation constraints.
     """
-    # Step 1) Resolve seller-specific constraints for the property.
-    constraints = SELLER_CONSTRAINTS.get(property_id)
+    # Step 1) Resolve seller-specific constraints by ID or address.
+    constraints = _find_seller_constraints(property_id)
 
     if not constraints:
         # Step 2) Generate fallback constraints for unknown IDs.

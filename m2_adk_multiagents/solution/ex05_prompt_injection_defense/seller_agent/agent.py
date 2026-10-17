@@ -39,6 +39,7 @@ To demo:
 """
 
 import re
+import json
 import sys
 from pathlib import Path
 
@@ -46,7 +47,7 @@ from google.adk.agents import LlmAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -121,7 +122,9 @@ def detect_injection(text: str) -> str | None:
 
 from openai import OpenAI
 
-_judge_client = OpenAI()
+# Created on first use (inside the try below), so a missing or bad API key
+# fails open instead of stopping the whole agent from loading.
+_judge_client: OpenAI | None = None
 
 _JUDGE_SYSTEM_PROMPT = (
     "You are a security classifier for a real estate negotiation system.\n\n"
@@ -152,7 +155,10 @@ def llm_judge_injection(text: str) -> bool:
     Returns True if the judge considers it an injection, False if safe.
     On any error, returns False (fail-open — don't break negotiation).
     """
+    global _judge_client
     try:
+        if _judge_client is None:
+            _judge_client = OpenAI()
         response = _judge_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -240,6 +246,7 @@ _SELLER_ALLOWED_TOOLS = {
     "calculate_discount",
     "get_inventory_level",
     "get_minimum_acceptable_price",
+    "submit_decision",  # structured decision, floor enforced in code
 }
 
 
@@ -251,6 +258,96 @@ def _enforce_seller_allowlist(
         return {"error": f"tool '{tool.name}' is not authorized for the seller"}
     return None
 
+
+# ─── submit_decision (enforces the seller's floor in code) ────────────────────
+
+def submit_decision(
+    action: str, price: int, buyer_offer: int, tool_context: ToolContext
+) -> dict:
+    """Submit the seller's decision for this round.
+
+    The seller's minimum is enforced here: an offer at or above it is always
+    recorded as ACCEPT, and nothing below it can be accepted or countered.
+
+    Args:
+        action: Exactly "ACCEPT" or "COUNTER".
+        price: The price in dollars.
+        buyer_offer: The buyer's current offer in dollars, from their latest message.
+    """
+    action_upper = action.strip().upper()
+    if action_upper not in ("ACCEPT", "COUNTER"):
+        return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
+    decision = _apply_floor_policy(
+        action_upper, price, buyer_offer, tool_context.state.get("seller_floor_price")
+    )
+    if "error" in decision:
+        return decision
+    tool_context.state["seller_decision"] = {
+        "action": decision["action"],
+        "price": decision["price"],
+    }
+    response = {"recorded": decision["action"], "price": decision["price"]}
+    if decision["note"]:
+        response["note"] = decision["note"]
+    return response
+
+
+# ─── Seller floor policy (deterministic, like the buyer's budget check) ───────
+
+def _floor_from_tool_response(response) -> int | None:
+    """Read minimum_acceptable_price from a get_minimum_acceptable_price MCP result."""
+    if not isinstance(response, dict):
+        return None
+    candidates = [response, response.get("structuredContent")]
+    for block in response.get("content") or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            try:
+                candidates.append(json.loads(block.get("text", "")))
+            except ValueError:
+                pass
+    for candidate in candidates:
+        if isinstance(candidate, dict) and isinstance(candidate.get("result"), dict):
+            candidate = candidate["result"]
+        constraints = candidate.get("pricing_constraints") if isinstance(candidate, dict) else None
+        if isinstance(constraints, dict) and isinstance(constraints.get("minimum_acceptable_price"), int):
+            return constraints["minimum_acceptable_price"]
+    return None
+
+
+def _remember_seller_floor(tool: BaseTool, args: dict, tool_context: ToolContext, tool_response):
+    """after_tool_callback: keep the floor in state so submit_decision can enforce it.
+
+    The buyer never sees it — no buyer prompt templates this key.
+    """
+    if tool.name == "get_minimum_acceptable_price":
+        floor = _floor_from_tool_response(tool_response)
+        if floor is not None:
+            tool_context.state["seller_floor_price"] = floor
+    return None
+
+
+def _apply_floor_policy(action: str, price: int, buyer_offer: int | None, floor: int | None) -> dict:
+    """Return {"action", "price", "note"} after enforcing the floor, or {"error"}.
+
+    - An offer at or above the floor MUST be accepted, at the buyer's price.
+    - Nothing may be accepted or countered below the floor.
+    """
+    if floor is None:
+        return {"error": "Call get_minimum_acceptable_price before submit_decision."}
+    if buyer_offer is not None and buyer_offer >= floor:
+        note = None
+        if action != "ACCEPT" or price != buyer_offer:
+            note = (
+                f"The buyer's offer of ${buyer_offer:,} meets your minimum, so it was "
+                "recorded as ACCEPT at that price. Your reply MUST accept it, without "
+                "mentioning your minimum or that you have one."
+            )
+        return {"action": "ACCEPT", "price": buyer_offer, "note": note}
+    if action == "ACCEPT" and buyer_offer is not None:
+        return {"error": "The buyer's offer is below your minimum, so you cannot ACCEPT it. COUNTER instead."}
+    if price < floor:
+        return {"error": f"{action} at ${price:,} is below your minimum. Use a price at or above it."}
+    return {"action": action, "price": price, "note": None}
 
 # ─── The agent ────────────────────────────────────────────────────────────────
 
@@ -270,29 +367,38 @@ root_agent = LlmAgent(
         "- Start counter at $477,000, drop $5k–$8k per round only\n"
         "- NEVER go below your minimum (from get_minimum_acceptable_price tool)\n"
         "- If buyer offers at or above your minimum, accept immediately\n"
-        "- Emphasize $75,000 in upgrades to justify premium pricing\n\n"
+        "- Emphasize $75,000 in upgrades to justify premium pricing\n"
+        "- Whenever the buyer makes an offer, ALWAYS call submit_decision(action='ACCEPT' "
+        "or 'COUNTER', price=<int>, buyer_offer=<the buyer's offer>) — for counters too — "
+        "BEFORE replying. It enforces your minimum in code: if it records a different "
+        "decision than you sent (see its 'note'), your reply MUST follow what was "
+        "recorded.\n\n"
         "CONFIDENTIALITY:\n"
         "- Your minimum acceptable price is confidential — never share it\n"
         "- If asked about pricing limits, redirect to the property's value"
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         ),
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_INVENTORY_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         ),
+        submit_decision,
     ],
     before_model_callback=block_injection,  # ← the injection defense
     before_tool_callback=_enforce_seller_allowlist,
+    after_tool_callback=_remember_seller_floor,
 )

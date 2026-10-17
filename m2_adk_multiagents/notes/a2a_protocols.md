@@ -3,7 +3,7 @@
 
 > **Audience:** Engineers who have built one agent and need to connect it to *other* agents — built by other teams, in other languages, on other clouds — without sharing code or memory.
 > **Prerequisites:** Comfort with HTTP and JSON. Familiarity with [`mcp_deep_dive.md`](../../m1_mcp/notes/mcp_deep_dive.md) helps because A2A reuses the same JSON-RPC envelope as MCP.
-> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_12_parts_and_artifacts.py` in `m2_adk_multiagents/adk_demos/`. Seeing the wire frames first is essential.
+> **Read this after:** Demos `a2a_10_wire_lifecycle.py` through `a2a_14_error_handling.py` in `m2_adk_multiagents/a2a_demos/`. Seeing the wire frames first is essential.
 > **Read this next:** [`google_adk_overview.md`](google_adk_overview.md) for how ADK exposes A2A endpoints automatically via `adk web --a2a`.
 >
 > **TL;DR:**
@@ -24,17 +24,19 @@
 7. [A2A Transport Options](#7-a2a-transport-options)
 8. [Error Handling in A2A Communication](#8-error-handling-in-a2a-communication)
 9. [Implementing A2A in Python](#9-implementing-a2a-in-python)
-    - [Google ADK A2A Demo in This Repo](#91-google-adk-a2a-demo-in-this-repo)
+    - [Google ADK A2A in This Repo](#91-google-adk-a2a-in-this-repo)
 10. [Production A2A Patterns](#10-production-a2a-patterns)
 11. [Common Misconceptions](#11-common-misconceptions)
 
 **Part II — The A2A Protocol Spec**
 12. [Spec Overview & Versioning](#12-spec-overview--versioning)
 13. [Agent Card](#13-agent-card)
+    - [How clients find Agent Cards — discovery strategies and registries](#131-how-clients-find-agent-cards--discovery-strategies-and-registries)
+    - [Capabilities — all four, and what each one turns on](#132-capabilities--all-four-and-what-each-one-turns-on)
 14. [Tasks, Messages, Parts, Artifacts](#14-tasks-messages-parts-artifacts)
 15. [JSON-RPC Methods (`message/send`, `message/stream`, `tasks/*`)](#15-json-rpc-methods)
 16. [Task Lifecycle and Status Updates](#16-task-lifecycle-and-status-updates)
-17. [Streaming and Push Notifications](#17-streaming-and-push-notifications)
+17. [Getting Results: Polling, Streaming and Push Notifications](#17-getting-results-polling-streaming-and-push-notifications)
 18. [Authentication and Trust](#18-authentication-and-trust)
 19. [A2A vs MCP Side-by-Side](#19-a2a-vs-mcp-side-by-side)
 
@@ -178,12 +180,12 @@ Problem 4: Discovery
 
 | Approach | Status | Used By |
 |---|---|---|
-| Custom JSON schemas | Most common today | Our workshop, most real projects |
-| Google A2A Protocol | Standardizing (2025) | Google ADK ecosystem, multi-vendor agents |
+| Custom JSON schemas | Common in hand-built systems | Part I of these notes (the design ideas) |
+| A2A Protocol (open spec, started by Google) | Spec v0.3.0 is what these agents speak | Google ADK (`adk web --a2a`), a2a-sdk; the workshop's demos 10–14 |
 | OpenAI Swarm patterns | Experimental | OpenAI ecosystem |
 | Human-readable text | Simple cases | Direct LLM conversation |
 
-**Our approach**: We implement a **custom JSON schema** that's simple enough to understand in a workshop, but structured enough to demonstrate real patterns. This is the most common real-world approach as of 2025.
+**Our approach**: Part I (§4–§8) designs a **custom JSON envelope** — simple enough to understand in a workshop, structured enough to show the design questions any agent protocol has to answer. The running demos then use the **A2A protocol itself** (Part II, §12–§19): Agent Cards, JSON-RPC `message/send`, Tasks, Parts and Artifacts, served by `adk web --a2a`.
 
 ---
 
@@ -621,6 +623,8 @@ response = requests.post(
 
 **Best for**: Microservice architectures, separate agent teams, horizontal scaling.
 
+The A2A protocol is a standardized version of this option: JSON-RPC 2.0 over HTTP(S), with Server-Sent Events for streaming and a published Agent Card instead of hand-agreed endpoints (Part II).
+
 ### Option 3: Message Queue (Production)
 
 ```python
@@ -701,6 +705,29 @@ error_msg = A2AMessage(
     )
 )
 ```
+
+### What errors look like on the wire (demo 14)
+
+The categories above are about the *negotiation*. Underneath, the A2A call
+itself can fail at four layers, and each reaches the client differently
+(a2a-sdk 0.3 `Client`; all observed in `a2a_14_error_handling.py`):
+
+| Layer | How it arrives | Examples observed |
+|---|---|---|
+| Transport | Exception: `A2AClientHTTPError` (`.status_code`), `A2AClientTimeoutError` | Agent not running → 503 from the card resolver; unknown agent path → 404; blocking `message/send` past the read timeout |
+| Protocol | Exception: `A2AClientJSONRPCError` (`.error.code`, `.error.message`); on the wire, HTTP 200 with a JSON-RPC `error` object | -32001 task not found; -32002 task not cancelable; -32601 method not found; -32602 invalid params (with field details); -32603 for "Streaming / Push notifications are not supported by the agent" |
+| Task | No exception: the Task's `status.state` is `failed`, reason in `status.message` | A FilePart (`application/zip`) the model can't read |
+| Application | No exception, state `completed` — the content says the agent couldn't do it | An offer with no price: the seller asks for clarification and records no decision |
+
+Two practical rules: retry only what's transient (connection errors, 5xx);
+and for long work, don't block — a timed-out blocking call leaves the task
+running on the server with no taskId on the client. Send with
+`blocking: false` and poll `tasks/get` (or stream, or push — §17).
+
+The spec defines dedicated codes for unsupported features (-32003 push
+notifications not supported, -32004 unsupported operation); a2a-sdk
+0.3.26's server returned -32603 with a descriptive message instead, so
+check the message as well as the code.
 
 ---
 
@@ -789,26 +816,34 @@ The idiomatic way to run A2A in this repo:
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # Terminal 2 — see the wire format and task lifecycle
-python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py \
+python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py \
     --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 # Terminal 2 — see context threading across rounds
-python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py \
+python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py \
     --seller-url http://127.0.0.1:8000/a2a/seller_agent
 
 # Terminal 2 — see multi-part messages and artifacts
-python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py \
+python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py \
     --seller-url http://127.0.0.1:8000/a2a/seller_agent
+
+# Terminal 2 — orchestrated negotiation: buyer polled, seller streamed
+python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py
+
+# Terminal 2 — errors at four layers (transport, protocol, task, application)
+python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py
 
 ```
 
 Key files:
-- `m2_adk_multiagents/negotiation_agents/buyer_agent/agent.py` (buyer LlmAgent + MCPToolset)
-- `m2_adk_multiagents/negotiation_agents/seller_agent/agent.py` (seller LlmAgent + dual MCPToolsets)
+- `m2_adk_multiagents/negotiation_agents/buyer_agent/agent.py` (buyer LlmAgent + McpToolset)
+- `m2_adk_multiagents/negotiation_agents/seller_agent/agent.py` (seller LlmAgent + dual McpToolsets)
 - `m2_adk_multiagents/negotiation_agents/negotiation/agent.py` (LoopAgent + SequentialAgent)
-- `m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` (raw A2A wire format)
-- `m2_adk_multiagents/adk_demos/a2a_11_context_threading.py` (contextId threading)
-- `m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py` (multi-part messages)
+- `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` (Agent Card + the HTTP bytes of `message/send` + the Task taken apart)
+- `m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py` (contextId threading; taskId vs contextId)
+- `m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py` (multi-part messages; history vs status.message vs artifacts)
+- `m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py` (buyer polled, seller streamed — chosen from each Agent Card)
+- `m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py` (transport, protocol, task and application errors)
 
 ---
 
@@ -878,38 +913,21 @@ Compare to:
 
 ### Pattern 1: Agent Registry
 
-In production, agents need to discover each other. An agent registry solves this:
+In production, agents need to find each other without hard-coded URLs. A
+registry stores Agent Cards and answers queries such as "agents with skill
+tag `seller`". The A2A spec does not define a registry API — see
+[§13.1](#131-how-clients-find-agent-cards--discovery-strategies-and-registries)
+for the discovery strategies and real registries (Google Cloud Agent
+Registry, AGNTCY Agent Directory). Conceptually:
 
 ```python
-class AgentRegistry:
-    """
-    Agents register themselves with their capabilities.
-    Other agents can discover and connect to them.
-    """
-
-    def __init__(self):
-        self._agents: dict[str, AgentCard] = {}
-
-    def register(self, agent_card: AgentCard) -> None:
-        """Agent announces its existence and capabilities."""
-        self._agents[agent_card.agent_id] = agent_card
-
-    def find_by_capability(self, capability: str) -> list[AgentCard]:
-        """Find agents that can handle a specific task."""
-        return [
-            card for card in self._agents.values()
-            if capability in card.capabilities
-        ]
-
-class AgentCard(BaseModel):
-    """The A2A equivalent of an MCP server's tool list."""
-    agent_id: str
-    name: str
-    description: str
-    capabilities: list[str]   # ["real_estate_negotiation", "property_valuation"]
-    endpoint: str             # "http://buyer-agent:8000"
-    supported_message_types: list[MessageType]
-    input_schema: dict        # What messages this agent accepts
+# 1. Agents publish their real A2A Agent Card (the same JSON served at
+#    /.well-known/agent-card.json) to the registry.
+# 2. A client queries by skill, tag, or keyword:
+cards = registry.search(tags=["seller"])          # API differs per registry
+card = cards[0]
+# 3. The client uses the returned card exactly like a fetched one:
+client = ClientFactory(ClientConfig(httpx_client=http)).create(card)   # uses card.url, card.capabilities, ...
 ```
 
 ### Pattern 2: Mediator Agent
@@ -1012,7 +1030,7 @@ delegation_message = A2AMessage(
 The first half of this document explains the *idea* of agent-to-agent
 communication. This part walks through the actual A2A specification.
 Pair each section with a runnable demo under
-[`m2_adk_multiagents/adk_demos/`](../adk_demos/).
+[`m2_adk_multiagents/a2a_demos/`](../a2a_demos/).
 
 To see the protocol live, start the agents with:
 ```bash
@@ -1021,9 +1039,11 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 Then run:
 ```bash
-python m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py
-python m2_adk_multiagents/adk_demos/a2a_11_context_threading.py
-python m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py
+python m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py
+python m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py
+python m2_adk_multiagents/a2a_demos/a2a_12_parts_and_artifacts.py
+python m2_adk_multiagents/a2a_demos/a2a_13_orchestrated_negotiation.py   # polling + streaming
+python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py
 ```
 
 ---
@@ -1075,7 +1095,7 @@ Minimum useful fields:
 | `version`          | Agent implementation version (your code's version).           |
 | `protocolVersion`  | A2A spec version this agent speaks.                           |
 | `preferredTransport` | `"JSONRPC"` is the workshop default.                        |
-| `capabilities`     | `{streaming, pushNotifications}` and friends.                 |
+| `capabilities`     | `{streaming, pushNotifications, stateTransitionHistory, extensions}` — see §13.2. |
 | `skills`           | List of `AgentSkill` objects — what the agent can actually do.|
 | `defaultInputModes` / `defaultOutputModes` | Default MIME types for input/output. |
 | `provider`         | `{organization, url}` — who built/operates the agent.         |
@@ -1084,11 +1104,97 @@ Each `AgentSkill` should have an `id`, `name`, `description`, `tags`,
 `examples`, and per-skill `inputModes`/`outputModes`. Skills are how a
 caller (human or another agent) decides whether your agent is a fit.
 
-With `adk web --a2a`, the seller agent advertises skills automatically
-based on its `description` and tools. Agent Cards are auto-generated.
+With `adk web --a2a`, each agent's card is **read from its `agent.json`**
+(for example `negotiation_agents/seller_agent/agent.json`); agent folders
+without one aren't exposed over A2A. The card's `capabilities` matter: the
+A2A server refuses `message/stream` unless `streaming` is true, and refuses
+push-notification setup unless `pushNotifications` is true (§13.2).
 
-**Demo:** `m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` fetches
+**Demo:** `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` fetches
 and prints the Agent Card before sending the first message.
+
+### 13.1 How clients find Agent Cards — discovery strategies and registries
+
+The A2A docs ([Agent Discovery](https://a2a-protocol.org/latest/topics/agent-discovery/))
+describe three strategies:
+
+| Strategy | How it works | In this workshop |
+|---|---|---|
+| **Well-known URI** | The agent serves its card at `https://{domain}/.well-known/agent-card.json`; a client that knows the domain fetches it | ✅ Every A2A demo fetches the card this way |
+| **Curated registry** (catalog-based) | Agents publish cards to a central registry; clients query it "by criteria like skills or tags" and get back matching cards | Not built — see below |
+| **Direct configuration** | The client is configured with URLs or cards (config files, env vars) | ✅ The base URLs in the demos (`--seller-url`, `--base-url`) are direct configuration |
+
+In the demos the agent's **base URL** is configured directly, and the
+**card** is discovered at the well-known path under it. A registry would
+replace the configured URL with a query ("find me an agent that can
+negotiate as a seller").
+
+**There is no standard registry API.** The A2A docs say so explicitly:
+"The current A2A specification does not prescribe a standard API for
+curated registries." Each registry has its own API and data model.
+
+Real registries you'll meet:
+
+| Registry | What it is | How you search it |
+|---|---|---|
+| **Google Cloud Agent Registry** ([docs](https://docs.cloud.google.com/agent-registry/overview)) | Managed catalog in a Google Cloud project for agents, MCP servers, skills and endpoints. Works with Agent Identity and Agent Gateway for runtime governance. Needs a project and IAM roles (e.g. `roles/agentregistry.viewer` to search); no local emulator | **Agents:** keyword search with `AND` / `OR` / `NOT`, matching metadata, description and the **A2A skills in the Agent Card** — `gcloud agent-registry agents search --search-string="flight OR booking"` — and prefix search such as `displayName:Best_A2A_*`. **Semantic** search (`--search-type=semantic`) is documented for registered *skills* (`SKILL.md` packages), not for agents |
+| **AGNTCY Agent Directory** ([github.com/agntcy/dir](https://github.com/agntcy/dir)) | Open source. Publishes and discovers agent records over a distributed peer-to-peer network (DHT), with cryptographic signing; records use the OASF schema rather than raw Agent Cards. CLI (`dirctl`) and Go/Python/JS SDKs; you run a directory node | **Capability-based** discovery: records describe skills in hierarchical taxonomies (OASF) and are matched by those attributes |
+| **MCP Registry** ([github.com/modelcontextprotocol/registry](https://github.com/modelcontextprotocol/registry)) | The official registry for **MCP servers** — "like an app store for MCP servers". Not for A2A agents; in preview (API frozen at v0.1) | Lists published MCP servers and their metadata |
+
+The search ideas recur across registries:
+
+| Search style | What it matches | Where it appears |
+|---|---|---|
+| **Tags / skills** (structured) | `skills[].tags`, skill names, or a skill taxonomy | A2A docs ("skills or tags"), AGNTCY (OASF taxonomy) |
+| **Keyword** with boolean operators | Name, description, skill text | Google Agent Registry agents |
+| **Prefix** | Start of a field, for autocomplete | Google Agent Registry (`displayName:...*`) |
+| **Semantic** (by meaning) | Embeddings of descriptions / instructions | Google Agent Registry *skills* |
+
+Whatever the registry, it returns an **Agent Card** (or a reference to
+one). The client then reads that card — `url`, `skills`, `capabilities`,
+`securitySchemes` — to decide how to call the agent. That's why rich,
+accurate skill descriptions and tags in your `agent.json` matter: they are
+what gets searched.
+
+### 13.2 Capabilities — all four, and what each one turns on
+
+`capabilities` is how an agent says which optional protocol features it
+supports. The A2A spec (v0.3.0, the version these agents speak) defines four:
+
+| Capability | Meaning (spec v0.3.0) | What it turns on | In this workshop |
+|---|---|---|---|
+| `streaming` | The agent supports Server-Sent Events for streaming responses | `message/stream` — the response is an SSE stream of task updates (§17.2). `tasks/resubscribe` reconnects to a task's stream | `seller_agent`: **true**. `buyer_agent`, `negotiation`: false. Demo 13 streams the seller; demo 14 shows the buyer refusing `message/stream` |
+| `pushNotifications` | The agent can send push notifications for asynchronous task updates | `tasks/pushNotificationConfig/set` / `get` / `list` / `delete`, and a webhook in `message/send`'s `configuration.pushNotificationConfig` (§17.3) | false on every card. Not demoed — ADK's built-in A2A server doesn't send pushes (§17.3). Demo 14 shows the buyer refusing push setup |
+| `stateTransitionHistory` | The agent provides a history of state transitions for a task | Informational — no method depends on it | Not set |
+| `extensions` | Protocol extensions the agent supports: `uri`, `description`, `required` (client must comply), `params` | Extension-specific. The a2a-sdk client sends the extensions it wants to use in an `X-A2A-Extensions` HTTP header | Not set |
+
+**What isn't a capability:** `message/send`, `tasks/get` and `tasks/cancel`
+are always part of the protocol, so **polling** (non-blocking `message/send`
++ `tasks/get`) works with any agent — that's how demo 13 gets the buyer's
+results. (`tasks/cancel` works with ADK's executor: a running task goes to
+`canceled` — demo 14.)
+
+**How strictly it's enforced (a2a-sdk 0.3.26 server):** only two methods
+check the card — `message/stream` (needs `streaming`) and
+`tasks/pushNotificationConfig/set` (needs `pushNotifications`). Both
+refusals come back as JSON-RPC error -32603 with a descriptive message
+(demo 14). `stateTransitionHistory` and `extensions` aren't checked.
+
+**The client side:** the a2a-sdk `Client` reads the card too. With
+`ClientConfig(streaming=True)` it uses `message/stream` only when
+`card.capabilities.streaming` is true, and falls back to `message/send`
+otherwise.
+
+Other card fields advertise features as well, outside `capabilities`:
+`securitySchemes` / `security` (how to authenticate — §18),
+`supportsAuthenticatedExtendedCard` (a fuller card is available from
+`agent/getAuthenticatedExtendedCard` after authenticating),
+`additionalInterfaces` (the same agent over other transports, e.g. gRPC),
+and `signatures` (a signed card).
+
+> Versions differ: the spec's gRPC definition of `AgentCapabilities` has
+> only `streaming`, `push_notifications` and `extensions`. Always read the
+> fields from the card you actually fetched.
 
 ---
 
@@ -1111,7 +1217,7 @@ Four object types describe everything that flows between agents.
               │      │           └── FilePart   { file: { uri | bytes, mimeType } }
               │
               └── artifacts[]  ─────────── durable outputs of the Task
-                     └── Artifact { name, parts[] }
+                     └── Artifact { artifactId, name?, parts[] }
 ```
 
 - **Task** — a single request the client made of the server, with a
@@ -1122,15 +1228,19 @@ Four object types describe everything that flows between agents.
   preserved on the Task.
 - **Part** — the atomic chunk of content. Three kinds: text, structured
   data (JSON), file (URI or inline bytes).
-- **Artifact** — a *named, durable* output attached to the Task. Use this
-  for things you want clients to be able to fetch later — a final
-  summary, a generated PDF, a blob of structured analysis.
+- **Artifact** — a durable output attached to the Task, identified by an
+  `artifactId` (a `name` is optional). Use this for things you want
+  clients to be able to fetch later — a final summary, a generated PDF, a
+  blob of structured analysis.
 
-In Phase 2, the seller server attaches a `negotiation-summary` artifact
-(a `DataPart` with the full structured response) to every completed Task.
+ADK's A2A server turns the agent's final reply into one artifact (a
+`TextPart`, no `name`) when the task completes. The same text is also the
+last agent message in `history`; the artifact is the place to read it from.
 
-**Demo:** `m2_adk_multiagents/adk_demos/a2a_12_parts_and_artifacts.py` sends a
-multi-part message (TextPart + DataPart) and inspects any artifacts the server returns.
+**Demos:** `a2a_10_wire_lifecycle.py` takes a returned Task apart field by
+field; `a2a_12_parts_and_artifacts.py` sends a multi-part message
+(TextPart + DataPart) and compares `history`, `status.message` and
+`artifacts`.
 
 ---
 
@@ -1138,13 +1248,17 @@ multi-part message (TextPart + DataPart) and inspects any artifacts the server r
 
 A2A uses JSON-RPC 2.0 over HTTP POST to the `url` from the Agent Card.
 
-| Method                | What it does                                                |
-|-----------------------|-------------------------------------------------------------|
-| `message/send`        | Send a message; response is the (possibly final) Task.      |
-| `message/stream`      | Same input as `message/send`, but the response is an SSE stream of `TaskStatusUpdateEvent` and `TaskArtifactUpdateEvent`. |
-| `tasks/get`           | Fetch the current state of a Task by id.                    |
-| `tasks/cancel`        | Request cancellation of an in-flight Task.                  |
-| `tasks/pushNotificationConfig/set` / `get` | Subscribe a webhook for async updates. |
+| Method                | What it does                                                | Needs capability |
+|-----------------------|-------------------------------------------------------------|------------------|
+| `message/send`        | Send a message; response is the Task (final if `blocking: true`, else as it stands — usually `submitted`). | — |
+| `message/stream`      | Same input as `message/send`, but the response is an SSE stream of `TaskStatusUpdateEvent` and `TaskArtifactUpdateEvent`. | `streaming` |
+| `tasks/get`           | Fetch the current state of a Task by id (polling).          | — |
+| `tasks/cancel`        | Request cancellation of an in-flight Task.                  | — |
+| `tasks/resubscribe`   | Reconnect to the event stream of a running Task.            | `streaming` |
+| `tasks/pushNotificationConfig/set` / `get` / `list` / `delete` | Manage the webhook(s) for a Task's updates. | `pushNotifications` |
+| `agent/getAuthenticatedExtendedCard` | Fetch a fuller Agent Card after authenticating. | card field `supportsAuthenticatedExtendedCard` |
+
+The SDK server only enforces two of these against the card — see §13.2.
 
 The request envelope is plain JSON-RPC 2.0:
 
@@ -1163,49 +1277,91 @@ The request envelope is plain JSON-RPC 2.0:
 }
 ```
 
-**Demo:** `m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` builds
+**Demo:** `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` builds
 this envelope by hand — no SDK helpers — so you can see the exact wire
 shape.
+
+**Demo (`tasks/get`):** `a2a_13_orchestrated_negotiation.py` polls the
+buyer: it sends `message/send` with `configuration.blocking: false` — the
+response comes back immediately with the task `submitted` — then calls
+`tasks/get`, pausing a second between calls, until the task reaches a final
+state. `a2a_11_context_threading.py` also calls `tasks/get` on an earlier
+round's finished task.
 
 ---
 
 ## 16. Task Lifecycle and Status Updates
 
-Every Task moves through a state machine driven by the server. The
-official states (matching `a2a.types.TaskState`):
+Every Task moves through states set by the server. The spec (v0.3.0)
+defines nine (`a2a.types.TaskState`):
 
-```text
-   ┌─ submitted ─┐
-   │             │
-   ▼             ▼
-working ───► input-required ──► auth-required
-   │              │                  │
-   │              │                  │
-   ├──► completed │                  │
-   ├──► failed    │                  │
-   ├──► canceled ◄┘                  │
-   └──► rejected ◄───────────────────┘
-                                  unknown   (never advertised; only seen on stale fetches)
-```
+| State | Meaning (spec) | Kind |
+|---|---|---|
+| `submitted` | Submitted and awaiting execution | active |
+| `working` | The agent is actively working on it | active |
+| `input-required` | Paused, waiting for input from the user | interrupted — the client sends another message |
+| `auth-required` | Needs authentication to proceed | interrupted |
+| `completed` | Finished successfully | terminal |
+| `failed` | Failed due to an error during execution | terminal |
+| `canceled` | Canceled by the user | terminal |
+| `rejected` | Rejected by the agent and not started | terminal |
+| `unknown` | Unknown or indeterminate | — |
 
-The server advances the state by calling `TaskUpdater` methods:
-`start_work()`, `update_status(state, message=...)`, `add_artifact(...)`,
-`complete(message)`, `failed(message)`, `cancel(message)`, `requires_input(...)`,
-`requires_auth(...)`, `reject(...)`.
+The usual path is `submitted → working → completed` (or `failed`). Once a
+task is terminal it doesn't change; a follow-up message in the same
+`contextId` creates a new task (demo 11).
 
-In Phase 2, our seller server emits a `working` status update *before* the
-slow LLM/MCP roundtrip starts so streaming clients see the agent is alive.
+In an a2a-sdk server you write yourself, the `AgentExecutor` moves the
+task along with `TaskUpdater` methods: `submit()`, `start_work()`,
+`update_status(...)`, `add_artifact(...)`, `complete()`, `failed()`,
+`cancel()`, `reject()`, `requires_input()`, `requires_auth()`. ADK's
+`A2aAgentExecutor` does this for you.
 
-**Demo:** `m2_adk_multiagents/adk_demos/a2a_10_wire_lifecycle.py` sends a valid
-and an invalid envelope so you can compare `completed` vs `failed`.
+ADK's A2A executor emits a `submitted` and then a `working` status update
+*before* the slow LLM/MCP run starts, so streaming clients see the agent is
+alive.
+
+**Demos:** `a2a_10_wire_lifecycle.py` takes a `completed` Task apart;
+`a2a_13_orchestrated_negotiation.py` shows the lifecycle as it happens (the
+buyer's task comes back `submitted` and is polled to `completed`; the
+seller's streamed updates are `working` events until `completed`);
+`a2a_14_error_handling.py` produces a `failed` task (a FilePart the model
+can't read) — no exception, the reason is in `status.message`.
 
 ---
 
-## 17. Streaming and Push Notifications
+## 17. Getting Results: Polling, Streaming and Push Notifications
 
-Two ways the server can update the client over time.
+A task can take a while (the seller calls three MCP tools and an LLM
+before answering). A2A gives the client three ways to get the result:
 
-### 17.1 `message/stream` (Server-Sent Events)
+| Mechanism | How | Needs capability | Connection | In this workshop |
+|---|---|---|---|---|
+| **Polling** | `message/send` with `blocking: false` → task comes back at once; then `tasks/get` until a final state | none | A short request per check | Demo 13 — the buyer |
+| **Streaming** | `message/stream` → one HTTP response that stays open; the server sends each update as an SSE event | `streaming` | One long-lived connection | Demo 13 — the seller |
+| **Push notifications** | `message/send` (or `tasks/pushNotificationConfig/set`) with a webhook → the server POSTs each update to it | `pushNotifications` | None held open; the server calls you | Not demoed (§17.3) |
+
+(The simplest option of all is a *blocking* `message/send`: the response
+arrives when the task is finished. Demos 10–12 use it. It's fine for short
+tasks — demo 14 shows what happens when it isn't.)
+
+Rule of thumb: seconds → block or poll; want progress as it happens →
+stream; minutes, or the client may go away → push.
+
+### 17.1 Polling (`tasks/get`)
+
+The client sends `message/send` with `configuration.blocking: false`. The
+server creates the task, starts the work, and replies straight away with
+the task (state `submitted`). The client then calls `tasks/get` with the
+task's `id` until `status.state` is final (`completed`, `failed`,
+`canceled`, `rejected`). Polling needs no capability: `tasks/get` is
+always available. With the a2a-sdk: `ClientConfig(polling=True)`, then
+`client.get_task(TaskQueryParams(id=task.id))`.
+
+**Demo:** `a2a_13_orchestrated_negotiation.py` polls the buyer (whose card
+says `streaming: false`), once a second, printing each state change.
+
+### 17.2 Streaming (`message/stream`, Server-Sent Events)
 
 The client opens a single HTTP connection. The server flushes events as
 they happen:
@@ -1231,43 +1387,67 @@ whether the server supports `message/stream`:
 ```
 
 **If a client calls `message/stream` against a server with
-`capabilities.streaming: false`, the server returns HTTP 400** — there is
-no automatic fallback to `message/send`. **Robust clients fetch the Agent
-Card first, check the capability, and either proceed or fail loudly.** The
-relevant snippet looks like:
+`capabilities.streaming: false`, the a2a-sdk server refuses it** — HTTP 200
+with a JSON-RPC error `{"code": -32603, "message": "Streaming is not supported
+by the agent"}` — and the server doesn't fall back to `message/send`.
+**Robust clients fetch the Agent Card first and check the capability.**
+The a2a-sdk `Client` does this for you; demo 13 makes the choice visible:
 
 ```python
-card = (await A2ACardResolver(httpx_client=http, base_url=seller_url)
-        .get_agent_card()).model_dump(mode="json")
-if not card.get("capabilities", {}).get("streaming", False):
-    raise RuntimeError(
-        f"{card['name']} does not support streaming; "
-        "use message/send instead."
-    )
+card = await A2ACardResolver(httpx_client=http, base_url=seller_url).get_agent_card()
+if card.capabilities.streaming:
+    config = ClientConfig(httpx_client=http, streaming=True)                  # message/stream
+else:
+    config = ClientConfig(httpx_client=http, streaming=False, polling=True)   # message/send + tasks/get
+client = ClientFactory(config).create(card)
 ```
 
-**Capabilities are the contract.** This applies symmetrically to push
-notifications, blob upload, and any other capability the spec adds —
-always check the card before relying on a feature.
+**Capabilities are the contract.** This applies to push notifications and
+any other capability the spec adds — always check the card before relying
+on a feature. (How strictly a server checks varies — see §13.2. The a2a-sdk
+handler checks `capabilities.pushNotifications` on
+`tasks/pushNotificationConfig/set`, but not on a `message/send` that
+carries a push config inline.)
 
-### 17.2 Push notifications (webhooks)
+**Demo:** `a2a_13_orchestrated_negotiation.py` streams from the seller
+(whose card has `streaming: true`): the seller's MCP tool calls arrive as
+DataParts in `working` updates and print as they happen, then a
+`TaskArtifactUpdateEvent` with the reply, then `completed` with
+`final: true`. `a2a_14_error_handling.py` sends `message/stream` to the
+buyer (`streaming: false`) and prints the error above.
+
+### 17.3 Push notifications (webhooks)
 
 For long-running tasks the client doesn't want to keep a connection open
 for, A2A defines a `pushNotificationConfig` mechanism. The client supplies
 a webhook URL (and optional auth) and the server POSTs lifecycle events
 to it.
 
-The workshop server doesn't enable push notifications
-(`pushNotifications=False` in capabilities). The notes here describe the
-shape so you can recognize it in the spec.
+In the a2a-sdk server, each POST body is the full Task (status, history,
+artifacts), and if the client supplied a `token` it comes back in an
+`X-A2A-Notification-Token` header so the webhook can reject POSTs that
+aren't from the server it registered with.
+
+**In this workshop:** push isn't demonstrated, and every agent card says
+`pushNotifications: false`. ADK's built-in A2A server (`adk web --a2a`,
+`to_a2a()` in ADK 2.11) stores push configs but has no push sender, so it
+never POSTs to a webhook. To push from an ADK agent you'd build the server
+yourself — the same `Runner` + `A2aAgentExecutor`, plus a2a-sdk's
+`DefaultRequestHandler` with a `BasePushNotificationSender`.
 
 ---
 
 ## 18. Authentication and Trust
 
 The protocol does not invent a new auth mechanism — it reuses HTTP
-standards. The Agent Card declares which schemes are accepted (bearer,
-API key, OAuth 2.1, mTLS, ...). Clients pick one supported by both sides.
+standards. The Agent Card declares which schemes are accepted in
+`securitySchemes` (API key, HTTP bearer, OAuth 2.0, OpenID Connect, mutual
+TLS) and which are required in `security`. Clients pick one supported by
+both sides. An agent can also set `supportsAuthenticatedExtendedCard` and
+serve a fuller card — e.g. extra skills — from
+`agent/getAuthenticatedExtendedCard` to authenticated callers only.
+
+The workshop's agent cards declare no security schemes.
 
 For workshop servers we run on `127.0.0.1` with no auth — fine for a
 local demo, **never appropriate for production**. In production:
@@ -1290,8 +1470,8 @@ local demo, **never appropriate for production**. In production:
 | Transport                 | stdio / Streamable HTTP      | HTTP(S) JSON-RPC (+ SSE streaming) |
 | Discovery                 | `tools/list`, `resources/list`, `prompts/list` | `GET /.well-known/agent-card.json` |
 | Unit of work              | A single tool call           | A `Task` with messages + artifacts |
-| Long-running              | Tool returns when done       | Task may stream `working` updates  |
-| Authn/z                   | Server's responsibility, no spec primitives | HTTP-standard auth declared in card |
+| Long-running              | Tool returns when done (progress notifications optional) | Task states; get results by polling, streaming or push (§17) |
+| Authn/z                   | Optional authorization spec (OAuth 2.1) for HTTP transports; stdio uses the environment | HTTP-standard auth declared in the card (`securitySchemes`) |
 | Conversation memory       | Host-side                    | `contextId` threads tasks together |
 | Best mental model         | "Function library on a wire" | "Agent as a microservice"          |
 
@@ -1304,7 +1484,7 @@ clients*, an MCP host *to its tool servers*. Our seller is exactly that.
 |---|---|
 | **A2A definition** | Autonomous agents communicating with each other |
 | **vs MCP** | MCP = agent to tools; A2A = agent to agent |
-| **No standard yet** | Custom JSON schemas are most common in 2025 |
+| **Standards** | A2A is an open spec (v0.3.0 here); custom JSON schemas are still common in hand-built systems |
 | **Message schema** | Include identity, temporal context, intent, payload |
 | **State machine** | Track valid message transitions to prevent invalid moves |
 | **Transport** | In-process (simple), HTTP (microservices), MQ (production) |

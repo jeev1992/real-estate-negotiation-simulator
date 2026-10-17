@@ -2,14 +2,14 @@
 ## Building Production-Grade Agents with Google's Agent Development Kit
 
 > **Audience:** Engineers who have built ad-hoc LLM agents (the OpenAI tool-calling loop, a custom session store, hand-rolled multi-agent orchestration) and want a framework that handles all that infrastructure declaratively.
-> **Prerequisites:** Familiarity with the OpenAI / Anthropic tool-calling loop. Helpful but not required: [`mcp_deep_dive.md`](../../m1_mcp/notes/mcp_deep_dive.md) for the protocol ADK speaks via `MCPToolset`.
+> **Prerequisites:** Familiarity with the OpenAI / Anthropic tool-calling loop. Helpful but not required: [`mcp_deep_dive.md`](../../m1_mcp/notes/mcp_deep_dive.md) for the protocol ADK speaks via `McpToolset`.
 > **Read this after:** Running at least `adk web m2_adk_multiagents/adk_demos/` and trying demos d01–d06.
 > **Read this next:** [`a2a_protocols.md`](a2a_protocols.md) for the protocol layer that exposes ADK agents over the network. [`adk_quick_reference.md`](adk_quick_reference.md) is the one-page lookup for the constructs covered here.
 >
 > **TL;DR:**
 > 1. **ADK is opinionated infrastructure for LLM agents.** Sessions, memory, streaming, multi-agent orchestration, tool integration — all declarative. You write `root_agent = LlmAgent(...)` and ADK gives you a runtime.
-> 2. **Four primitives you'll touch every day:** `LlmAgent` (the agent), `Runner` (the loop), `SessionService` (memory), and some toolset (usually `MCPToolset`). Workflow agents — `SequentialAgent`, `ParallelAgent`, `LoopAgent` — and callbacks compose on top.
-> 3. **`adk web` runs everything.** It auto-discovers agents from package structure, creates Runner + Session for you, gives you a chat UI with event stream, and (with `--a2a`) exposes each agent as an A2A network service with an auto-generated Agent Card.
+> 2. **Four primitives you'll touch every day:** `LlmAgent` (the agent), `Runner` (the loop), `SessionService` (memory), and some toolset (usually `McpToolset`). Workflow agents — `SequentialAgent`, `ParallelAgent`, `LoopAgent` — and callbacks compose on top.
+> 3. **`adk web` runs everything.** It auto-discovers agents from package structure, creates Runner + Session for you, gives you a chat UI with event stream, and (with `--a2a`) exposes each agent that has an `agent.json` as an A2A network service, serving that file as its Agent Card.
 
 See also: [A2A Protocols](a2a_protocols.md) for the protocol layer that lets ADK agents talk to other agents.
 
@@ -234,7 +234,7 @@ ADK has five core components that work together:
 ┌──────────────────────────────────────────────────────────────────┐
 │                         TOOLS                                    │
 │                                                                  │
-│  FunctionTool    MCPToolset    AgentTool    BuiltInTools          │
+│  FunctionTool    McpToolset    AgentTool    BuiltInTools          │
 │  (Python func)   (MCP server) (sub-agent)  (code exec, etc.)     │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -513,18 +513,22 @@ buyer_agent = LlmAgent(
 
 ## 6. MCP Integration in ADK
 
-This is one of ADK's most powerful features — first-class MCP support via `MCPToolset`.
+This is one of ADK's most powerful features — first-class MCP support via `McpToolset`.
 
 ### Using stdio MCP Servers
 
 ```python
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioServerParameters
+from google.adk.tools.mcp_tool.mcp_toolset import (
+    McpToolset,
+    StdioServerParameters,
+    StreamableHTTPConnectionParams,
+)
 
 async def create_buyer_with_mcp():
     """Create a buyer agent with MCP tools from our pricing server."""
 
     # Connect to our pricing MCP server
-    pricing_toolset = MCPToolset(
+    pricing_toolset = McpToolset(
         connection_params=StdioServerParameters(
             command="python",
             args=["m1_mcp/pricing_server.py"],
@@ -532,12 +536,11 @@ async def create_buyer_with_mcp():
         )
     )
 
-    # Connect to GitHub's MCP server (for market research)
-    github_toolset = MCPToolset(
-        connection_params=StdioServerParameters(
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-github"],
-            env={"GITHUB_PERSONAL_ACCESS_TOKEN": os.environ["GITHUB_TOKEN"]}
+    # Connect to GitHub's hosted MCP server (for market research) over Streamable HTTP
+    github_toolset = McpToolset(
+        connection_params=StreamableHTTPConnectionParams(
+            url="https://api.githubcopilot.com/mcp/readonly",
+            headers={"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}"},
         )
     )
 
@@ -561,12 +564,12 @@ async def create_buyer_with_mcp():
 ### Using SSE MCP Servers
 
 ```python
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseServerParams
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, SseServerParams
 
 # Start pricing server in SSE mode first:
 # python m1_mcp/pricing_server.py --sse --port 8001
 
-pricing_toolset = MCPToolset(
+pricing_toolset = McpToolset(
     connection_params=SseServerParams(
         url="http://localhost:8001/sse"
     )
@@ -593,7 +596,7 @@ pricing_toolset = MCPToolset(
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      MCPToolset                                 │
+│                      McpToolset                                 │
 │                                                                 │
 │  Receives: {"tool": "get_market_price",                         │
 │             "args": {"address": "742 Evergreen..."}}            │
@@ -704,7 +707,7 @@ Understanding the ADK agent lifecycle helps debug production issues.
    ─────────────────
    • Agent is created with LlmAgent(...)
    • Tools are registered
-   • MCP connections established (if MCPToolset used)
+   • MCP connections established (if McpToolset used)
    • Session service is set up
 
 2. SESSION CREATION
@@ -918,7 +921,7 @@ buyer_agent = LlmAgent(
 | **Iterative Refinement** | `LoopAgent` with escalation signals until quality threshold met | Negotiation, code generation, writing tasks |
 
 **In our workshop, we use two patterns:**
-- **Declarative agents** (`negotiation_agents/buyer_agent/agent.py`, `seller_agent/agent.py`) — each is a `root_agent = LlmAgent(...)` with MCPToolset
+- **Declarative agents** (`negotiation_agents/buyer_agent/agent.py`, `seller_agent/agent.py`) — each is a `root_agent = LlmAgent(...)` with McpToolset
 - **Orchestrated negotiation** (`negotiation_agents/negotiation/agent.py`) — a `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` with `after_agent_callback` for termination
 
 ### Agent Hierarchy Design Principles
@@ -982,7 +985,7 @@ Here's how our negotiation simulator uses ADK (detailed in `m2_adk_multiagents/`
 # m2_adk_multiagents/negotiation_agents/buyer_agent/agent.py
 
 from google.adk.agents import LlmAgent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioConnectionParams, StdioServerParameters
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, StdioConnectionParams, StdioServerParameters
 
 root_agent = LlmAgent(
     name="buyer_agent",
@@ -993,12 +996,13 @@ root_agent = LlmAgent(
         "Maximum budget: $460,000. Call MCP tools before every offer."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,  # MCP startup timeout — the default is too short for Windows cold starts
             )
         )
     ],
@@ -1008,11 +1012,11 @@ root_agent = LlmAgent(
 
 **Key points:**
 - No class, no `__aenter__`/`__aexit__`, no manual Runner — just `root_agent = LlmAgent(...)`
-- MCPToolset goes directly in the `tools` list — ADK manages the lifecycle
+- McpToolset goes directly in the `tools` list — ADK manages the lifecycle
 - `adk web` discovers this agent automatically from the package structure
-- `adk web --a2a` serves it as an A2A endpoint with an auto-generated Agent Card
+- `adk web --a2a` serves it as an A2A endpoint, with its `agent.json` as the Agent Card
 
-### Seller Agent — Dual MCPToolsets
+### Seller Agent — Dual McpToolsets
 
 ```python
 # m2_adk_multiagents/negotiation_agents/seller_agent/agent.py
@@ -1022,14 +1026,16 @@ root_agent = LlmAgent(
     model="openai/gpt-4o",
     instruction="...",
     tools=[
-        MCPToolset(...)  # pricing server
-        MCPToolset(...)  # inventory server — has get_minimum_acceptable_price
+        McpToolset(...)  # pricing server
+        McpToolset(...)  # inventory server — has get_minimum_acceptable_price
     ],
     before_tool_callback=_enforce_seller_allowlist,
 )
 ```
 
 Seller has access to `get_minimum_acceptable_price` — the buyer does not. Same information asymmetry as Module 1, now declarative.
+
+One catch in the `negotiation` orchestrator, where buyer and seller share a session: ADK gives every agent the *other* agents' turns as context, tool results included. So an allowlist alone isn't enough — the buyer could still read the seller's floor-price result. The buyer is created with `include_contents="none"`, so it only sees its current turn (starting at the seller's last reply); what it needs from earlier comes in through `{seller_response}` and `{buyer_offer?}`.
 
 ### Negotiation Orchestrator — LoopAgent + SequentialAgent
 
@@ -1052,29 +1058,11 @@ root_agent = LoopAgent(name="negotiation", sub_agents=[round], max_iterations=5)
 # Interactive web UI — pick buyer, seller, or negotiation from dropdown
 adk web m2_adk_multiagents/negotiation_agents/
 
-# With A2A endpoints (Agent Cards auto-generated)
+# With A2A endpoints (each agent's Agent Card comes from its agent.json)
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 # ADK demos (9 concept demos in dropdown)
 adk web m2_adk_multiagents/adk_demos/
-```
-Property: 742 Evergreen Terrace, Austin, TX 78701
-Listed at: $485,000
-
-Seller's profile:
-- Minimum acceptable price: $445,000 (absolute floor)
-- Ideal outcome: Close at $465,000 or above
-- Property highlights: Renovated kitchen (2023), new roof (2022)
-
-Strategy:
-1. Use get_inventory_level() to understand market pressure
-2. Use get_minimum_acceptable_price() to confirm your floor price
-3. Start counter-offers at $477,000
-4. Come down in small increments (1-2% at a time)
-5. Never go below $445,000
-
-Leverage your property's upgrades in every counter-offer.
-"""
 ```
 
 ---
@@ -1104,7 +1092,7 @@ Understanding when to use each approach:
 This workshop uses **Google ADK** (`m2_adk_multiagents/`) as the production-style implementation:
 
 - ADK `LlmAgent` defines buyer and seller
-- `MCPToolset` integrates the M1 MCP servers natively
+- `McpToolset` integrates the M1 MCP servers natively
 - `Runner` + `InMemorySessionService` manage the per-session conversation state
 - ADK workflow agents (`SequentialAgent`, `LoopAgent`) provide bounded multi-agent orchestration
 - A2A SDK exposes the seller as an HTTP service so any A2A-compatible client can talk to it
@@ -1123,9 +1111,9 @@ Without a framework, you'd have to build all of this by hand — raw `while True
 
 **Reality**: ADK supports other models via LiteLLM integration (this workshop uses `openai/gpt-4o`). Gemini has the deepest native integration, but other providers are first-class through the provider-prefixed model id.
 
-### ❌ "MCPToolset downloads tools from the internet"
+### ❌ "McpToolset downloads tools from the internet"
 
-**Reality**: MCPToolset connects to MCP servers you specify — either local (stdio) or remote (SSE). It doesn't download or discover tools from any registry automatically.
+**Reality**: McpToolset connects to MCP servers you specify — either local (stdio) or remote (SSE). It doesn't download or discover tools from any registry automatically.
 
 ### ❌ "ADK handles the negotiation logic"
 
@@ -1136,7 +1124,7 @@ Without a framework, you'd have to build all of this by hand — raw `while True
 # Part II — ADK Internals (Phase 2 Deep-Dive)
 
 The first half of this document showed *what ADK is* and the basic
-LlmAgent + Runner + Session + MCPToolset + workflow-agent vocabulary.
+LlmAgent + Runner + Session + McpToolset + workflow-agent vocabulary.
 This half drills into the abstractions you reach for once a single
 LlmAgent is no longer enough. Each section has a runnable demo under
 [`m2_adk_multiagents/adk_demos/`](../adk_demos/).
@@ -1148,6 +1136,8 @@ LlmAgent is no longer enough. Each section has a runnable demo under
 ADK ships three workflow agents. They are *not* LlmAgents — they don't
 call a model themselves. They orchestrate other agents (which usually
 *are* LlmAgents).
+
+> **ADK 2.x note — `Workflow`.** In ADK 2.x, `SequentialAgent`, `ParallelAgent` and `LoopAgent` still work (this workshop uses them, tested on ADK 2.11) but are **deprecated in favor of `Workflow`**, a new graph-based engine (nodes connected by edges, in `google.adk.workflow`). You'll see `DeprecationWarning: SequentialAgent is deprecated in favor of Workflow…` when these agents load. ADK says they will be removed in a future version, and that `Workflow` cannot yet be used as an `LlmAgent` sub-agent. The concepts — run in order, run in parallel, repeat until a condition — carry over.
 
 ### 14.1 `SequentialAgent`
 
@@ -1194,6 +1184,15 @@ LoopAgent(name="haggle_loop", sub_agents=[haggler], max_iterations=5)
 In the demo, the haggler's `after_agent_callback` parses the proposed
 price and sets `callback_context.actions.escalate = True` once the price
 is in the target range.
+
+> **Gotcha — a bare escalate in a callback is dropped.** ADK only turns an
+> `after_agent_callback` / `before_agent_callback` into an Event when the
+> callback returns content **or changes state**. Setting
+> `actions.escalate = True` with nothing else produces no event, so the
+> `LoopAgent` never sees it and keeps iterating. Always pair it with a
+> state write, e.g. `callback_context.state["loop_exit_reason"] = "..."`.
+> (Escalating from inside a *tool* via `tool_context.actions` is fine —
+> the tool's response event always carries it.)
 
 Use it for: iterate-until-good-enough loops (refine, retry, sample).
 
@@ -1262,23 +1261,26 @@ Through `tool_context` a tool can:
 
 **`user:` vs `app:` in practice:** If Alice and Bob both use the app,
 `user:total_offers` has a different value for each (per-buyer). But
-`app:negotiations_run` is global — both see the same counter. In `adk web`,
-`user_id` defaults to `"user"` so both behave the same in a workshop.
-The distinction matters in production with multiple users.
+`app:total_offers` is global — both see the same counter. `adk web` always
+uses `user_id="user"`, so in the UI the two move together; a real app
+creates its own `Runner` and passes each person's `user_id`, and then they
+diverge.
 
 In our agents, `negotiation_agents/buyer_agent/agent.py` uses
 `before_tool_callback=_enforce_buyer_allowlist` to scope the buyer's
 allowed tools. The seller has a similar allowlist that additionally
 permits `get_minimum_acceptable_price`.
 
-**Demo:** `m2_adk_multiagents/adk_demos/d03_sessions_state/agent.py`.
+**Demo:** `m2_adk_multiagents/adk_demos/d03_sessions_state/agent.py` —
+writes session, `user:`, and `app:` state from one tool.
 
 ---
 
 ## 17. Callbacks
 
 Callbacks are how you plug *policy* into an agent without changing its
-instruction. They run synchronously around model and tool calls.
+instruction. They run around agent, model, and tool calls (plain functions
+or `async` functions both work).
 
 The mental model: **instructions are *suggestive*, callbacks are *deterministic*.**
 You can tell the LLM "never offer above $460,000" in its instruction — and most
@@ -1293,7 +1295,7 @@ When you can tolerate suggestions, use the instruction.**
 |----------------------------|-------------------------------------|---------------------------------------------------------|
 | `before_agent_callback`    | before the agent's first model turn | None = continue; `Content` = use this instead of running the agent |
 | `after_agent_callback`     | after the agent's last event        | None = continue; `Content` = replace final response     |
-| `before_model_callback`    | before each LLM request             | None = continue; mutate `llm_request` in place          |
+| `before_model_callback`    | before each LLM request             | None = continue (mutate `llm_request` in place to edit it); `LlmResponse` = skip the LLM call |
 | `after_model_callback`     | after each LLM response             | None = continue; return `LlmResponse` to replace        |
 | `before_tool_callback`     | before each tool call               | None = run the tool; `dict` = short-circuit with this result |
 | `after_tool_callback`      | after each tool returns             | None = use the tool's result; return value replaces it   |
@@ -1301,14 +1303,22 @@ When you can tolerate suggestions, use the instruction.**
 Each callback receives a `CallbackContext` (or `ToolContext` for tool
 callbacks) with the same state/artifact/actions surface as `ToolContext`.
 
+Only `before_agent_callback` and `after_agent_callback` exist on workflow
+agents (`LoopAgent`, `SequentialAgent`, `ParallelAgent`) — they never call a
+model or tool themselves. The model and tool hooks are `LlmAgent`-only.
+
 In our agents, `negotiation_agents/buyer_agent/agent.py` and
 `negotiation_agents/seller_agent/agent.py` use `before_tool_callback`
 to enforce a tool allowlist — the buyer can never accidentally call the
 seller-private inventory tools, even if the model tries.
 
-**Demo:** `m2_adk_multiagents/adk_demos/d08_callbacks/agent.py` wires
-`before_model` (PII redaction), `before_tool` (allowlist), and
-`after_tool` (logging) into a single agent.
+**Demo:** `m2_adk_multiagents/adk_demos/d08_callbacks/agent.py` wires five
+hooks into one agent, none of whose policies appear in its instruction:
+`before_agent` (turn counter), `before_model` (SSN redaction),
+`before_tool` (allowlist — the model *does* try the blocked admin tool),
+`after_tool` (strips a confidential field from the result), and
+`after_model` (removes phone numbers from the reply). Each one also appends
+to `state["callback_audit"]`, visible in the `adk web` State tab.
 
 ---
 
@@ -1360,10 +1370,44 @@ def submit_decision(
     return {"recorded": action_upper, "price": price}
 ```
 
-The seller's instruction says: *"After writing your response, you MUST call
-`submit_decision` with `action='ACCEPT'` or `action='COUNTER'` and the
-price."* Now the decision lives in `state['seller_decision']` as a typed
-dict, not in free-form text.
+The seller's instruction says: *"you MUST call `submit_decision` with
+`action='ACCEPT'` or `action='COUNTER'` and the price."* Now the decision
+lives in `state['seller_decision']` as a typed dict, not in free-form text.
+
+### Enforcing the rule, not just recording it
+
+Recording the decision in a typed dict fixes *reading* it, but the model
+can still *make* the wrong decision. In a live gpt-4o run the seller
+countered a $448,480 offer at $463,000 even though its floor was $445,000
+and its instruction said it MUST accept anything at or above the floor.
+
+So `submit_decision` also enforces the floor in code. An
+`after_tool_callback` copies the floor from the seller's own
+`get_minimum_acceptable_price` result into `state["seller_floor_price"]`,
+and the tool applies it:
+
+```python
+decision = _apply_floor_policy(action_upper, price,
+    buyer_offer=tool_context.state.get("buyer_offer_price"),
+    floor=tool_context.state.get("seller_floor_price"))
+# offer >= floor          -> recorded as ACCEPT at the buyer's price (+ a 'note')
+# ACCEPT below the floor  -> error: COUNTER instead
+# COUNTER below the floor -> error: use a price at or above your minimum
+```
+
+The tool's response tells the model what was recorded, and the instruction
+says its reply must follow it. This is the seller-side twin of the buyer's
+$460K cap in `submit_offer`.
+
+**Limitation:** the policy only runs when the seller calls `submit_decision`.
+The instruction makes that mandatory, but the model can still skip the call
+and answer in prose, leaving that turn unchecked. A full fix forces a tool
+call until the decision is recorded — ADK's `tool_config` mode `ANY` set per
+request from a `before_model_callback`. ADK 2.x's LiteLLM bridge forwards
+that to OpenAI as `tool_choice="required"`: the model must call *a* tool
+(it doesn't pass `allowed_function_names`, so not necessarily
+`submit_decision`), so the callback keeps setting it until the decision is
+in state.
 
 ### How the loop reads the decision
 
@@ -1374,6 +1418,8 @@ def _check_agreement(callback_context: CallbackContext):
     """Read structured state, not free text."""
     decision = callback_context.state.get("seller_decision")
     if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        # State write is required — a bare escalate is dropped (see 14.3).
+        callback_context.state["loop_exit_reason"] = f"ACCEPT at ${decision['price']:,}"
         callback_context.actions.escalate = True
     return None
 ```
@@ -1397,7 +1443,7 @@ Used in our codebase by:
 
 - `negotiation_agents/negotiation/agent.py` — seller's `submit_decision(action, price)`
   signals ACCEPT vs COUNTER to the `_check_agreement` callback that drives
-  `LoopAgent` escalation.
+  `LoopAgent` escalation, and enforces the seller's floor.
 
 This complements (does not replace) the callback pattern. **Callbacks
 intercept and enforce. Structured-signal tools capture and record.**
@@ -1420,9 +1466,17 @@ carries:
 - `is_final_response()` — convenience predicate: this is the last text
   the agent will emit for the current invocation.
 
+**Demo:** `python m2_adk_multiagents/adk_demos/d09_event_stream/run_event_stream.py`
+drives an agent with `InMemoryRunner.run_async()` and prints each of these
+fields for every event. Note that the user's message is appended to the
+session but is **not** yielded by `run_async()` — only agent-authored
+events are.
+
 **Escalation** is how you break out of containers. Setting
 `actions.escalate = True` tells the nearest parent workflow agent
 (`LoopAgent` is the typical target) to stop iterating after this event.
+From an agent callback, the escalate only reaches the loop if the callback
+also changes state (otherwise no event is emitted — see 14.3).
 
 State deltas attached to events become the canonical record of how state
 changed during the invocation — the `negotiation_agents/negotiation/agent.py`
@@ -1471,20 +1525,47 @@ secrets manager.
 
 ### MCP server credentials
 
-MCPToolset with `StdioServerParameters` can pass environment variables
+McpToolset with `StdioServerParameters` can pass environment variables
 to the spawned server process — this is how you inject API keys:
 
 ```python
-MCPToolset(
+McpToolset(
     connection_params=StdioConnectionParams(
         server_params=StdioServerParameters(
             command=sys.executable,
             args=["my_server.py"],
             env={"API_KEY": os.environ["API_KEY"]},  # injected
-        )
+        ),
+        timeout=30.0,
     )
 )
 ```
+
+For a **remote** MCP server over Streamable HTTP, credentials travel as HTTP
+headers instead — ADK sends them on every MCP request. Demo d02 does this
+against `pricing_server.py --http`:
+
+```python
+McpToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url="http://127.0.0.1:8001/mcp",
+        headers={"Authorization": f"Bearer {os.environ['PRICING_MCP_TOKEN']}"},
+        timeout=30.0,
+    )
+)
+```
+
+The two kinds of authorization complement each other:
+
+| | Where it runs | Example in the workshop |
+|---|---|---|
+| **Client-side** (agent decides what it may call) | ADK `before_tool_callback` | buyer/seller allowlists |
+| **Server-side** (server decides what this token may do) | MCP server checks the token's scopes | `pricing_server.py --http`: `pricing:read` for the server, `pricing:analyze` for `calculate_discount` |
+
+Server-side checks protect the server from *any* client; client-side checks
+keep *your* agent in its lane. A bad token makes ADK load no tools from that
+server (401/403); a missing scope comes back as a tool error the model can read.
+Over stdio there is no request to authenticate, so only client-side checks apply.
 
 ### A2A-level auth
 
@@ -1576,20 +1657,23 @@ network services. The bridge is `adk web --a2a`.
 ### How it works
 
 ```
-agent.py                          adk web --a2a
-─────────                         ─────────────────────────
-root_agent = LlmAgent(            Reads root_agent →
-    name="seller_agent",            Generates Agent Card:
-    description="...",                name: "seller_agent"
-    tools=[MCPToolset(...)],          description: "..."
-)                                     skills: [from tools]
-                                      url: "http://host:port/seller_agent"
+agent.py + agent.json             adk web --a2a
+─────────────────────             ─────────────────────────
+root_agent = LlmAgent(            For each agent folder that has an
+    name="seller_agent",            agent.json (others are skipped):
+    tools=[McpToolset(...)],        serves agent.json as the Agent Card
+)                                   (name, url, capabilities, skills)
+                                    and wraps root_agent in a Runner +
+                                    A2aAgentExecutor
 
-                                    Serves:
+                                    Serves (under /a2a/seller_agent):
                                       GET /.well-known/agent-card.json
                                       POST / (message/send JSON-RPC)
-                                      POST / (message/stream SSE)
+                                      POST / (message/stream SSE, if the card says streaming: true)
 ```
+
+(`google.adk.a2a.utils.agent_to_a2a.to_a2a(root_agent)` does the same for a
+single agent and *generates* the card from the agent if you don't pass one.)
 
 ### The agent as MCP client AND A2A server
 
@@ -1602,8 +1686,8 @@ A single ADK agent commonly plays both roles:
  A2A client  ──────►  A2A server (auto by adk web) │
  (buyer demo)       │                               │
                     │  LlmAgent                     │
-                    │    ├── MCPToolset → pricing    │──── MCP client
-                    │    └── MCPToolset → inventory  │──── MCP client
+                    │    ├── McpToolset → pricing    │──── MCP client
+                    │    └── McpToolset → inventory  │──── MCP client
                     └──────────────────────────────┘
 ```
 
@@ -1618,23 +1702,26 @@ Compare with the traditional approach (what we deleted):
 | Aspect | Old approach | New approach |
 |--------|-------------|-------------|
 | Server code | Manual server code | 0 lines (`adk web --a2a`) |
-| Agent Card | Manually constructed `AgentCard(...)` | Auto-generated |
+| Agent Card | Manually constructed `AgentCard(...)` | `agent.json` next to `agent.py` |
 | Request handling | Custom `AgentExecutor` subclass | Built into ADK |
 | Task lifecycle | Manual `TaskUpdater` calls | Automatic |
-| MCP lifecycle | `__aenter__`/`__aexit__` context managers | Managed by MCPToolset |
+| MCP lifecycle | `__aenter__`/`__aexit__` context managers | Managed by McpToolset |
 
 ### When you need a custom server
 
 `adk web --a2a` covers most cases. You'd write a custom A2A server when:
+- You need **push notifications** — ADK's built-in A2A server (`adk web --a2a` and `to_a2a()`) stores push configs but has no push sender, so it never POSTs to a webhook. You'd build the server from the same `Runner` + `A2aAgentExecutor`, plus a2a-sdk's `DefaultRequestHandler` with a `BasePushNotificationSender`
 - You need custom HTTP middleware (rate limiting, custom auth)
 - You need to transform messages before they reach the agent
 - You need to run multiple agents behind a single endpoint with custom routing
 - You need to integrate with a non-ADK agent implementation
 
 **Demos:**
-- `adk_demos/a2a_10_wire_lifecycle.py` — client talking to `adk web --a2a`
-- `adk_demos/a2a_11_context_threading.py` — multi-turn via contextId
-- `adk_demos/a2a_12_parts_and_artifacts.py` — multi-part messages
+- `a2a_demos/a2a_10_wire_lifecycle.py` — client talking to `adk web --a2a`
+- `a2a_demos/a2a_11_context_threading.py` — multi-turn via contextId
+- `a2a_demos/a2a_12_parts_and_artifacts.py` — multi-part messages
+- `a2a_demos/a2a_13_orchestrated_negotiation.py` — buyer polled, seller streamed, chosen from each Agent Card
+- `a2a_demos/a2a_14_error_handling.py` — transport, protocol, task and application errors from a client talking to `adk web --a2a`
 
 ---
 
@@ -1645,16 +1732,16 @@ These pieces land in our module as follows:
 | Concept                      | Where it lives in the workshop                                  |
 |------------------------------|-----------------------------------------------------------------|
 | `LlmAgent`                   | `negotiation_agents/buyer_agent/agent.py`, `seller_agent/agent.py` |
-| `MCPToolset` (multiple)      | Seller connects pricing + inventory MCPToolsets                  |
+| `McpToolset` (multiple)      | Seller connects pricing + inventory McpToolsets                  |
 | `before_tool_callback` allowlist | `_enforce_buyer_allowlist`, `_enforce_seller_allowlist`       |
 | `SequentialAgent` + `LoopAgent` | `negotiation_agents/negotiation/agent.py`                     |
 | `output_key` state passing   | buyer writes `buyer_offer`, seller reads `{buyer_offer}`         |
 | `after_agent_callback` escalation | Seller callback checks for ACCEPT, breaks the loop          |
 | Workflow agents (Seq/Par/Loop) | `adk_demos/d04–d06`                                            |
 | `AgentTool`                  | `adk_demos/d07_agent_as_tool`                                    |
-| `ToolContext` scoped state   | `adk_demos/d03_sessions_state`                                   |
-| Callbacks (PII / allowlist / logging) | `adk_demos/d08_callbacks`                               |
-| Event stream + state deltas  | `adk_demos/d09_event_stream`                                     |
+| `ToolContext` scoped state (session / `user:` / `app:`) | `adk_demos/d03_sessions_state` |
+| Callbacks (guardrails / allowlist / result filtering) | `adk_demos/d08_callbacks`                 |
+| Event stream + state deltas  | `adk_demos/d09_event_stream` (`run_event_stream.py` prints each `Event`) |
 | Agent discovery convention   | `__init__.py` + `agent.py` + `root_agent` in every package       |
 | ADK ↔ A2A bridge             | `adk web --a2a negotiation_agents/`                              |
 
@@ -1668,7 +1755,7 @@ adk web m2_adk_multiagents/adk_demos/
 # Full agents (buyer, seller, negotiation)
 adk web m2_adk_multiagents/negotiation_agents/
 
-# A2A endpoints (Agent Cards auto-generated)
+# A2A endpoints (Agent Cards from each agent.json)
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 ```
 
@@ -1680,7 +1767,7 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
 | **Runner** | Execute agents, manage turn lifecycle |
 | **SessionService** | Persist conversation state across turns |
 | **FunctionTool** | Wrap Python functions as agent tools |
-| **MCPToolset** | Connect to MCP servers (stdio or SSE) |
+| **McpToolset** | Connect to MCP servers (stdio or SSE) |
 | **AgentTool** | Use one agent as a tool for another |
 | **SequentialAgent** | Run sub-agents in order |
 | **ParallelAgent** | Run sub-agents concurrently |

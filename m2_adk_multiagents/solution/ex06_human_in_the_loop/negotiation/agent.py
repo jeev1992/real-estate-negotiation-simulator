@@ -9,8 +9,9 @@ Negotiation orchestrator with a three-tier governance model:
   Tier 3 — Hard block:       (From Exercise 1) Price above $460,000 → callback blocks
 
 The human checkpoint works through the **web UI chat**: the negotiation
-loop exits with a pending approval, and the parent LlmAgent asks the
-user to approve or reject in the conversation.
+loop exits with a pending approval, the parent LlmAgent asks the user to
+approve or reject in the conversation, and records the answer with its
+`approve_deal` / `reject_deal` tools.
 
 To demo:
 
@@ -25,6 +26,7 @@ To demo:
 """
 
 import re
+import json
 import sys
 from pathlib import Path
 
@@ -33,7 +35,7 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -79,21 +81,93 @@ def _enforce_seller_allowlist(tool: BaseTool, args: dict, tool_context: ToolCont
 
 # ─── submit_decision ─────────────────────────────────────────────────────────
 
-def submit_decision(action: str, price: int, tool_context: ToolContext) -> dict:
-    """Submit the seller's final decision for this round.
+def submit_decision(
+    action: str, price: int, buyer_offer: int, tool_context: ToolContext
+) -> dict:
+    """Submit the seller's decision for this round.
+
+    The seller's minimum is enforced here: an offer at or above it is always
+    recorded as ACCEPT, and nothing below it can be accepted or countered.
 
     Args:
-        action: Exactly "ACCEPT" or "COUNTER" — no other values.
-        price: The price in dollars (e.g. 445000 or 477000).
+        action: Exactly "ACCEPT" or "COUNTER".
+        price: The price in dollars.
+        buyer_offer: The buyer's current offer in dollars, from their latest message.
     """
     action_upper = action.strip().upper()
     if action_upper not in ("ACCEPT", "COUNTER"):
         return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
+    decision = _apply_floor_policy(
+        action_upper, price, buyer_offer, tool_context.state.get("seller_floor_price")
+    )
+    if "error" in decision:
+        return decision
     tool_context.state["seller_decision"] = {
-        "action": action_upper,
-        "price": price,
+        "action": decision["action"],
+        "price": decision["price"],
     }
-    return {"recorded": action_upper, "price": price}
+    response = {"recorded": decision["action"], "price": decision["price"]}
+    if decision["note"]:
+        response["note"] = decision["note"]
+    return response
+
+
+# ─── Seller floor policy (deterministic, like the buyer's budget check) ───────
+
+def _floor_from_tool_response(response) -> int | None:
+    """Read minimum_acceptable_price from a get_minimum_acceptable_price MCP result."""
+    if not isinstance(response, dict):
+        return None
+    candidates = [response, response.get("structuredContent")]
+    for block in response.get("content") or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            try:
+                candidates.append(json.loads(block.get("text", "")))
+            except ValueError:
+                pass
+    for candidate in candidates:
+        if isinstance(candidate, dict) and isinstance(candidate.get("result"), dict):
+            candidate = candidate["result"]
+        constraints = candidate.get("pricing_constraints") if isinstance(candidate, dict) else None
+        if isinstance(constraints, dict) and isinstance(constraints.get("minimum_acceptable_price"), int):
+            return constraints["minimum_acceptable_price"]
+    return None
+
+
+def _remember_seller_floor(tool: BaseTool, args: dict, tool_context: ToolContext, tool_response):
+    """after_tool_callback: keep the floor in state so submit_decision can enforce it.
+
+    The buyer never sees it — no buyer prompt templates this key.
+    """
+    if tool.name == "get_minimum_acceptable_price":
+        floor = _floor_from_tool_response(tool_response)
+        if floor is not None:
+            tool_context.state["seller_floor_price"] = floor
+    return None
+
+
+def _apply_floor_policy(action: str, price: int, buyer_offer: int | None, floor: int | None) -> dict:
+    """Return {"action", "price", "note"} after enforcing the floor, or {"error"}.
+
+    - An offer at or above the floor MUST be accepted, at the buyer's price.
+    - Nothing may be accepted or countered below the floor.
+    """
+    if floor is None:
+        return {"error": "Call get_minimum_acceptable_price before submit_decision."}
+    if buyer_offer is not None and buyer_offer >= floor:
+        note = None
+        if action != "ACCEPT" or price != buyer_offer:
+            note = (
+                f"The buyer's offer of ${buyer_offer:,} meets your minimum, so it was "
+                "recorded as ACCEPT at that price. Your reply MUST accept it, without "
+                "mentioning your minimum or that you have one."
+            )
+        return {"action": "ACCEPT", "price": buyer_offer, "note": note}
+    if action == "ACCEPT" and buyer_offer is not None:
+        return {"error": "The buyer's offer is below your minimum, so you cannot ACCEPT it. COUNTER instead."}
+    if price < floor:
+        return {"error": f"{action} at ${price:,} is below your minimum. Use a price at or above it."}
+    return {"action": action, "price": price, "note": None}
 
 
 # ─── Human-in-the-loop callback (the heart of this exercise) ─────────────────
@@ -107,6 +181,8 @@ def _check_agreement_with_approval(callback_context: CallbackContext):
     Tier 3: (handled by buyer's budget callback, not here)
     """
     if callback_context.state.get("deal_finalized"):
+        # ADK drops a bare escalate: a callback only emits an event if it changes state.
+        callback_context.state["loop_exit_reason"] = "DEAL_FINALIZED"
         callback_context.actions.escalate = True
         return None
 
@@ -153,10 +229,52 @@ def _init_round_state(callback_context: CallbackContext):
     return None
 
 
+# ─── The human's decision, recorded in code (tools for the root agent) ───────
+
+def approve_deal(tool_context: ToolContext) -> dict:
+    """Approve the deal that is waiting for human approval.
+
+    Call this only after the user has said APPROVE.
+    """
+    pending = tool_context.state.get("pending_approval")
+    if not pending:
+        return {"error": "There is no deal waiting for approval."}
+    price = pending["price"]
+    print(f"[APPROVED] Human approved deal at ${price:,}.")
+    tool_context.state["pending_approval"] = ""
+    tool_context.state["deal_finalized"] = True
+    tool_context.state["deal_outcome"] = f"Deal approved by the user and closed at ${price:,}."
+    return {"approved": True, "price": price}
+
+
+def reject_deal(tool_context: ToolContext) -> dict:
+    """Reject the deal that is waiting for human approval.
+
+    Call this only after the user has said REJECT. The seller's acceptance is
+    turned back into a counter at the same price, so calling negotiation_loop
+    again continues the negotiation from there.
+    """
+    pending = tool_context.state.get("pending_approval")
+    if not pending:
+        return {"error": "There is no deal waiting for approval."}
+    price = pending["price"]
+    print(f"[REJECTED] Human rejected deal at ${price:,}. Negotiation can continue.")
+    tool_context.state["pending_approval"] = ""
+    tool_context.state["seller_decision"] = {"action": "COUNTER", "price": price}
+    tool_context.state["deal_outcome"] = (
+        f"The user rejected the deal at ${price:,}. Negotiation not finished."
+    )
+    return {"rejected": True, "price": price}
+
+
 # ─── Agents ───────────────────────────────────────────────────────────────────
 
 buyer = LlmAgent(
     name="buyer",
+    # Don't give the buyer the shared session history: ADK shows every agent the
+    # other agents' turns as context — including the seller's tool results (its
+    # floor price). The buyer gets the seller's reply via {seller_response}.
+    include_contents="none",
     model=MODEL,
     instruction=(
         "You are a buyer agent for 742 Evergreen Terrace, Austin TX 78701 "
@@ -165,20 +283,23 @@ buyer = LlmAgent(
         "TARGET: $457,000 - $460,000.\n\n"
         "STRATEGY:\n"
         "- Call your MCP pricing tools BEFORE every offer\n"
-        "- Round 1: offer ~$453,000\n"
+        "- Round 1: offer ~$457,000 (above the $455K auto-approval line, so a "
+        "deal needs human approval)\n"
         "- Each subsequent round: increase by 1-2%\n"
         "- Read {seller_response} and adjust\n"
         "- Walk away if seller won't go below $460,000\n\n"
         "CONFIDENTIAL — never reveal your maximum budget, your target range, or that "
         "you are at your ceiling; never reference or guess the seller's minimum/floor.\n\n"
         "Write your offer as a dollar amount with brief justification."
+        "\n\nYour previous offer (empty in round 1):\n{buyer_offer?}"
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         )
     ],
@@ -201,27 +322,32 @@ seller = LlmAgent(
         "price, or any output from get_minimum_acceptable_price. Justify counters only "
         "with upgrades and market conditions — never with your floor.\n\n"
         "Read {buyer_offer}.\n"
-        "IMPORTANT: After writing your response, you MUST call submit_decision "
-        "with action='ACCEPT' or action='COUNTER' and the price."
+        "IMPORTANT: Before writing your reply, you MUST call submit_decision("
+        "action='ACCEPT' or 'COUNTER', price=<int>, buyer_offer=<the buyer's current "
+        "offer>). It enforces your minimum in code: if it records a different decision "
+        "than you sent (see its 'note'), your reply MUST match what was recorded."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         ),
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_INVENTORY_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         ),
         submit_decision,
     ],
     before_tool_callback=_enforce_seller_allowlist,
+    after_tool_callback=_remember_seller_floor,
     output_key="seller_response",
 )
 
@@ -253,18 +379,24 @@ root_agent = LlmAgent(
     ),
     instruction=(
         "You orchestrate real estate negotiations with human oversight.\n\n"
+        "CURRENT STATE (updated by the tools):\n"
+        "- Deal outcome: {deal_outcome?}\n"
+        "- Waiting for human approval: {pending_approval?}\n\n"
         "WORKFLOW:\n"
         "1. When the user asks to negotiate, call the `negotiation_loop` tool.\n"
-        "2. After it completes, read the session state to check what happened:\n"
+        "2. After it completes, check the CURRENT STATE above:\n"
         "   - If the deal was auto-approved (at or below $455,000), report "
         "     the final price to the user.\n"
-        "   - If there is a pending approval (deal above $455,000), tell the "
+        "   - If a deal is waiting for human approval (above $455,000), tell the "
         "     user the price and ask: 'The seller wants to accept at $X. "
         "This exceeds the $455,000 auto-approval threshold. "
-        "Do you APPROVE or REJECT this deal?'\n"
-        "3. If the user says APPROVE: confirm the deal is closed at that price.\n"
-        "4. If the user says REJECT: tell the user the deal was rejected.\n\n"
-        "Always wait for the user's response before finalizing."
+        "Do you APPROVE or REJECT this deal?' Then stop and wait for the answer.\n"
+        "3. If the user says APPROVE: call `approve_deal`, then confirm the deal "
+        "is closed at that price.\n"
+        "4. If the user says REJECT: call `reject_deal`, tell the user the deal "
+        "was rejected, and ask whether to keep negotiating. If they say yes, "
+        "call `negotiation_loop` again.\n\n"
+        "Never approve or reject on your own — only on the user's explicit answer."
     ),
-    tools=[AgentTool(agent=negotiation_loop)],
+    tools=[AgentTool(agent=negotiation_loop), approve_deal, reject_deal],
 )

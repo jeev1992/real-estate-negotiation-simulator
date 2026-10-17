@@ -19,7 +19,7 @@ m2_adk_multiagents/adk_demos/property_advisor/
 Requirements:
 
 - **`root_agent` is an `LlmAgent`** named `property_advisor`, model `openai/gpt-4o`.
-- **Two `MCPToolset`s** in `tools=[...]`:
+- **Two `McpToolset`s** in `tools=[...]`:
   - One pointing at `m1_mcp/pricing_server.py`
   - One pointing at `m1_mcp/inventory_server.py`
 - **Instruction** that frames the agent as a *helpful real-estate advisor* — give it permission to call any tool from either server, but don't enumerate tool names (the whole point is that auto-discovery does that for you).
@@ -29,7 +29,7 @@ Requirements:
 1. Create the folder and `__init__.py` (single line: `from . import agent`).
 2. Write `agent.py`:
    - Compute the absolute paths to `pricing_server.py` and `inventory_server.py` using `Path(__file__).resolve().parents[N]`.
-   - Construct two `MCPToolset` objects with `StdioConnectionParams` + `StdioServerParameters`.
+   - Construct two `McpToolset` objects with `StdioConnectionParams` + `StdioServerParameters`. Pass `timeout=30.0` to `StdioConnectionParams` — the default startup timeout is too short for a cold start on Windows.
    - Pass both to `LlmAgent(tools=[...])`.
 3. Run:
    ```bash

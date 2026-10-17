@@ -1,8 +1,8 @@
 """
 Buyer Agent — Idiomatic ADK
 ==============================
-Declarative LlmAgent with MCPToolset for pricing tools.
-Demonstrates: LlmAgent, MCPToolset (stdio), before_tool_callback (allowlist).
+Declarative LlmAgent with McpToolset for pricing tools.
+Demonstrates: LlmAgent, McpToolset (stdio), before_tool_callback (allowlist).
 
 Run with:
     adk web m2_adk_multiagents/negotiation_agents/
@@ -16,7 +16,7 @@ from pathlib import Path
 from google.adk.agents import LlmAgent
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -30,7 +30,6 @@ _PRICING_SERVER = str(
 _BUYER_ALLOWED_TOOLS = {
     "get_market_price",
     "calculate_discount",
-    "get_property_tax_estimate",
 }
 
 
@@ -75,12 +74,13 @@ root_agent = LlmAgent(
         "or 'minimum acceptable price' — you do NOT have that information."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=[_PRICING_SERVER],
-                )
+                ),
+                timeout=30.0,
             )
         )
     ],

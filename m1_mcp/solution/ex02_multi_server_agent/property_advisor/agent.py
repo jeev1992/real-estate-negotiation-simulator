@@ -27,7 +27,7 @@ from pathlib import Path
 
 from google.adk.agents import LlmAgent
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -41,14 +41,15 @@ _PRICING_SERVER = str(_REPO_ROOT / "m1_mcp" / "pricing_server.py")
 _INVENTORY_SERVER = str(_REPO_ROOT / "m1_mcp" / "inventory_server.py")
 
 
-def _mcp_toolset(server_path: str) -> MCPToolset:
-    """Build a stdio-based MCPToolset pointing at a Python MCP server file."""
-    return MCPToolset(
+def _mcp_toolset(server_path: str) -> McpToolset:
+    """Build a stdio-based McpToolset pointing at a Python MCP server file."""
+    return McpToolset(
         connection_params=StdioConnectionParams(
             server_params=StdioServerParameters(
                 command=sys.executable,
                 args=[server_path],
-            )
+            ),
+            timeout=30.0,
         )
     )
 

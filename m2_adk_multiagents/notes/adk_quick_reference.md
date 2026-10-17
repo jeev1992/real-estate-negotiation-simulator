@@ -8,7 +8,7 @@
 > **TL;DR:**
 > 1. **An agent is a declarative `LlmAgent` object.** No class, no boilerplate, no manual orchestration loop — just `root_agent = LlmAgent(...)`.
 > 2. **`adk web` is the runtime.** It auto-discovers any folder with `__init__.py` + `agent.py` (defining `root_agent`), creates a Runner + SessionService for you, and gives you a chat UI. Add `--a2a` and every agent also gets a JSON-RPC endpoint and Agent Card for free.
-> 3. **MCPToolset is the bridge to MCP servers.** Goes directly in the agent's `tools=[]` list. ADK manages the subprocess, the handshake, and translates LLM tool calls into MCP `tools/call` requests automatically.
+> 3. **McpToolset is the bridge to MCP servers.** Goes directly in the agent's `tools=[]` list. ADK manages the subprocess, the handshake, and translates LLM tool calls into MCP `tools/call` requests automatically.
 
 ---
 
@@ -31,7 +31,7 @@ root_agent = LlmAgent(
     model="openai/gpt-4o",           # provider/model format
     description="Real estate buyer agent for 742 Evergreen Terrace.",
     instruction="...",
-    tools=[MCPToolset(...)],          # auto-discovers MCP tools
+    tools=[McpToolset(...)],          # auto-discovers MCP tools
     before_tool_callback=_enforce_buyer_allowlist,
 )
 ```
@@ -74,33 +74,51 @@ from google.adk.sessions import InMemorySessionService
 
 ---
 
-## 4. MCPToolset — "The MCP bridge"
+## 4. McpToolset — "The MCP bridge"
+
+(Called `MCPToolset` in ADK 1.x. ADK 2.x still accepts the old name but warns that it is deprecated.)
 
 Spawns MCP server as subprocess, calls `list_tools()`, wraps tools for the LLM.
-In idiomatic ADK, MCPToolset goes directly in the agent's `tools` list:
+In idiomatic ADK, McpToolset goes directly in the agent's `tools` list:
 
 ```python
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset, StdioConnectionParams, StdioServerParameters,
+    McpToolset, StdioConnectionParams, StdioServerParameters,
 )
 
 root_agent = LlmAgent(
     name="buyer_agent",
     model="openai/gpt-4o",
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
                     args=["m1_mcp/pricing_server.py"],
-                )
+                ),
+                timeout=30.0,  # MCP startup timeout (default is too short on Windows)
             )
         )
     ],
 )
 ```
 
-> **Intuition:** This is the same MCP `tools/list` you'd otherwise call by hand. `MCPToolset` does it for you — and also runs MCP `tools/call` automatically when the LLM picks a tool. ADK manages the subprocess lifecycle.
+> **Intuition:** This is the same MCP `tools/list` you'd otherwise call by hand. `McpToolset` does it for you — and also runs MCP `tools/call` automatically when the LLM picks a tool. ADK manages the subprocess lifecycle.
+
+Remote server over Streamable HTTP, with a bearer token (demo d02):
+```python
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, StreamableHTTPConnectionParams
+
+McpToolset(
+    connection_params=StreamableHTTPConnectionParams(
+        url="http://127.0.0.1:8001/mcp",                       # pricing_server.py --http
+        headers={"Authorization": f"Bearer {os.environ['PRICING_MCP_TOKEN']}"},
+        timeout=30.0,
+    )
+)
+```
+
+> Auth only exists on HTTP transports: a bad token → 401 and ADK loads no tools; a token without a tool's scope → that tool call returns a "forbidden" error. Over stdio nothing is checked.
 
 ---
 
@@ -115,7 +133,7 @@ adk web m2_adk_multiagents/negotiation_agents/
 # Run demos (9 concept demos in dropdown)
 adk web m2_adk_multiagents/adk_demos/
 
-# Enable A2A endpoints (auto-generates Agent Cards)
+# Enable A2A endpoints (serves each agent's agent.json as its Agent Card)
 adk web --a2a m2_adk_multiagents/negotiation_agents/
 ```
 
@@ -137,7 +155,7 @@ OPENAI_MODEL = "openai/gpt-4o"   # not just "gpt-4o"
 
 ## 7. `adk web --a2a` — "A2A endpoints + Agent Cards"
 
-With the `--a2a` flag, each agent gets a JSON-RPC endpoint and an auto-generated Agent Card.
+With the `--a2a` flag, each agent folder that has an `agent.json` gets a JSON-RPC endpoint, and that file is served as its Agent Card (folders without one are skipped).
 
 ```bash
 adk web --a2a m2_adk_multiagents/negotiation_agents/
@@ -147,7 +165,7 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
 # http://localhost:8000/a2a/seller_agent/.well-known/agent-card.json
 ```
 
-> **Intuition:** No custom server code needed. ADK builds the A2A server, generates Agent Cards from your agent's name/description, and serves everything.
+> **Intuition:** No custom server code needed. ADK builds the A2A server and serves each agent's `agent.json` as its Agent Card (agents without one are skipped). `to_a2a(root_agent)` can generate a card for you instead.
 
 ---
 
@@ -157,7 +175,7 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
 
 ## 8. Agent Card — "The agent's business card"
 
-Auto-generated by `adk web --a2a`. Published at `GET /<agent_name>/.well-known/agent-card.json`. Describes what the agent can do.
+Served by `adk web --a2a` from the `agent.json` next to each agent's `agent.py`. Published at `GET /a2a/<agent_name>/.well-known/agent-card.json`. Describes what the agent can do, where to reach it, and which features (streaming, push notifications) it supports.
 
 Browse it directly:
 ```
@@ -172,27 +190,39 @@ card = resp.json()
 print(card["name"], card["description"], card["capabilities"])
 ```
 
-> **Intuition:** ADK generates this from your agent's `name`, `description`, and tools. The buyer fetches it to discover the seller. No manual card creation needed.
+> **Intuition:** You write the card once (`agent.json`); ADK serves it. A client fetches it to discover the agent — and reads `capabilities` to decide how to talk to it.
 
 ---
 
 ## 9. A2A Client — "Client side discovery + messaging"
 
-For demos 09–10, use `a2a-sdk` or raw `httpx` to talk to `adk web --a2a` endpoints.
+For demos 10–14, use `a2a-sdk` or raw `httpx` to talk to `adk web --a2a` endpoints.
 
 ```python
-from a2a.client import A2AClient, A2ACardResolver
+from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from a2a.types import Message, Role, TaskQueryParams, TextPart
 
 # Discover
 resolver = A2ACardResolver(httpx_client=http, base_url="http://localhost:8000/a2a/seller_agent")
 card = await resolver.get_agent_card()
 
-# Send message
-client = A2AClient(httpx_client=http, agent_card=card)
-response = await client.send_message(request)
+# Build a client from the card (A2AClient is deprecated)
+#   streaming=True  → message/stream if the card allows it
+#   polling=True    → message/send with blocking=false; then poll tasks/get
+client = ClientFactory(ClientConfig(httpx_client=http, streaming=False)).create(card)
+
+# Send — the Client yields (Task, update) pairs, or a Message
+message = Message(message_id="msg_1", role=Role.user, parts=[TextPart(text="Offer $440,000")])
+async for task, update in client.send_message(message):
+    print(task.id, task.context_id, task.status.state, task.artifacts)
+
+# Look a task up again later
+task = await client.get_task(TaskQueryParams(id=task.id))
 ```
 
-Or raw HTTP (demo 09):
+Errors: transport → `A2AClientHTTPError` / `A2AClientTimeoutError`; JSON-RPC → `A2AClientJSONRPCError` (`.error.code`); a failed task raises nothing — check `task.status.state` (demo 14).
+
+Or raw HTTP (what the SDK sends under the hood):
 ```python
 body = {
     "jsonrpc": "2.0",
@@ -204,13 +234,13 @@ body = {
 resp = await httpx.AsyncClient().post("http://localhost:8000/a2a/seller_agent", json=body)
 ```
 
-> **Intuition:** Two steps: discover (fetch the card), then send (POST the message). Demo 09 shows raw HTTP; demo 10 uses the SDK.
+> **Intuition:** Two steps: discover (fetch the card), then send (POST the message). Demo 10 prints the exact wire format the SDK sends.
 
 ---
 
 ## 10. Task Lifecycle — "submitted → working → completed"
 
-When a client sends `message/send`, the A2A server creates a Task. Demo 09 shows the states:
+When a client sends `message/send`, the A2A server creates a Task. Demo 10 shows the states:
 
 ```
 Client sends message  →  Task status: "submitted"
@@ -219,7 +249,7 @@ Client sends message  →  Task status: "submitted"
                          (or error        →  status: "failed")
 ```
 
-> **Intuition:** `adk web --a2a` handles this lifecycle automatically. Demo 09 lets you see it from the client side.
+> **Intuition:** `adk web --a2a` handles this lifecycle automatically. Demo 10 lets you see it from the client side.
 
 ---
 
@@ -230,7 +260,7 @@ conversation. Round 1 omits it (server assigns one); rounds 2+ pass it back so
 the agent remembers prior turns. **Equivalent to `session_id` in ADK** — same
 idea, just at the network layer instead of in-process.
 
-See `m2_adk_multiagents/adk_demos/a2a_11_context_threading.py` and the matching
+See `m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py` and the matching
 section in [`a2a_protocols.md`](a2a_protocols.md).
 
 ---
@@ -264,10 +294,12 @@ def bump_offer_counter(tool_context: ToolContext) -> dict:
   - `app:` → app-scoped (shared across all users)
   - `temp:` → invocation-only, not persisted
 - `tool_context.actions.escalate = True` — break out of the nearest LoopAgent
+  (from a `callback_context` in an agent callback, also write a state key —
+  a bare escalate there emits no event and is silently dropped)
 - `tool_context.actions.transfer_to_agent = "other"` — hand control off
 - `await tool_context.save_artifact(name, ...)` / `load_artifact(name)` — binary blobs
 
 > **Intuition:** ToolContext is how a tool talks back to the runtime —
 > not just to the model. State is for memory; actions are for control flow.
 
-Demo: `m2_adk_multiagents/adk_demos/d03_sessions_state/agent.py`.
+Demo: `m2_adk_multiagents/adk_demos/d03_sessions_state/agent.py` (session, `user:`, and `app:` keys).
