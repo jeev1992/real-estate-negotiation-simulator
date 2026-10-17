@@ -363,7 +363,7 @@ Three parties take part. The script is the **MCP host**: it is the only one that
 | Step | Code | MCP / API call | What happens |
 |---|---|---|---|
 | 1 | `streamablehttp_client(...)`, `session.initialize()` | `initialize` | Opens a Streamable HTTP connection to `https://api.githubcopilot.com/mcp/readonly` with your token in the `Authorization` header, then performs the same handshake as Demo 01. The server returns its capabilities. |
-| 2 | `discover_primitives()` | `tools/list`, `resources/templates/list`, `prompts/list` | Lists all three primitives. Resources and prompts are only asked for because the server advertised them. No LLM involved yet. |
+| 2 | Discovery block in `run_agent()` | `tools/list`, `resources/templates/list`, `prompts/list` | Lists all three primitives inline so the demo reads top-to-bottom. Resources and prompts are only asked for because the server advertised them. No LLM involved yet. |
 | 3 | `read_resource_text()` | `resources/read` | **Host step.** The script fills the template `repo://{owner}/{repo}/contents{/path*}` and reads the README, then adds it to the conversation marked "already provided — don't fetch it again". |
 | 4 | `mcp_tools_to_openai_functions()`, `chat.completions.create(...)` | OpenAI API | MCP tool schemas are rewrapped into OpenAI function format (same JSON Schema, different envelope). gpt-4o reads the README, the question, and 29 tool definitions, and **decides** to call `get_latest_release` and `list_issues` (`finish_reason == "tool_calls"`). |
 | 5 | `session.call_tool(name, args)`, `_parse_tool_result()` | `tools/call` | For each tool call the script sends an MCP request; GitHub's server calls the GitHub REST API and returns the result, which is appended to the chat as a `"tool"` message. |

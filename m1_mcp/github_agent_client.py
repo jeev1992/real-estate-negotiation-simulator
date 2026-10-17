@@ -26,7 +26,7 @@ HOW IT WORKS — three parties, and only this script talks to both others:
    6 chat again            ──────────────────────────────────►  final answer
 
   1. initialize — handshake over Streamable HTTP; server lists its capabilities
-  2. Discover all three primitives (discover_primitives)
+  2. Discover all three primitives directly in run_agent
   3. HOST step: read a RESOURCE and attach it as context (read_resource_text).
      The model never "calls" a resource.
   4. Convert MCP tool schemas to OpenAI function format
@@ -181,28 +181,7 @@ def _parse_tool_result(result: Any) -> str:
     return "{}"
 
 
-# ─── Primitive discovery (tools, resources, prompts) ─────────────────────────
-
-async def discover_primitives(session: ClientSession, capabilities: Any) -> list:
-    """List all three MCP primitives the server offers and return its tools."""
-    tools = (await session.list_tools()).tools
-    print(f"[Agent] TOOLS ({len(tools)}) — model-controlled: the LLM decides when to call them")
-    print(f"        e.g. {', '.join(t.name for t in tools[:6])}, ...")
-
-    if capabilities.resources:
-        templates = (await session.list_resource_templates()).resourceTemplates
-        print(f"[Agent] RESOURCE TEMPLATES ({len(templates)}) — application-controlled: the host reads them")
-        for template in templates:
-            print(f"        {template.uriTemplate}")
-
-    if capabilities.prompts:
-        prompts = (await session.list_prompts()).prompts
-        print(f"[Agent] PROMPTS ({len(prompts)}) — user-controlled: picked by a person, not the model")
-        print(f"        {', '.join(p.name for p in prompts)}")
-
-    print()
-    return tools
-
+# ─── Resource reading ─────────────────────────────────────────────────────────
 
 async def read_resource_text(session: ClientSession, uri: str) -> str:
     """HOST step: read a resource and return its text (truncated for the prompt)."""
@@ -245,7 +224,22 @@ async def run_agent(query: str, attach_uri: str | None = None) -> str:
             init = await session.initialize()
 
             # ── 2. Discover all three primitives ──────────────────────────
-            mcp_tools = await discover_primitives(session, init.capabilities)
+            mcp_tools = (await session.list_tools()).tools
+            print(f"[Agent] TOOLS ({len(mcp_tools)}) — model-controlled: the LLM decides when to call them")
+            print(f"        e.g. {', '.join(t.name for t in mcp_tools[:6])}, ...")
+
+            if init.capabilities.resources:
+                templates = (await session.list_resource_templates()).resourceTemplates
+                print(f"[Agent] RESOURCE TEMPLATES ({len(templates)}) — application-controlled: the host reads them")
+                for template in templates:
+                    print(f"        {template.uriTemplate}")
+
+            if init.capabilities.prompts:
+                prompts = (await session.list_prompts()).prompts
+                print(f"[Agent] PROMPTS ({len(prompts)}) — user-controlled: picked by a person, not the model")
+                print(f"        {', '.join(p.name for p in prompts)}")
+
+            print()
             openai_tools = mcp_tools_to_openai_functions(mcp_tools)
             tools_by_name = {t.name for t in mcp_tools}
 
