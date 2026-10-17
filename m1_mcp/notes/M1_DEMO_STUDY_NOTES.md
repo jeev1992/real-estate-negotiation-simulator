@@ -40,15 +40,16 @@ Client announces itself. `protocolVersion` is the MCP spec version. `capabilitie
   "result": {
     "protocolVersion": "2024-11-05",
     "capabilities": {
-      "tools": {"listChanged": false},
+      "experimental": {},
       "prompts": {"listChanged": false},
-      "resources": {"subscribe": false, "listChanged": false}
+      "resources": {"subscribe": false, "listChanged": false},
+      "tools": {"listChanged": false}
     },
-    "serverInfo": {"name": "real-estate-pricing", "version": "1.27.0"}
+    "serverInfo": {"name": "real-estate-pricing", "version": "1.30.0"}
   }
 }
 ```
-Server confirms same protocol version. Reports what it supports: tools ✓, prompts ✓, resources ✓. `listChanged: false` means the server won't notify if tools change at runtime.
+Server confirms same protocol version. Reports what it supports: tools ✓, prompts ✓, resources ✓. `listChanged: false` means the server won't notify if tools change at runtime. (`serverInfo.version` is the installed `mcp` package version — the SDK reports it when a server doesn't set its own.)
 
 **Frame 3 — client → server: `notifications/initialized`**
 ```json
@@ -95,46 +96,46 @@ The full model ↔ host ↔ server tool-calling loop with timestamps. Shows the 
 python m1_mcp/demos/02_tool_loop_trace.py   # requires OPENAI_API_KEY
 ```
 
-### Actual output
+### Actual output (gpt-4o-mini — timings vary by machine and model latency)
 
 ```
 [t= 0.00s] HOST    connecting to MCP server (stdio subprocess)
-[t= 3.18s] HOST    tools/list
-[t= 3.19s] SERVER  returned 2 tools
-[t= 3.67s] MODEL   receiving prompt + tool catalog
-[t= 6.77s] MODEL   emitted tool_use(get_market_price)
-[t= 6.77s] HOST    translating tool_use -> tools/call
-[t= 6.77s] SERVER  returned CallToolResult
-[t= 6.77s] HOST    injecting tool_result back into model context
-[t=10.42s] MODEL   emitted final assistant text
+[t= 1.81s] HOST    tools/list
+[t= 1.81s] SERVER  returned 2 tools
+[t= 2.30s] MODEL   receiving prompt + tool catalog
+[t= 4.84s] MODEL   emitted tool_use(get_market_price)
+[t= 4.84s] HOST    translating tool_use -> tools/call
+[t= 4.84s] SERVER  returned CallToolResult
+[t= 4.84s] HOST    injecting tool_result back into model context
+[t=10.38s] MODEL   emitted final assistant text
 ```
 
-**Final answer:**
+**Final answer (abridged):**
 > The estimated market value is $462,000. Listed at $485,000 (4.7% above comps). Fair offer range: $449,473–$477,276. 4BR/3BA, 2400 sqft, 18 DOM. Recent upgrades: kitchen ($45K), roof ($18K), HVAC ($12K).
 
 ### Three actors, clear roles
 
 | Actor | What it does | Time spent |
 |-------|-------------|------------|
-| **HOST** (your Python code) | Connects to server, translates between OpenAI ↔ MCP formats | ~3.7s (startup + handshake) |
-| **MODEL** (GPT-4o) | Reads query + tool schemas, decides to call `get_market_price`, produces final answer | ~6.7s (two LLM calls) |
+| **HOST** (your Python code) | Connects to server, translates between OpenAI ↔ MCP formats | ~2.3s (startup + handshake) |
+| **MODEL** (gpt-4o-mini) | Reads query + tool schemas, decides to call `get_market_price`, produces final answer | ~8s (two LLM calls) |
 | **SERVER** (pricing_server.py) | Executes `get_market_price`, returns structured data | <0.01s (instant — simulated data) |
 
 ### Key observations
 
-1. **3.18s for server startup.** The stdio subprocess takes ~3s to initialize (Python import time). In production with remote servers, this is a one-time connection cost.
+1. **~2s for server startup.** The stdio subprocess takes a couple of seconds to initialize (Python import time; it varies by machine). In production with remote servers, this is a one-time connection cost.
 
-2. **The model made TWO calls.** First call (t=3.67→6.77): model decided to call `get_market_price`. Second call (t=6.77→10.42): model reasoned about the result and produced the final answer.
+2. **The model made TWO calls.** First call (t=2.30→4.84): model decided to call `get_market_price`. Second call (t=4.84→10.38): model reasoned about the result and produced the final answer.
 
-3. **The host is the bridge.** It converts OpenAI's `tool_calls` format to MCP's `tools/call` format and back. In M2, ADK's `MCPToolset` does this automatically.
+3. **The host is the bridge.** It converts OpenAI's `tool_calls` format to MCP's `tools/call` format and back. In M2, ADK's `McpToolset` does this automatically.
 
-4. **This is the exact loop ADK replaces.** `github_agent_client.py` and `sse_agent_client.py` both have ~60 lines implementing this loop. M2's `tools=[MCPToolset(...)]` replaces all of it.
+4. **This is the exact loop ADK replaces.** `github_agent_client.py` and `sse_agent_client.py` both have ~60 lines implementing this loop. M2's `tools=[McpToolset(...)]` replaces all of it.
 
 ### Key teaching points for class
 
 1. **"Three actors, three roles."** Model (decides which tools to call), Host (translates between OpenAI and MCP formats), Server (executes tools). This trio is the universal pattern.
 2. **"The model made TWO LLM calls."** One to decide which tool to call, one to reason about the result. Students should see the timestamps to understand the cost.
-3. **"The host is what ADK replaces."** In M2, `MCPToolset` IS the host — it does the OpenAI ↔ MCP translation automatically. Understanding this loop means understanding what ADK does under the hood.
+3. **"The host is what ADK replaces."** In M2, `McpToolset` IS the host — it does the OpenAI ↔ MCP translation automatically. Understanding this loop means understanding what ADK does under the hood.
 4. **"Server startup is the bottleneck."** ~3s for the Python subprocess. In production with remote servers, this is a one-time connection cost paid at startup, not per-request.
 
 ### Questions to try
@@ -424,7 +425,7 @@ async with streamablehttp_client(GITHUB_MCP_URL, headers={"Authorization": f"Bea
 4. **Remote server, no install.** Streamable HTTP plus a Bearer token — the transport from Demo 05, against a production server.
 
 ### Key insight
-This is the **manual version** of what ADK's `MCPToolset` automates. Steps 4–6 above — schema conversion, the LLM call, checking for tool calls, running them over MCP, and feeding results back — are about 60 lines here; in Module 2 they become `tools=[MCPToolset(...)]`. Understanding this loop means understanding what ADK does under the hood.
+This is the **manual version** of what ADK's `McpToolset` automates. Steps 4–6 above — schema conversion, the LLM call, checking for tool calls, running them over MCP, and feeding results back — are about 60 lines here; in Module 2 they become `tools=[McpToolset(...)]`. Understanding this loop means understanding what ADK does under the hood.
 
 ### Troubleshooting
 
@@ -467,7 +468,7 @@ Key insights from [Building agents that reach production systems with MCP](https
 
 4. **Skills + MCP are complementary.** MCP gives agents access to tools and data. Skills teach the agent *how* to use those tools. In M2, the agent's `instruction` is the skill — it tells the LLM when and how to call MCP tools.
 
-5. **MCP compounds.** As more clients adopt the spec, the same server gets more capable without shipping anything new. 300M+ SDK downloads/month proves the ecosystem is real.
+5. **MCP compounds.** As more clients adopt the spec, the same server gets more capable without shipping anything new.
 
 ---
 
@@ -485,7 +486,7 @@ Key insights from [Building agents that reach production systems with MCP](https
 
 | M1 (manual) | M2 (ADK) |
 |-------------|----------|
-| 60-line tool loop in `github_agent_client.py` | `tools=[MCPToolset(...)]` |
+| 60-line tool loop in `github_agent_client.py` | `tools=[McpToolset(...)]` |
 | `mcp_tools_to_openai_functions()` conversion | ADK does it automatically |
 | `session.call_tool()` + message append | ADK handles the tool loop |
 | `max_iterations` in Python loop | `max_iterations` in LoopAgent |
@@ -496,7 +497,7 @@ Key insights from [Building agents that reach production systems with MCP](https
 
 1. **"Run Demo 01 to see the wire."** The handshake is 5 JSON-RPC frames. Students should see raw frames before using the SDK.
 
-2. **"Demo 02 shows the three actors."** Model (decides), Host (bridges), Server (executes). The host is what MCPToolset replaces.
+2. **"Demo 02 shows the three actors."** Model (decides), Host (bridges), Server (executes). The host is what McpToolset replaces.
 
 3. **"Group tools around intent."** Show the Anthropic article quote. Our `get_market_price` returns everything in one call.
 
@@ -590,7 +591,7 @@ async with streamablehttp_client(url) as (read, write, _):
 | **Server lifecycle** | Subprocess — dies when client exits | Independent process — lives forever |
 | **Client count** | 1:1 (one client per server) | Many:1 (multiple clients, one server) |
 | **Protocol calls** | `session.list_tools()`, `session.call_tool()` | Identical |
-| **Use case** | Local development, ADK `MCPToolset` | Production, remote agents |
+| **Use case** | Local development, ADK `McpToolset` | Production, remote agents |
 
 ### Key teaching points for class
 
@@ -701,10 +702,10 @@ An LLM that decides which real estate tools to call over HTTP
          - get_market_price
          - calculate_discount
 
-[Agent] Iteration 1: calling GPT-4o...
+[Agent] Iteration 1: calling gpt-4o-mini...
 [Agent]   -> Calling: get_market_price({"address": "742 Evergreen Terrace, Austin, TX 78701"})
 
-[Agent] Iteration 2: calling GPT-4o...
+[Agent] Iteration 2: calling gpt-4o-mini...
 
 =================================================================
 AGENT ANSWER
@@ -728,12 +729,12 @@ Fair offer range: $449,473–$477,276.
          - get_inventory_level
          - get_minimum_acceptable_price
 
-[Agent] Iteration 1: calling GPT-4o...
+[Agent] Iteration 1: calling gpt-4o-mini...
 [Agent]   -> Calling: get_market_price({"address": "742 Evergreen Terrace..."})
 [Agent]   -> Calling: get_minimum_acceptable_price({"property_id": "742-evergreen-austin-78701"})
 [Agent]   -> Calling: get_inventory_level({"zip_code": "78701"})
 
-[Agent] Iteration 2: calling GPT-4o...
+[Agent] Iteration 2: calling gpt-4o-mini...
 
 =================================================================
 AGENT ANSWER
@@ -796,8 +797,8 @@ for iteration in range(1, max_iterations + 1):
 ### Key teaching points for class
 
 1. **"The loop is the same."** Side-by-side the `github_agent_client.py` and `sse_agent_client.py` tool loops. The only difference is the connection: `streamablehttp_client` vs `sse_client`.
-2. **"`--both` connects to two servers."** The LLM sees 4 tools from 2 servers as one unified set. This is how the seller agent works in M2 — two MCPToolsets merged.
-3. **"SSE is the HTTP transport."** In M2, ADK's `MCPToolset` with `SseConnectionParams` does the same thing. Understanding this script means understanding what ADK does with remote servers.
+2. **"`--both` connects to two servers."** The LLM sees 4 tools from 2 servers as one unified set. This is how the seller agent works in M2 — two McpToolsets merged.
+3. **"SSE is the HTTP transport."** In M2, ADK's `McpToolset` with `SseConnectionParams` does the same thing. Understanding this script means understanding what ADK does with remote servers.
 4. **"No access control here."** Both servers are fully accessible. The restriction (buyer can't call `get_minimum_acceptable_price`) is added in M2 via `before_tool_callback`.
 
 ### Questions to try
@@ -826,7 +827,7 @@ Yes — that's the whole point of a protocol. GitHub's official MCP server (`git
 SSE connections are inherently unidirectional (server → client). The MCP SDK's `sse_client` establishes a new HTTP session for each interaction. This is a transport detail — stdio maintains a persistent pipe, SSE reconnects. Streamable HTTP (Demo 05) is cleaner because it uses standard POST requests.
 
 **"Why not use function calling / structured outputs from the start?"**
-Function calling is how the LLM decides WHICH tool to call — but MCP is how the tool EXECUTES. They're complementary, not alternatives. OpenAI function calling says "call get_market_price(address='742...')". MCP delivers that call to the server and returns the result. In M2, ADK combines both — `MCPToolset` discovers tools via MCP protocol AND exposes them as OpenAI function-calling schemas.
+Function calling is how the LLM decides WHICH tool to call — but MCP is how the tool EXECUTES. They're complementary, not alternatives. OpenAI function calling says "call get_market_price(address='742...')". MCP delivers that call to the server and returns the result. In M2, ADK combines both — `McpToolset` discovers tools via MCP protocol AND exposes them as OpenAI function-calling schemas.
 
 **"How does the LLM know which tools exist?"**
 During the MCP handshake, `list_tools()` returns JSON schemas for every tool. The client (our Python code) converts these to OpenAI's function-calling format via `mcp_tools_to_openai_functions()`. The LLM sees tool names, descriptions, and parameter schemas — the same as if you'd hand-written them.
@@ -835,4 +836,4 @@ During the MCP handshake, `list_tools()` returns JSON schemas for every tool. Th
 In stdio mode: the pipe breaks, the client gets an `EOFError`. In SSE/HTTP mode: the client gets a connection error. Either way, the error propagates to the LLM as a tool result (e.g., `{"error": "connection failed"}`). The LLM can decide to retry or give up. In M2, ADK handles this via its error handling pipeline.
 
 **"Is MCP just for AI agents?"**
-Primarily yes — it was designed for agents and LLM clients. But the pattern (discover + invoke) works for any tool integration. Claude Desktop, ChatGPT, Cursor, VS Code Copilot, and ADK all support MCP. The 300M+ SDK downloads/month show it's becoming the standard for agent-tool integration.
+Primarily yes — it was designed for agents and LLM clients. But the pattern (discover + invoke) works for any tool integration. Claude Desktop, ChatGPT, Cursor, VS Code Copilot, and ADK all support MCP.

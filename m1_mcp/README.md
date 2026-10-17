@@ -33,7 +33,7 @@ Why GitHub? Because you already know what GitHub does. Seeing an LLM agent use M
 - The **host** reading a resource (a repo's README) and attaching it as context — resources are never "called" by the model
 - Converting tool schemas to OpenAI function-calling format, and the LLM **choosing** which tools to call (agentic, not scripted)
 - The ReAct-style tool loop: LLM calls tools, gets results, calls more tools or answers
-- This is the **same pattern** used by our ADK buyer/seller agents in Module 2 (via `MCPToolset`)
+- This is the **same pattern** used by our ADK buyer/seller agents in Module 2 (via `McpToolset`)
 
 **Prerequisites:**
 - A real GitHub Personal Access Token in `.env` as `GITHUB_TOKEN` (classic or fine-grained; read access to public repos is enough)
@@ -55,7 +55,7 @@ python m1_mcp/github_agent_client.py --attach repo://modelcontextprotocol/python
 
 ### `sse_agent_client.py` — SSE agent client (connects over HTTP)
 
-An LLM-powered agent that connects to the pricing and/or inventory servers running in **SSE mode** (HTTP) and lets GPT-4o decide which tools to call — the same agentic pattern as `github_agent_client.py`, just a different transport.
+An LLM-powered agent that connects to the pricing and/or inventory servers running in **SSE mode** (HTTP) and lets gpt-4o-mini decide which tools to call — the same agentic pattern as `github_agent_client.py`, just a different transport.
 
 **What it demonstrates:**
 - Connecting to MCP servers via SSE (Server-Sent Events) transport
@@ -106,7 +106,7 @@ python m1_mcp/pricing_server.py --sse --port 8001
 python m1_mcp/pricing_server.py --http            # → http://127.0.0.1:8001/mcp
 ```
 
-In Module 2, the ADK negotiation agents (via `MCPToolset`) start this server automatically as a subprocess. You don't need to run it manually — but you *can* to inspect it. Demo d02 connects to the `--http` mode instead.
+In Module 2, the ADK negotiation agents (via `McpToolset`) start this server automatically as a subprocess. You don't need to run it manually — but you *can* to inspect it. Demo d02 connects to the `--http` mode instead.
 
 **Authentication & authorization (`--http` only):**
 
@@ -316,7 +316,7 @@ Three hands-on exercises designed for the **2-hour follow-up review session** he
 | Exercise | Difficulty | Task |
 |---|---|---|
 | [`ex01_walk_score_tool.md`](exercises/ex01_walk_score_tool.md) | `[Starter]` | Add a `get_walk_score(zip_code)` tool to `pricing_server.py`. Restart `adk web`, ask a walkability question, watch GPT-4o auto-discover and call the new tool with zero agent-side changes. |
-| [`ex02_multi_server_agent.md`](exercises/ex02_multi_server_agent.md) | `[Core]` | Build an `LlmAgent` from scratch that connects to BOTH `pricing_server` and `inventory_server` simultaneously. Test with cross-server queries; understand how ADK merges tool catalogs across multiple `MCPToolset`s. |
+| [`ex02_multi_server_agent.md`](exercises/ex02_multi_server_agent.md) | `[Core]` | Build an `LlmAgent` from scratch that connects to BOTH `pricing_server` and `inventory_server` simultaneously. Test with cross-server queries; understand how ADK merges tool catalogs across multiple `McpToolset`s. |
 | [`ex03_server_failure_handling.md`](exercises/ex03_server_failure_handling.md) | `[Core]` | Build a multi-server agent that gracefully handles MCP server crashes — detects tool failures via `after_tool_callback` and degrades with fallback responses instead of crashing. The #1 production resilience pattern. |
 
 Each solution lives in `solution/<exercise_name>/` as a self-contained, runnable package. The instructor walks through each solution live during the review session.

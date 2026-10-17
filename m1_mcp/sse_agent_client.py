@@ -2,7 +2,7 @@
 SSE MCP Agent Client
 ====================
 An LLM-powered agent that connects to our real estate MCP servers running
-in SSE (HTTP) mode and lets GPT-4o decide which tools to call based on
+in SSE (HTTP) mode and lets an OpenAI model (gpt-4o-mini) decide which tools to call based on
 your natural language query.
 
 WHY SSE?
@@ -164,7 +164,7 @@ async def run_agent(
 ) -> str:
     """
     Agentic loop: connect to real estate MCP servers via SSE,
-    let GPT-4o decide which tools to call, execute them, produce an answer.
+    let the model decide which tools to call, execute them, produce an answer.
     """
     print()
     print("=" * 65)
@@ -233,7 +233,7 @@ async def run_agent(
 
     max_iterations = 5
     for iteration in range(1, max_iterations + 1):
-        print(f"[Agent] Iteration {iteration}: calling GPT-4o...")
+        print(f"[Agent] Iteration {iteration}: calling {OPENAI_MODEL}...")
 
         response = await client.chat.completions.create(
             model=OPENAI_MODEL,

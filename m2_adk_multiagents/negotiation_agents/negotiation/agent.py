@@ -3,12 +3,15 @@ Negotiation Orchestrator — Idiomatic ADK
 ==========================================
 LoopAgent wrapping a SequentialAgent (buyer → seller) to run multi-round
 negotiation with real MCP tools. The buyer calls pricing tools before each
-offer; the seller calls pricing + inventory tools (including the secret
-floor price) before each counter.
+offer. The seller is told to call its tools (market price, inventory, the
+secret floor price) every round; in practice it researches in round 1 and
+reuses that from its context afterwards — submit_decision enforces the floor
+every round regardless.
 
-Demonstrates: LoopAgent, SequentialAgent, MCPToolset, output_key state
+Demonstrates: LoopAgent, SequentialAgent, McpToolset, output_key state
 passing, after_agent_callback with escalation, before_tool_callback
-allowlists, information asymmetry.
+allowlists, information asymmetry (tool allowlists control what each agent
+can CALL; include_contents="none" on the buyer controls what it can READ).
 
 Run with:
     adk web m2_adk_multiagents/negotiation_agents/
@@ -22,7 +25,7 @@ from google.adk.agents import LlmAgent, LoopAgent, SequentialAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -247,6 +250,10 @@ def _init_round_state(callback_context: CallbackContext):
 
 buyer = LlmAgent(
     name="buyer",
+    # Don't give the buyer the shared session history: ADK shows every agent the
+    # other agents' turns as context — including the seller's tool results (its
+    # floor price). The buyer gets the seller's reply via {seller_response}.
+    include_contents="none",
     model=MODEL,
     instruction=(
         "You ARE the buyer's agent in a LIVE negotiation — not an assistant "
@@ -279,9 +286,10 @@ buyer = LlmAgent(
         "price' — you do NOT have that information.\n\n"
         "Do NOT write meta commentary such as "
         "'we will wait for the seller' or reminders/checklists — you ARE negotiating now."
+        "\n\nYour previous offer (empty in round 1):\n{buyer_offer?}"
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -335,7 +343,7 @@ seller = LlmAgent(
         "'we will wait for the buyer' or reminders/checklists — you ARE negotiating now."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -344,7 +352,7 @@ seller = LlmAgent(
                 timeout=30.0,
             )
         ),
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,

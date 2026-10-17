@@ -33,7 +33,7 @@ from pathlib import Path
 from google.adk.agents import LlmAgent
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -156,7 +156,7 @@ root_agent = LlmAgent(
     description="Aggressive buyer agent with budget-cap enforcement.",
     instruction=INSTRUCTION,
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,

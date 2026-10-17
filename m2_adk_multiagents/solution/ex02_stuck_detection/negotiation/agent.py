@@ -36,7 +36,7 @@ from google.adk.agents import LlmAgent, LoopAgent, SequentialAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -56,7 +56,7 @@ STALL_THRESHOLD = 5_000 # dollars; if all prices move less than this each round,
 
 # ─── Tool allowlists (unchanged from the canonical orchestrator) ──────────────
 
-_BUYER_ALLOWED_TOOLS = {"get_market_price", "calculate_discount"}
+_BUYER_ALLOWED_TOOLS = {"get_market_price", "calculate_discount", "submit_offer"}
 _SELLER_ALLOWED_TOOLS = {
     "get_market_price",
     "calculate_discount",
@@ -214,7 +214,8 @@ def _track_and_check_stall(callback_context: CallbackContext):
         return None
 
     # ─ Job 2: track this round's offers ──────────────────────────────────
-    buyer_price = _extract_buyer_offer_price(state.get("buyer_offer", ""))
+    # submit_offer records the buyer's price; fall back to parsing its text.
+    buyer_price = state.get("buyer_offer_price") or _extract_buyer_offer_price(state.get("buyer_offer", ""))
     seller_price = decision.get("price") if isinstance(decision, dict) else None
 
     history = list(state.get("offer_history", []))
@@ -271,8 +272,35 @@ _BUYER_BUDGET = 440_000 if _STALL_DEMO else 460_000
 _BUYER_TARGET_LO = _BUYER_BUDGET - 10_000
 _BUYER_TARGET_HI = _BUYER_BUDGET
 
+
+def submit_offer(price: int, tool_context: ToolContext) -> dict:
+    """Record the buyer's offer for this round.
+
+    The budget is enforced here, not left to the model — in the STALL_DEMO the
+    budget ($440K) is below the seller's floor, and only code guarantees the
+    buyer can't cross it.
+
+    Offers can't go down either: a lower offer than last round is rejected, so
+    "holding at the budget" really is holding, and the stall check sees it.
+
+    Args:
+        price: Offer price in dollars. Must not exceed the buyer's maximum budget
+            or be lower than the buyer's previous offer.
+    """
+    if price > _BUYER_BUDGET:
+        return {"error": f"offer {price} exceeds the ${_BUYER_BUDGET:,} maximum budget"}
+    previous = tool_context.state.get("buyer_offer_price")
+    if previous and price < previous:
+        return {"error": f"offers can't go down: your last offer was ${previous:,}"}
+    tool_context.state["buyer_offer_price"] = price
+    return {"recorded": price}
+
 buyer = LlmAgent(
     name="buyer",
+    # Don't give the buyer the shared session history: ADK shows every agent the
+    # other agents' turns as context — including the seller's tool results (its
+    # floor price). The buyer gets the seller's reply via {seller_response}.
+    include_contents="none",
     model=MODEL,
     instruction=(
         "You ARE the buyer's agent for 742 Evergreen Terrace, Austin TX 78701 "
@@ -282,8 +310,12 @@ buyer = LlmAgent(
         "EACH ROUND:\n"
         "1. Read {seller_response} and call your MCP pricing tools for market data.\n"
         "2. Make exactly ONE offer as a specific dollar amount, justified with data.\n"
+        "   Round 1: open ~12% below asking (~$425,000). Later rounds: raise your "
+        "previous offer by 2–4% toward the seller.\n"
         f"   If you have already reached your max (${_BUYER_BUDGET:,}) and the seller is "
-        "still above it, hold firm and repeat the same number.\n\n"
+        "still above it, hold firm and repeat the same number.\n"
+        "3. Call submit_offer(price=<int>) to record it — it REJECTS anything above "
+        "your budget. Your reply must state the same amount.\n\n"
         "OUTPUT: ONE short paragraph beginning with the literal prefix 'BUYER: ' "
         "stating your offer amount. No preamble, no step-by-step thinking, no "
         "'we will wait' meta commentary.\n\n"
@@ -291,16 +323,19 @@ buyer = LlmAgent(
         "range, or that you are at your ceiling (avoid phrases like 'my maximum', "
         "'the most I can pay', 'my final offer'). Never reference or guess the seller's "
         "minimum or 'minimum acceptable price' — you do NOT have that information."
+        "\n\nYour last recorded offer (empty in round 1): ${buyer_offer_price?} — "
+        "never go below it.\nYour previous message:\n{buyer_offer?}"
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_PRICING_SERVER],
                 ),
                 timeout=30.0,
             )
-        )
+        ),
+        submit_offer,
     ],
     before_tool_callback=_enforce_buyer_allowlist,
     output_key="buyer_offer",
@@ -332,7 +367,7 @@ seller = LlmAgent(
         "conditions — never with your floor."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_PRICING_SERVER],
@@ -340,7 +375,7 @@ seller = LlmAgent(
                 timeout=30.0,
             )
         ),
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_INVENTORY_SERVER],

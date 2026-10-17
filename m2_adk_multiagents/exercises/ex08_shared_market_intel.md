@@ -95,7 +95,7 @@ Requirements:
 
 ### Verify via the session DB
 
-ADK persists all state in a SQLite database at `negotiation/.adk/session.db`. You can query it directly to confirm `app:` state survives across sessions:
+`adk web` persists all state in a SQLite database at `negotiation/.adk/session.db` (created the first time you chat with the agent in `adk web`; the folder is git-ignored). You can query it directly to confirm `app:` state survives across sessions:
 
 ```bash
 python -c "

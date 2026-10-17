@@ -715,7 +715,7 @@ itself can fail at four layers, and each reaches the client differently
 | Layer | How it arrives | Examples observed |
 |---|---|---|
 | Transport | Exception: `A2AClientHTTPError` (`.status_code`), `A2AClientTimeoutError` | Agent not running → 503 from the card resolver; unknown agent path → 404; blocking `message/send` past the read timeout |
-| Protocol | Exception: `A2AClientJSONRPCError` (`.error.code`, `.error.message`); on the wire, HTTP 200 with a JSON-RPC `error` object | -32001 task not found; -32002 task not cancelable; -32601 method not found; -32602 invalid params (with field details); -32603 for "Streaming / Push notifications are not supported by the agent" and ADK's "Cancellation is not supported" |
+| Protocol | Exception: `A2AClientJSONRPCError` (`.error.code`, `.error.message`); on the wire, HTTP 200 with a JSON-RPC `error` object | -32001 task not found; -32002 task not cancelable; -32601 method not found; -32602 invalid params (with field details); -32603 for "Streaming / Push notifications are not supported by the agent" |
 | Task | No exception: the Task's `status.state` is `failed`, reason in `status.message` | A FilePart (`application/zip`) the model can't read |
 | Application | No exception, state `completed` — the content says the agent couldn't do it | An offer with no price: the seller asks for clarification and records no decision |
 
@@ -836,8 +836,8 @@ python m2_adk_multiagents/a2a_demos/a2a_14_error_handling.py
 ```
 
 Key files:
-- `m2_adk_multiagents/negotiation_agents/buyer_agent/agent.py` (buyer LlmAgent + MCPToolset)
-- `m2_adk_multiagents/negotiation_agents/seller_agent/agent.py` (seller LlmAgent + dual MCPToolsets)
+- `m2_adk_multiagents/negotiation_agents/buyer_agent/agent.py` (buyer LlmAgent + McpToolset)
+- `m2_adk_multiagents/negotiation_agents/seller_agent/agent.py` (seller LlmAgent + dual McpToolsets)
 - `m2_adk_multiagents/negotiation_agents/negotiation/agent.py` (LoopAgent + SequentialAgent)
 - `m2_adk_multiagents/a2a_demos/a2a_10_wire_lifecycle.py` (Agent Card + the HTTP bytes of `message/send` + the Task taken apart)
 - `m2_adk_multiagents/a2a_demos/a2a_11_context_threading.py` (contextId threading; taskId vs contextId)
@@ -1171,8 +1171,8 @@ supports. The A2A spec (v0.3.0, the version these agents speak) defines four:
 **What isn't a capability:** `message/send`, `tasks/get` and `tasks/cancel`
 are always part of the protocol, so **polling** (non-blocking `message/send`
 + `tasks/get`) works with any agent — that's how demo 13 gets the buyer's
-results. (Cancelling can still fail at runtime: ADK's executor doesn't
-implement it — demo 14.)
+results. (`tasks/cancel` works with ADK's executor: a running task goes to
+`canceled` — demo 14.)
 
 **How strictly it's enforced (a2a-sdk 0.3.26 server):** only two methods
 check the card — `message/stream` (needs `streaming`) and
@@ -1430,7 +1430,7 @@ aren't from the server it registered with.
 
 **In this workshop:** push isn't demonstrated, and every agent card says
 `pushNotifications: false`. ADK's built-in A2A server (`adk web --a2a`,
-`to_a2a()` in ADK 1.39) stores push configs but has no push sender, so it
+`to_a2a()` in ADK 2.11) stores push configs but has no push sender, so it
 never POSTs to a webhook. To push from an ADK agent you'd build the server
 yourself — the same `Runner` + `A2aAgentExecutor`, plus a2a-sdk's
 `DefaultRequestHandler` with a `BasePushNotificationSender`.

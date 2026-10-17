@@ -11,7 +11,7 @@ A **4-hour hands-on workshop** teaching modern AI agent frameworks through a con
 |---|---|---|
 | **MCP** | Standard protocol for agents to access external tools | Agents query pricing/inventory servers via MCP |
 | **A2A** | Agent-to-Agent protocol (Agent Card discovery + JSON-RPC over HTTP, task lifecycle, streaming) | Module 2 uses the true networked A2A protocol via `a2a-sdk` |
-| **Google ADK** | Production-grade agent framework (LlmAgent, workflow agents, sessions, MCPToolset, callbacks) | Module 2 builds the buyer and seller agents with ADK |
+| **Google ADK** | Production-grade agent framework (LlmAgent, workflow agents, sessions, McpToolset, callbacks) | Module 2 builds the buyer and seller agents with ADK |
 
 ---
 
@@ -51,8 +51,8 @@ real-estate-negotiation-simulator/
 ├── m2_adk_multiagents/                # MODULE 2 — Google ADK + A2A protocol
 │   ├── README.md                      # Module guide for learners
 │   ├── negotiation_agents/            # adk web-launchable agent packages
-│   │   ├── buyer_agent/agent.py         # Buyer LlmAgent + MCPToolset (pricing)
-│   │   ├── seller_agent/agent.py        # Seller LlmAgent + MCPToolset (pricing + inventory)
+│   │   ├── buyer_agent/agent.py         # Buyer LlmAgent + McpToolset (pricing)
+│   │   ├── seller_agent/agent.py        # Seller LlmAgent + McpToolset (pricing + inventory)
 │   │   └── negotiation/agent.py         # LoopAgent + SequentialAgent + MCP tools + submit_decision
 │   ├── adk_demos/                      # adk web-launchable demos (d01–d09)
 │   ├── a2a_demos/                      # A2A terminal scripts (10–14), run against adk web --a2a
@@ -171,6 +171,8 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+This installs Google ADK 2.x. The first time you run an `adk` command (e.g. `adk web`), it asks **"Enable telemetry? [Y/n]"** — pressing Enter answers *yes*. Type `n` to decline, or run `adk telemetry disable` beforehand; the choice is saved in `~/.adk/config.json` and you won't be asked again. (The question only appears in an interactive terminal.)
+
 ### 6. Configure API keys
 
 **Windows (PowerShell):**
@@ -276,7 +278,7 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 | # | Pick from dropdown | What it means (one line) |
 |---|---|---|
 | d01 | `d01_basic_agent` | Bare `LlmAgent` + a Python function tool — the simplest possible ADK agent. |
-| d02 | `d02_mcp_tools` | `LlmAgent` + `MCPToolset` over Streamable HTTP — connects to `pricing_server.py --http` with a JWT and discovers its tools; shows authentication (401), server authorization (403) and tool-level scopes. Start the server and mint a token first. |
+| d02 | `d02_mcp_tools` | `LlmAgent` + `McpToolset` over Streamable HTTP — connects to `pricing_server.py --http` with a JWT and discovers its tools; shows authentication (401), server authorization (403) and tool-level scopes. Start the server and mint a token first. |
 | d03 | `d03_sessions_state` | `ToolContext` state at three scopes — session (this conversation), `user:` (this user), and `app:` (everyone). |
 | d04 | `d04_sequential` | `SequentialAgent` pipeline — each step's `output_key` feeds the next via `{placeholder}`. |
 | d05 | `d05_parallel` | `ParallelAgent` fan-out — concurrent agents writing to different state keys. |
@@ -299,8 +301,8 @@ One-line summary of every runnable file in the workshop, grouped by module. Use 
 
 | Pick from dropdown | What it means (one line) |
 |---|---|
-| `buyer_agent` | `LlmAgent` + pricing `MCPToolset`; `before_tool_callback` enforces allowlist (cannot see seller's floor). |
-| `seller_agent` | `LlmAgent` + **two** `MCPToolset`s (pricing + inventory) — has private access to `get_minimum_acceptable_price`. |
+| `buyer_agent` | `LlmAgent` + pricing `McpToolset`; `before_tool_callback` enforces allowlist (cannot see seller's floor). |
+| `seller_agent` | `LlmAgent` + **two** `McpToolset`s (pricing + inventory) — has private access to `get_minimum_acceptable_price`. |
 | `negotiation` | `LoopAgent` wrapping `SequentialAgent(buyer → seller)` — agreement detected via a structured `submit_decision` tool, not free text. |
 
 ---
@@ -314,12 +316,12 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
     │
     ├── buyer_agent (negotiation_agents/buyer_agent/agent.py)
     │     ├── root_agent = LlmAgent(model=AGENT_MODEL)  # default: openai/gpt-4o
-    │     └── MCPToolset → m1_mcp/pricing_server.py
+    │     └── McpToolset → m1_mcp/pricing_server.py
     │
     ├── seller_agent (negotiation_agents/seller_agent/agent.py)
     │     ├── root_agent = LlmAgent(model=AGENT_MODEL)  # default: openai/gpt-4o
-    │     ├── MCPToolset → m1_mcp/pricing_server.py
-    │     └── MCPToolset → m1_mcp/inventory_server.py (seller ONLY)
+    │     ├── McpToolset → m1_mcp/pricing_server.py
+    │     └── McpToolset → m1_mcp/inventory_server.py (seller ONLY)
     │
     └── negotiation (negotiation_agents/negotiation/agent.py)
           └── root_agent = LoopAgent(sub_agents=[SequentialAgent(buyer, seller)])
@@ -476,8 +478,8 @@ Use ADK's workflow agents — wrap buyer, mediator, and seller as `sub_agents` o
 |---|---|---|
 | `m1_mcp/pricing_server.py` | `get_market_price`, `calculate_discount` | MCP pricing tools |
 | `m1_mcp/inventory_server.py` | `get_inventory_level`, `get_minimum_acceptable_price` | MCP inventory tools |
-| `m2_adk_multiagents/negotiation_agents/buyer_agent/agent.py` | `root_agent = LlmAgent(...)` | Buyer agent with MCPToolset |
-| `m2_adk_multiagents/negotiation_agents/seller_agent/agent.py` | `root_agent = LlmAgent(...)` | Seller agent with dual MCPToolsets |
+| `m2_adk_multiagents/negotiation_agents/buyer_agent/agent.py` | `root_agent = LlmAgent(...)` | Buyer agent with McpToolset |
+| `m2_adk_multiagents/negotiation_agents/seller_agent/agent.py` | `root_agent = LlmAgent(...)` | Seller agent with dual McpToolsets |
 | `m2_adk_multiagents/negotiation_agents/negotiation/agent.py` | `root_agent = LoopAgent(...)` | LoopAgent + SequentialAgent + MCP tools + submit_decision |
 
 ---

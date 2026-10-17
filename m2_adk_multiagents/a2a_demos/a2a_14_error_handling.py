@@ -170,11 +170,14 @@ async def layer2_protocol(http: httpx.AsyncClient, buyer: AgentCard, seller: Age
     await expect_error(f"tasks/cancel on task {done_task.id[:8]}, which already completed",
                        lambda: seller_client.cancel_task(TaskIdParams(id=done_task.id)))
 
-    # A task that is still running. ADK's A2A executor doesn't implement cancel.
+    # A task that is still running CAN be canceled — no error. Canceled is a
+    # final state, so a second cancel is refused like the completed one above.
     running = await send_once(buyer_client, message(TextPart(text="Make your opening offer for 742 Evergreen Terrace.")))
-    await expect_error(f"tasks/cancel on task {running.id[:8]}, still {running.status.state.value}",
+    canceled = await buyer_client.cancel_task(TaskIdParams(id=running.id))
+    print(f"\n▶ tasks/cancel on task {running.id[:8]}, still {running.status.state.value}")
+    print(f"  no error — task is now {canceled.status.state.value}")
+    await expect_error(f"tasks/cancel on task {running.id[:8]} again",
                        lambda: buyer_client.cancel_task(TaskIdParams(id=running.id)))
-    await poll(buyer_client, running)       # let it finish
 
     # Capabilities the card doesn't offer. The buyer's card says
     # pushNotifications: false — the server refuses to store a webhook.

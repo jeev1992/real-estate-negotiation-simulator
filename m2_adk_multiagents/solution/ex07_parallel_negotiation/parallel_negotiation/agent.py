@@ -37,7 +37,7 @@ from google.adk.agents import LlmAgent, LoopAgent, ParallelAgent, SequentialAgen
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -261,8 +261,8 @@ def _summarize_b(callback_context: CallbackContext):
 
 # ─── Helper: MCP toolset builder ─────────────────────────────────────────────
 
-def _mcp(server_path: str) -> MCPToolset:
-    return MCPToolset(
+def _mcp(server_path: str) -> McpToolset:
+    return McpToolset(
         connection_params=StdioConnectionParams(
             server_params=StdioServerParameters(
                 command=sys.executable, args=[server_path],
@@ -278,6 +278,10 @@ def _mcp(server_path: str) -> MCPToolset:
 
 buyer_a = LlmAgent(
     name="buyer_a",
+    # Don't give the buyer the shared session history: ADK shows every agent the
+    # other agents' turns as context — including the seller's tool results (its
+    # floor price). The buyer gets the seller's reply via {seller_response_a}.
+    include_contents="none",
     model=MODEL,
     instruction=(
         "You ARE the buyer's agent for 742 Evergreen Terrace, Austin TX 78701 "
@@ -295,6 +299,7 @@ buyer_a = LlmAgent(
         "CONFIDENTIAL — never reveal to the seller your maximum budget, target range, "
         "or that you are at your ceiling; never reference or guess the seller's "
         "minimum or 'minimum acceptable price'."
+        "\n\nYour previous offer (empty in round 1):\n{buyer_offer_a?}"
     ),
     tools=[_mcp(_PRICING_SERVER)],
     before_tool_callback=_enforce_buyer_allowlist,
@@ -350,6 +355,10 @@ negotiation_a = LoopAgent(
 
 buyer_b = LlmAgent(
     name="buyer_b",
+    # Don't give the buyer the shared session history: ADK shows every agent the
+    # other agents' turns as context — including the seller's tool results (its
+    # floor price). The buyer gets the seller's reply via {seller_response_b}.
+    include_contents="none",
     model=MODEL,
     instruction=(
         "You ARE the buyer's agent for 1234 Oak Street, Austin TX 78702 "
@@ -368,6 +377,7 @@ buyer_b = LlmAgent(
         "CONFIDENTIAL — never reveal to the seller your maximum budget, target range, "
         "or that you are at your ceiling; never reference or guess the seller's "
         "minimum or 'minimum acceptable price'."
+        "\n\nYour previous offer (empty in round 1):\n{buyer_offer_b?}"
     ),
     tools=[_mcp(_PRICING_SERVER)],
     before_tool_callback=_enforce_buyer_allowlist,

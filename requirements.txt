@@ -37,14 +37,16 @@ mcp>=1.0.0,<2.0.0
 openai>=1.40.0
 
 # Google ADK — powers the ADK agents (OpenAI-backed model runtime)
-# <2: the workshop is written and tested against the ADK 1.x API.
-google-adk>=1.0.0,<2.0.0
+# Tested with google-adk 2.11. <3: next major version not tested.
+google-adk>=2.11.0,<3.0.0
 
 # LiteLLM — required by ADK for provider-style model IDs (e.g., openai/gpt-4o)
-litellm>=1.75.5
+litellm>=1.84.0
 
 # Google Agent2Agent protocol SDK (true networked A2A)
-a2a-sdk>=0.3.24,<1.0.0              # A2A protocol SDK (v1.x is incompatible with google-adk <2.0)
+# <1: the A2A demos use the 0.3 API (pydantic types); a2a-sdk 1.x switches to
+# protobuf-based types. google-adk 2.x accepts both.
+a2a-sdk>=0.3.24,<1.0.0
 
 
 # ── Data Validation ───────────────────────────────────────────────────────────

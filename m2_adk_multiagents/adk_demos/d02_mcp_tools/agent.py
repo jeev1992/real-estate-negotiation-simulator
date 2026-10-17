@@ -1,13 +1,13 @@
 """
 Demo 02 — MCP Tools in ADK (remote server, with authentication)
 =================================================================
-LlmAgent with MCPToolset auto-discovering tools from the pricing MCP server —
+LlmAgent with McpToolset auto-discovering tools from the pricing MCP server —
 this time a REMOTE server over Streamable HTTP that requires a signed token.
 ADK connects, sends the token on every request, discovers the tools via the
 MCP protocol, and offers them to the LLM as function-calling tools.
 
 ADK CONCEPTS:
-  - MCPToolset: connects to an MCP server and discovers tools automatically
+  - McpToolset: connects to an MCP server and discovers tools automatically
   - StreamableHTTPConnectionParams: URL + headers (here the bearer token)
   - The LLM sees MCP tools exactly like local function tools
 
@@ -33,7 +33,7 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StreamableHTTPConnectionParams,
 )
 from google.genai import types
@@ -76,7 +76,7 @@ root_agent = LlmAgent(
         "permission (scope) is missing. Never estimate the answer yourself instead."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StreamableHTTPConnectionParams(
                 url=PRICING_MCP_URL,
                 headers=_headers,

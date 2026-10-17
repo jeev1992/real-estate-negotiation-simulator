@@ -89,7 +89,7 @@ Requirements:
 
 ### Verify via the session DB
 
-ADK persists all state in a SQLite database at `negotiation/.adk/session.db`. Query it to confirm the episodic memory was stored:
+`adk web` persists all state in a SQLite database at `negotiation/.adk/session.db` (created the first time you chat with the agent in `adk web`; the folder is git-ignored). Query it to confirm the episodic memory was stored (the command has no `$` or escaped quotes, so it can be pasted unchanged into bash or PowerShell):
 
 ```bash
 python -c "
@@ -100,32 +100,31 @@ cur.execute('SELECT id, state FROM sessions ORDER BY create_time DESC LIMIT 1')
 sid, raw = cur.fetchone()
 state = json.loads(raw)
 memory = state.get('negotiation_memory', [])
-print(f'Session {sid[:8]}... — {len(memory)} rounds in memory')
-for entry in memory:
-    print(f'  Round {entry[\"round\"]}: buyer=${entry[\"buyer_offer\"]:,}  seller=${entry[\"seller_counter\"]:,}  concession=${entry[\"seller_concession\"]:,}  rate={entry[\"concession_rate\"]}  gap=${entry[\"gap\"]:,}')
-decision = state.get('seller_decision', {})
-print(f'Final decision: {decision.get(\"action\", \"N/A\")} @ ${decision.get(\"price\", \"?\"):,}')
+print(f'Session {sid[:8]}... - {len(memory)} rounds in memory')
+for e in memory:
+    print('  Round {round}: buyer={buyer_offer:,}  seller={seller_counter:,}  concession={seller_concession:,}  rate={concession_rate}  gap={gap:,}'.format(**e))
+print('Final decision:', state.get('seller_decision'))
 conn.close()
 "
 ```
 
-Expected output (typical run):
+Example output (gpt-4o — prices vary run to run):
 ```
-Session 5f147d24... — 4 rounds in memory
-  Round 1: buyer=$425,000  seller=$477,000  concession=$0  rate=0.0  gap=$52,000
-  Round 2: buyer=$435,000  seller=$472,000  concession=$5,000  rate=0.0105  gap=$37,000
-  Round 3: buyer=$453,500  seller=$465,000  concession=$7,000  rate=0.0148  gap=$11,500
-  Round 4: buyer=$460,000  seller=$460,000  concession=$5,000  rate=0.0108  gap=$0
-Final decision: ACCEPT @ $460,000
+Session 843802b8... - 4 rounds in memory
+  Round 1: buyer=425,000  seller=477,000  concession=0  rate=0.0  gap=52,000
+  Round 2: buyer=433,500  seller=470,000  concession=7,000  rate=0.0147  gap=36,500
+  Round 3: buyer=442,000  seller=465,000  concession=5,000  rate=0.0106  gap=23,000
+  Round 4: buyer=453,500  seller=453,500  concession=11,500  rate=0.0247  gap=0
+Final decision: {'action': 'ACCEPT', 'price': 453500}
 ```
 
 Expected observations:
 - **`negotiation_memory`**: list of structured entries, one per round, with concession metrics
 - **Buyer opens at ~$425K** (12% below asking) — low anchor enforced by instruction
-- **`seller_concession`**: seller drops $5K–$7K per round as they approach their floor
-- **`concession_rate`**: hovers around 1–1.5% — the strategy advisor uses this trend to recommend tactics
-- **`gap`**: narrows from $52K → $37K → $11.5K → $0 until convergence
-- **`seller_decision`**: final ACCEPT at $460K (buyer's max budget)
+- **`seller_concession`**: seller drops roughly $5K–$8K per counter as they approach their floor
+- **`concession_rate`**: around 1–1.5% per counter — the strategy advisor uses this trend to recommend tactics
+- **`gap`**: narrows round by round until it reaches 0 in the round the seller accepts (that round is recorded too)
+- **`seller_decision`**: final ACCEPT — any offer at or above the seller's floor is accepted (`submit_decision` enforces it), so deals usually close in the high $440Ks–mid $450Ks
 
 ## Reflection
 

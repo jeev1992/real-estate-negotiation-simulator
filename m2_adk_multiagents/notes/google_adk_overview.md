@@ -2,13 +2,13 @@
 ## Building Production-Grade Agents with Google's Agent Development Kit
 
 > **Audience:** Engineers who have built ad-hoc LLM agents (the OpenAI tool-calling loop, a custom session store, hand-rolled multi-agent orchestration) and want a framework that handles all that infrastructure declaratively.
-> **Prerequisites:** Familiarity with the OpenAI / Anthropic tool-calling loop. Helpful but not required: [`mcp_deep_dive.md`](../../m1_mcp/notes/mcp_deep_dive.md) for the protocol ADK speaks via `MCPToolset`.
+> **Prerequisites:** Familiarity with the OpenAI / Anthropic tool-calling loop. Helpful but not required: [`mcp_deep_dive.md`](../../m1_mcp/notes/mcp_deep_dive.md) for the protocol ADK speaks via `McpToolset`.
 > **Read this after:** Running at least `adk web m2_adk_multiagents/adk_demos/` and trying demos d01–d06.
 > **Read this next:** [`a2a_protocols.md`](a2a_protocols.md) for the protocol layer that exposes ADK agents over the network. [`adk_quick_reference.md`](adk_quick_reference.md) is the one-page lookup for the constructs covered here.
 >
 > **TL;DR:**
 > 1. **ADK is opinionated infrastructure for LLM agents.** Sessions, memory, streaming, multi-agent orchestration, tool integration — all declarative. You write `root_agent = LlmAgent(...)` and ADK gives you a runtime.
-> 2. **Four primitives you'll touch every day:** `LlmAgent` (the agent), `Runner` (the loop), `SessionService` (memory), and some toolset (usually `MCPToolset`). Workflow agents — `SequentialAgent`, `ParallelAgent`, `LoopAgent` — and callbacks compose on top.
+> 2. **Four primitives you'll touch every day:** `LlmAgent` (the agent), `Runner` (the loop), `SessionService` (memory), and some toolset (usually `McpToolset`). Workflow agents — `SequentialAgent`, `ParallelAgent`, `LoopAgent` — and callbacks compose on top.
 > 3. **`adk web` runs everything.** It auto-discovers agents from package structure, creates Runner + Session for you, gives you a chat UI with event stream, and (with `--a2a`) exposes each agent that has an `agent.json` as an A2A network service, serving that file as its Agent Card.
 
 See also: [A2A Protocols](a2a_protocols.md) for the protocol layer that lets ADK agents talk to other agents.
@@ -234,7 +234,7 @@ ADK has five core components that work together:
 ┌──────────────────────────────────────────────────────────────────┐
 │                         TOOLS                                    │
 │                                                                  │
-│  FunctionTool    MCPToolset    AgentTool    BuiltInTools          │
+│  FunctionTool    McpToolset    AgentTool    BuiltInTools          │
 │  (Python func)   (MCP server) (sub-agent)  (code exec, etc.)     │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -513,13 +513,13 @@ buyer_agent = LlmAgent(
 
 ## 6. MCP Integration in ADK
 
-This is one of ADK's most powerful features — first-class MCP support via `MCPToolset`.
+This is one of ADK's most powerful features — first-class MCP support via `McpToolset`.
 
 ### Using stdio MCP Servers
 
 ```python
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioServerParameters,
     StreamableHTTPConnectionParams,
 )
@@ -528,7 +528,7 @@ async def create_buyer_with_mcp():
     """Create a buyer agent with MCP tools from our pricing server."""
 
     # Connect to our pricing MCP server
-    pricing_toolset = MCPToolset(
+    pricing_toolset = McpToolset(
         connection_params=StdioServerParameters(
             command="python",
             args=["m1_mcp/pricing_server.py"],
@@ -537,7 +537,7 @@ async def create_buyer_with_mcp():
     )
 
     # Connect to GitHub's hosted MCP server (for market research) over Streamable HTTP
-    github_toolset = MCPToolset(
+    github_toolset = McpToolset(
         connection_params=StreamableHTTPConnectionParams(
             url="https://api.githubcopilot.com/mcp/readonly",
             headers={"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}"},
@@ -564,12 +564,12 @@ async def create_buyer_with_mcp():
 ### Using SSE MCP Servers
 
 ```python
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseServerParams
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, SseServerParams
 
 # Start pricing server in SSE mode first:
 # python m1_mcp/pricing_server.py --sse --port 8001
 
-pricing_toolset = MCPToolset(
+pricing_toolset = McpToolset(
     connection_params=SseServerParams(
         url="http://localhost:8001/sse"
     )
@@ -596,7 +596,7 @@ pricing_toolset = MCPToolset(
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                      MCPToolset                                 │
+│                      McpToolset                                 │
 │                                                                 │
 │  Receives: {"tool": "get_market_price",                         │
 │             "args": {"address": "742 Evergreen..."}}            │
@@ -707,7 +707,7 @@ Understanding the ADK agent lifecycle helps debug production issues.
    ─────────────────
    • Agent is created with LlmAgent(...)
    • Tools are registered
-   • MCP connections established (if MCPToolset used)
+   • MCP connections established (if McpToolset used)
    • Session service is set up
 
 2. SESSION CREATION
@@ -921,7 +921,7 @@ buyer_agent = LlmAgent(
 | **Iterative Refinement** | `LoopAgent` with escalation signals until quality threshold met | Negotiation, code generation, writing tasks |
 
 **In our workshop, we use two patterns:**
-- **Declarative agents** (`negotiation_agents/buyer_agent/agent.py`, `seller_agent/agent.py`) — each is a `root_agent = LlmAgent(...)` with MCPToolset
+- **Declarative agents** (`negotiation_agents/buyer_agent/agent.py`, `seller_agent/agent.py`) — each is a `root_agent = LlmAgent(...)` with McpToolset
 - **Orchestrated negotiation** (`negotiation_agents/negotiation/agent.py`) — a `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` with `after_agent_callback` for termination
 
 ### Agent Hierarchy Design Principles
@@ -985,7 +985,7 @@ Here's how our negotiation simulator uses ADK (detailed in `m2_adk_multiagents/`
 # m2_adk_multiagents/negotiation_agents/buyer_agent/agent.py
 
 from google.adk.agents import LlmAgent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StdioConnectionParams, StdioServerParameters
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, StdioConnectionParams, StdioServerParameters
 
 root_agent = LlmAgent(
     name="buyer_agent",
@@ -996,7 +996,7 @@ root_agent = LlmAgent(
         "Maximum budget: $460,000. Call MCP tools before every offer."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -1012,11 +1012,11 @@ root_agent = LlmAgent(
 
 **Key points:**
 - No class, no `__aenter__`/`__aexit__`, no manual Runner — just `root_agent = LlmAgent(...)`
-- MCPToolset goes directly in the `tools` list — ADK manages the lifecycle
+- McpToolset goes directly in the `tools` list — ADK manages the lifecycle
 - `adk web` discovers this agent automatically from the package structure
 - `adk web --a2a` serves it as an A2A endpoint, with its `agent.json` as the Agent Card
 
-### Seller Agent — Dual MCPToolsets
+### Seller Agent — Dual McpToolsets
 
 ```python
 # m2_adk_multiagents/negotiation_agents/seller_agent/agent.py
@@ -1026,14 +1026,16 @@ root_agent = LlmAgent(
     model="openai/gpt-4o",
     instruction="...",
     tools=[
-        MCPToolset(...)  # pricing server
-        MCPToolset(...)  # inventory server — has get_minimum_acceptable_price
+        McpToolset(...)  # pricing server
+        McpToolset(...)  # inventory server — has get_minimum_acceptable_price
     ],
     before_tool_callback=_enforce_seller_allowlist,
 )
 ```
 
 Seller has access to `get_minimum_acceptable_price` — the buyer does not. Same information asymmetry as Module 1, now declarative.
+
+One catch in the `negotiation` orchestrator, where buyer and seller share a session: ADK gives every agent the *other* agents' turns as context, tool results included. So an allowlist alone isn't enough — the buyer could still read the seller's floor-price result. The buyer is created with `include_contents="none"`, so it only sees its current turn (starting at the seller's last reply); what it needs from earlier comes in through `{seller_response}` and `{buyer_offer?}`.
 
 ### Negotiation Orchestrator — LoopAgent + SequentialAgent
 
@@ -1090,7 +1092,7 @@ Understanding when to use each approach:
 This workshop uses **Google ADK** (`m2_adk_multiagents/`) as the production-style implementation:
 
 - ADK `LlmAgent` defines buyer and seller
-- `MCPToolset` integrates the M1 MCP servers natively
+- `McpToolset` integrates the M1 MCP servers natively
 - `Runner` + `InMemorySessionService` manage the per-session conversation state
 - ADK workflow agents (`SequentialAgent`, `LoopAgent`) provide bounded multi-agent orchestration
 - A2A SDK exposes the seller as an HTTP service so any A2A-compatible client can talk to it
@@ -1109,9 +1111,9 @@ Without a framework, you'd have to build all of this by hand — raw `while True
 
 **Reality**: ADK supports other models via LiteLLM integration (this workshop uses `openai/gpt-4o`). Gemini has the deepest native integration, but other providers are first-class through the provider-prefixed model id.
 
-### ❌ "MCPToolset downloads tools from the internet"
+### ❌ "McpToolset downloads tools from the internet"
 
-**Reality**: MCPToolset connects to MCP servers you specify — either local (stdio) or remote (SSE). It doesn't download or discover tools from any registry automatically.
+**Reality**: McpToolset connects to MCP servers you specify — either local (stdio) or remote (SSE). It doesn't download or discover tools from any registry automatically.
 
 ### ❌ "ADK handles the negotiation logic"
 
@@ -1122,7 +1124,7 @@ Without a framework, you'd have to build all of this by hand — raw `while True
 # Part II — ADK Internals (Phase 2 Deep-Dive)
 
 The first half of this document showed *what ADK is* and the basic
-LlmAgent + Runner + Session + MCPToolset + workflow-agent vocabulary.
+LlmAgent + Runner + Session + McpToolset + workflow-agent vocabulary.
 This half drills into the abstractions you reach for once a single
 LlmAgent is no longer enough. Each section has a runnable demo under
 [`m2_adk_multiagents/adk_demos/`](../adk_demos/).
@@ -1134,6 +1136,8 @@ LlmAgent is no longer enough. Each section has a runnable demo under
 ADK ships three workflow agents. They are *not* LlmAgents — they don't
 call a model themselves. They orchestrate other agents (which usually
 *are* LlmAgents).
+
+> **ADK 2.x note — `Workflow`.** In ADK 2.x, `SequentialAgent`, `ParallelAgent` and `LoopAgent` still work (this workshop uses them, tested on ADK 2.11) but are **deprecated in favor of `Workflow`**, a new graph-based engine (nodes connected by edges, in `google.adk.workflow`). You'll see `DeprecationWarning: SequentialAgent is deprecated in favor of Workflow…` when these agents load. ADK says they will be removed in a future version, and that `Workflow` cannot yet be used as an `LlmAgent` sub-agent. The concepts — run in order, run in parallel, repeat until a condition — carry over.
 
 ### 14.1 `SequentialAgent`
 
@@ -1399,9 +1403,11 @@ $460K cap in `submit_offer`.
 The instruction makes that mandatory, but the model can still skip the call
 and answer in prose, leaving that turn unchecked. A full fix forces a tool
 call until the decision is recorded — ADK's `tool_config` mode `ANY` set per
-request from a `before_model_callback`. ADK 1.x's LiteLLM bridge does not
-forward `tool_config` to OpenAI's `tool_choice`, so with OpenAI models this
-needs a small `LiteLlm` subclass.
+request from a `before_model_callback`. ADK 2.x's LiteLLM bridge forwards
+that to OpenAI as `tool_choice="required"`: the model must call *a* tool
+(it doesn't pass `allowed_function_names`, so not necessarily
+`submit_decision`), so the callback keeps setting it until the decision is
+in state.
 
 ### How the loop reads the decision
 
@@ -1519,11 +1525,11 @@ secrets manager.
 
 ### MCP server credentials
 
-MCPToolset with `StdioServerParameters` can pass environment variables
+McpToolset with `StdioServerParameters` can pass environment variables
 to the spawned server process — this is how you inject API keys:
 
 ```python
-MCPToolset(
+McpToolset(
     connection_params=StdioConnectionParams(
         server_params=StdioServerParameters(
             command=sys.executable,
@@ -1540,7 +1546,7 @@ headers instead — ADK sends them on every MCP request. Demo d02 does this
 against `pricing_server.py --http`:
 
 ```python
-MCPToolset(
+McpToolset(
     connection_params=StreamableHTTPConnectionParams(
         url="http://127.0.0.1:8001/mcp",
         headers={"Authorization": f"Bearer {os.environ['PRICING_MCP_TOKEN']}"},
@@ -1655,7 +1661,7 @@ agent.py + agent.json             adk web --a2a
 ─────────────────────             ─────────────────────────
 root_agent = LlmAgent(            For each agent folder that has an
     name="seller_agent",            agent.json (others are skipped):
-    tools=[MCPToolset(...)],        serves agent.json as the Agent Card
+    tools=[McpToolset(...)],        serves agent.json as the Agent Card
 )                                   (name, url, capabilities, skills)
                                     and wraps root_agent in a Runner +
                                     A2aAgentExecutor
@@ -1680,8 +1686,8 @@ A single ADK agent commonly plays both roles:
  A2A client  ──────►  A2A server (auto by adk web) │
  (buyer demo)       │                               │
                     │  LlmAgent                     │
-                    │    ├── MCPToolset → pricing    │──── MCP client
-                    │    └── MCPToolset → inventory  │──── MCP client
+                    │    ├── McpToolset → pricing    │──── MCP client
+                    │    └── McpToolset → inventory  │──── MCP client
                     └──────────────────────────────┘
 ```
 
@@ -1699,7 +1705,7 @@ Compare with the traditional approach (what we deleted):
 | Agent Card | Manually constructed `AgentCard(...)` | `agent.json` next to `agent.py` |
 | Request handling | Custom `AgentExecutor` subclass | Built into ADK |
 | Task lifecycle | Manual `TaskUpdater` calls | Automatic |
-| MCP lifecycle | `__aenter__`/`__aexit__` context managers | Managed by MCPToolset |
+| MCP lifecycle | `__aenter__`/`__aexit__` context managers | Managed by McpToolset |
 
 ### When you need a custom server
 
@@ -1726,7 +1732,7 @@ These pieces land in our module as follows:
 | Concept                      | Where it lives in the workshop                                  |
 |------------------------------|-----------------------------------------------------------------|
 | `LlmAgent`                   | `negotiation_agents/buyer_agent/agent.py`, `seller_agent/agent.py` |
-| `MCPToolset` (multiple)      | Seller connects pricing + inventory MCPToolsets                  |
+| `McpToolset` (multiple)      | Seller connects pricing + inventory McpToolsets                  |
 | `before_tool_callback` allowlist | `_enforce_buyer_allowlist`, `_enforce_seller_allowlist`       |
 | `SequentialAgent` + `LoopAgent` | `negotiation_agents/negotiation/agent.py`                     |
 | `output_key` state passing   | buyer writes `buyer_offer`, seller reads `{buyer_offer}`         |
@@ -1761,7 +1767,7 @@ adk web --a2a m2_adk_multiagents/negotiation_agents/
 | **Runner** | Execute agents, manage turn lifecycle |
 | **SessionService** | Persist conversation state across turns |
 | **FunctionTool** | Wrap Python functions as agent tools |
-| **MCPToolset** | Connect to MCP servers (stdio or SSE) |
+| **McpToolset** | Connect to MCP servers (stdio or SSE) |
 | **AgentTool** | Use one agent as a tool for another |
 | **SequentialAgent** | Run sub-agents in order |
 | **ParallelAgent** | Run sub-agents concurrently |

@@ -34,7 +34,7 @@ m1_mcp/solution/ex03_server_failure_handling/
 Requirements:
 
 - **`root_agent` is an `LlmAgent`** named `resilient_advisor`, model `openai/gpt-4o`.
-- **Two `MCPToolset`s** — pricing and inventory servers (same as Exercise 2).
+- **Two `McpToolset`s** — pricing and inventory servers (same as Exercise 2).
 - **`after_tool_callback`** that uses **structural checks** to distinguish runtime failures from argument errors:
   - **Runtime failures** (response is `None` or empty string): log `[DEGRADED]` and return a fallback dict.
   - **Argument errors** (response is a dict with `"error"` key containing a helpful message): return `None` (pass through) so the LLM can read the message and self-correct.

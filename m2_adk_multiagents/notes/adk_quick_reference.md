@@ -8,7 +8,7 @@
 > **TL;DR:**
 > 1. **An agent is a declarative `LlmAgent` object.** No class, no boilerplate, no manual orchestration loop — just `root_agent = LlmAgent(...)`.
 > 2. **`adk web` is the runtime.** It auto-discovers any folder with `__init__.py` + `agent.py` (defining `root_agent`), creates a Runner + SessionService for you, and gives you a chat UI. Add `--a2a` and every agent also gets a JSON-RPC endpoint and Agent Card for free.
-> 3. **MCPToolset is the bridge to MCP servers.** Goes directly in the agent's `tools=[]` list. ADK manages the subprocess, the handshake, and translates LLM tool calls into MCP `tools/call` requests automatically.
+> 3. **McpToolset is the bridge to MCP servers.** Goes directly in the agent's `tools=[]` list. ADK manages the subprocess, the handshake, and translates LLM tool calls into MCP `tools/call` requests automatically.
 
 ---
 
@@ -31,7 +31,7 @@ root_agent = LlmAgent(
     model="openai/gpt-4o",           # provider/model format
     description="Real estate buyer agent for 742 Evergreen Terrace.",
     instruction="...",
-    tools=[MCPToolset(...)],          # auto-discovers MCP tools
+    tools=[McpToolset(...)],          # auto-discovers MCP tools
     before_tool_callback=_enforce_buyer_allowlist,
 )
 ```
@@ -74,21 +74,23 @@ from google.adk.sessions import InMemorySessionService
 
 ---
 
-## 4. MCPToolset — "The MCP bridge"
+## 4. McpToolset — "The MCP bridge"
+
+(Called `MCPToolset` in ADK 1.x. ADK 2.x still accepts the old name but warns that it is deprecated.)
 
 Spawns MCP server as subprocess, calls `list_tools()`, wraps tools for the LLM.
-In idiomatic ADK, MCPToolset goes directly in the agent's `tools` list:
+In idiomatic ADK, McpToolset goes directly in the agent's `tools` list:
 
 ```python
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset, StdioConnectionParams, StdioServerParameters,
+    McpToolset, StdioConnectionParams, StdioServerParameters,
 )
 
 root_agent = LlmAgent(
     name="buyer_agent",
     model="openai/gpt-4o",
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -101,13 +103,13 @@ root_agent = LlmAgent(
 )
 ```
 
-> **Intuition:** This is the same MCP `tools/list` you'd otherwise call by hand. `MCPToolset` does it for you — and also runs MCP `tools/call` automatically when the LLM picks a tool. ADK manages the subprocess lifecycle.
+> **Intuition:** This is the same MCP `tools/list` you'd otherwise call by hand. `McpToolset` does it for you — and also runs MCP `tools/call` automatically when the LLM picks a tool. ADK manages the subprocess lifecycle.
 
 Remote server over Streamable HTTP, with a bearer token (demo d02):
 ```python
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StreamableHTTPConnectionParams
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset, StreamableHTTPConnectionParams
 
-MCPToolset(
+McpToolset(
     connection_params=StreamableHTTPConnectionParams(
         url="http://127.0.0.1:8001/mcp",                       # pricing_server.py --http
         headers={"Authorization": f"Bearer {os.environ['PRICING_MCP_TOKEN']}"},

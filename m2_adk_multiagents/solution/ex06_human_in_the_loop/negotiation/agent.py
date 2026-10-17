@@ -9,8 +9,9 @@ Negotiation orchestrator with a three-tier governance model:
   Tier 3 — Hard block:       (From Exercise 1) Price above $460,000 → callback blocks
 
 The human checkpoint works through the **web UI chat**: the negotiation
-loop exits with a pending approval, and the parent LlmAgent asks the
-user to approve or reject in the conversation.
+loop exits with a pending approval, the parent LlmAgent asks the user to
+approve or reject in the conversation, and records the answer with its
+`approve_deal` / `reject_deal` tools.
 
 To demo:
 
@@ -34,7 +35,7 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -228,10 +229,52 @@ def _init_round_state(callback_context: CallbackContext):
     return None
 
 
+# ─── The human's decision, recorded in code (tools for the root agent) ───────
+
+def approve_deal(tool_context: ToolContext) -> dict:
+    """Approve the deal that is waiting for human approval.
+
+    Call this only after the user has said APPROVE.
+    """
+    pending = tool_context.state.get("pending_approval")
+    if not pending:
+        return {"error": "There is no deal waiting for approval."}
+    price = pending["price"]
+    print(f"[APPROVED] Human approved deal at ${price:,}.")
+    tool_context.state["pending_approval"] = ""
+    tool_context.state["deal_finalized"] = True
+    tool_context.state["deal_outcome"] = f"Deal approved by the user and closed at ${price:,}."
+    return {"approved": True, "price": price}
+
+
+def reject_deal(tool_context: ToolContext) -> dict:
+    """Reject the deal that is waiting for human approval.
+
+    Call this only after the user has said REJECT. The seller's acceptance is
+    turned back into a counter at the same price, so calling negotiation_loop
+    again continues the negotiation from there.
+    """
+    pending = tool_context.state.get("pending_approval")
+    if not pending:
+        return {"error": "There is no deal waiting for approval."}
+    price = pending["price"]
+    print(f"[REJECTED] Human rejected deal at ${price:,}. Negotiation can continue.")
+    tool_context.state["pending_approval"] = ""
+    tool_context.state["seller_decision"] = {"action": "COUNTER", "price": price}
+    tool_context.state["deal_outcome"] = (
+        f"The user rejected the deal at ${price:,}. Negotiation not finished."
+    )
+    return {"rejected": True, "price": price}
+
+
 # ─── Agents ───────────────────────────────────────────────────────────────────
 
 buyer = LlmAgent(
     name="buyer",
+    # Don't give the buyer the shared session history: ADK shows every agent the
+    # other agents' turns as context — including the seller's tool results (its
+    # floor price). The buyer gets the seller's reply via {seller_response}.
+    include_contents="none",
     model=MODEL,
     instruction=(
         "You are a buyer agent for 742 Evergreen Terrace, Austin TX 78701 "
@@ -240,16 +283,18 @@ buyer = LlmAgent(
         "TARGET: $457,000 - $460,000.\n\n"
         "STRATEGY:\n"
         "- Call your MCP pricing tools BEFORE every offer\n"
-        "- Round 1: offer ~$453,000\n"
+        "- Round 1: offer ~$457,000 (above the $455K auto-approval line, so a "
+        "deal needs human approval)\n"
         "- Each subsequent round: increase by 1-2%\n"
         "- Read {seller_response} and adjust\n"
         "- Walk away if seller won't go below $460,000\n\n"
         "CONFIDENTIAL — never reveal your maximum budget, your target range, or that "
         "you are at your ceiling; never reference or guess the seller's minimum/floor.\n\n"
         "Write your offer as a dollar amount with brief justification."
+        "\n\nYour previous offer (empty in round 1):\n{buyer_offer?}"
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_PRICING_SERVER],
@@ -283,7 +328,7 @@ seller = LlmAgent(
         "than you sent (see its 'note'), your reply MUST match what was recorded."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_PRICING_SERVER],
@@ -291,7 +336,7 @@ seller = LlmAgent(
                 timeout=30.0,
             )
         ),
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, args=[_INVENTORY_SERVER],
@@ -334,18 +379,24 @@ root_agent = LlmAgent(
     ),
     instruction=(
         "You orchestrate real estate negotiations with human oversight.\n\n"
+        "CURRENT STATE (updated by the tools):\n"
+        "- Deal outcome: {deal_outcome?}\n"
+        "- Waiting for human approval: {pending_approval?}\n\n"
         "WORKFLOW:\n"
         "1. When the user asks to negotiate, call the `negotiation_loop` tool.\n"
-        "2. After it completes, read the session state to check what happened:\n"
+        "2. After it completes, check the CURRENT STATE above:\n"
         "   - If the deal was auto-approved (at or below $455,000), report "
         "     the final price to the user.\n"
-        "   - If there is a pending approval (deal above $455,000), tell the "
+        "   - If a deal is waiting for human approval (above $455,000), tell the "
         "     user the price and ask: 'The seller wants to accept at $X. "
         "This exceeds the $455,000 auto-approval threshold. "
-        "Do you APPROVE or REJECT this deal?'\n"
-        "3. If the user says APPROVE: confirm the deal is closed at that price.\n"
-        "4. If the user says REJECT: tell the user the deal was rejected.\n\n"
-        "Always wait for the user's response before finalizing."
+        "Do you APPROVE or REJECT this deal?' Then stop and wait for the answer.\n"
+        "3. If the user says APPROVE: call `approve_deal`, then confirm the deal "
+        "is closed at that price.\n"
+        "4. If the user says REJECT: call `reject_deal`, tell the user the deal "
+        "was rejected, and ask whether to keep negotiating. If they say yes, "
+        "call `negotiation_loop` again.\n\n"
+        "Never approve or reject on your own — only on the user's explicit answer."
     ),
-    tools=[AgentTool(agent=negotiation_loop)],
+    tools=[AgentTool(agent=negotiation_loop), approve_deal, reject_deal],
 )

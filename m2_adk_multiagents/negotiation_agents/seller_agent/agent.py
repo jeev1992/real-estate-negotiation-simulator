@@ -1,8 +1,8 @@
 """
 Seller Agent — Idiomatic ADK
 ===============================
-Declarative LlmAgent with dual MCPToolsets (pricing + inventory).
-Demonstrates: multiple MCPToolsets, information asymmetry via allowlist,
+Declarative LlmAgent with dual McpToolsets (pricing + inventory).
+Demonstrates: multiple McpToolsets, information asymmetry via allowlist,
 and a decision tool that enforces the seller's floor in code.
 
 The seller has access to get_minimum_acceptable_price (from the inventory
@@ -23,7 +23,7 @@ from pathlib import Path
 from google.adk.agents import LlmAgent
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -177,7 +177,7 @@ root_agent = LlmAgent(
         "market conditions — never with your floor."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -186,7 +186,7 @@ root_agent = LlmAgent(
                 timeout=30.0,
             )
         ),
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,

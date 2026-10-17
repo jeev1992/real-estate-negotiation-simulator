@@ -34,7 +34,7 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -200,21 +200,15 @@ def _extract_price(text: str) -> int | None:
 def _accumulate_memory_and_check(callback_context: CallbackContext):
     """Runs after the seller each round. Three jobs:
 
-    1. Check for ACCEPT → escalate.
-    2. Extract prices and compute concession metrics.
-    3. Append structured entry to negotiation_memory.
+    1. Extract prices and compute concession metrics.
+    2. Append structured entry to negotiation_memory (every round, including
+       the one where the seller accepts).
+    3. Check for ACCEPT → escalate.
     """
     state = callback_context.state
-
-    # ─ Job 1: acceptance check ───────────────────────────────────────────
     decision = state.get("seller_decision")
-    if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
-        # ADK drops a bare escalate: a callback only emits an event if it changes state.
-        state["loop_exit_reason"] = f"ACCEPT at ${decision.get('price', 0):,}"
-        callback_context.actions.escalate = True
-        return None
 
-    # ─ Job 2+3: build memory entry ──────────────────────────────────────
+    # ─ Job 1+2: build memory entry ──────────────────────────────────────
     memory = list(state.get("negotiation_memory", []))
     round_num = len(memory) + 1
 
@@ -248,8 +242,14 @@ def _accumulate_memory_and_check(callback_context: CallbackContext):
         end="",
     )
     print(
-        f" seller=${seller_price:,} concession=${seller_concession:,} gap=${gap:,}" if seller_price and gap else ""
+        f" seller=${seller_price:,} concession=${seller_concession:,} gap=${gap:,}" if seller_price and gap is not None else ""
     )
+
+    # ─ Job 3: acceptance check ───────────────────────────────────────────
+    if isinstance(decision, dict) and decision.get("action") == "ACCEPT":
+        # ADK drops a bare escalate: a callback only emits an event if it changes state.
+        state["loop_exit_reason"] = f"ACCEPT at ${decision.get('price', 0):,}"
+        callback_context.actions.escalate = True
 
     return None
 
@@ -299,6 +299,10 @@ strategy_advisor = LlmAgent(
 
 buyer = LlmAgent(
     name="buyer",
+    # Don't give the buyer the shared session history: ADK shows every agent the
+    # other agents' turns as context — including the seller's tool results (its
+    # floor price). The buyer gets the seller's reply via {seller_response}.
+    include_contents="none",
     model=MODEL,
     instruction=(
         "You are an expert real estate buyer agent representing a client "
@@ -327,9 +331,10 @@ buyer = LlmAgent(
         "MY OFFER: $<amount>\n"
         "Example: MY OFFER: $425,000\n\n"
         "Always mention which tactic you are following and why."
+        "\n\nYour previous offer (empty in round 1):\n{buyer_offer?}"
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -371,7 +376,7 @@ seller = LlmAgent(
         "than you sent (see its 'note'), your reply MUST match what was recorded."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -380,7 +385,7 @@ seller = LlmAgent(
                 timeout=30.0,
             )
         ),
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,

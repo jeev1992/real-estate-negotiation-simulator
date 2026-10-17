@@ -11,7 +11,7 @@ This module teaches Google's Agent Development Kit (ADK) from first principles, 
 | Concept | Where you learn it |
 |---|---|
 | `LlmAgent` — the core building block | Demo 01 (basic agent) |
-| `MCPToolset` — auto-discover MCP tools | Demo 02, `negotiation_agents/buyer_agent`, `negotiation_agents/seller_agent` |
+| `McpToolset` — auto-discover MCP tools | Demo 02, `negotiation_agents/buyer_agent`, `negotiation_agents/seller_agent` |
 | Sessions & state — session, `user:`, and `app:` scope | Demo 03 |
 | `SequentialAgent`, `ParallelAgent`, `LoopAgent` | Demos 04–06 |
 | `AgentTool` — agent-as-a-callable-tool | Demo 07 |
@@ -30,12 +30,12 @@ This module teaches Google's Agent Development Kit (ADK) from first principles, 
 ```
 m2_adk_multiagents/
   negotiation_agents/              ← adk web negotiation_agents/  (3 agents in dropdown)
-    buyer_agent/agent.py           LlmAgent + MCPToolset (pricing)
-    seller_agent/agent.py          LlmAgent + MCPToolset (pricing + inventory)
+    buyer_agent/agent.py           LlmAgent + McpToolset (pricing)
+    seller_agent/agent.py          LlmAgent + McpToolset (pricing + inventory)
     negotiation/agent.py           LoopAgent ↔ SequentialAgent + MCP tools + submit_decision
   adk_demos/                       ← adk web adk_demos/  (9 agents in dropdown)
     d01_basic_agent/agent.py       Bare LlmAgent + function tool
-    d02_mcp_tools/agent.py         LlmAgent + MCPToolset (pricing server over HTTP, with token auth)
+    d02_mcp_tools/agent.py         LlmAgent + McpToolset (pricing server over HTTP, with token auth)
     d03_sessions_state/agent.py    ToolContext: session, user:, and app: state
     d04_sequential/agent.py        SequentialAgent pipeline
     d05_parallel/agent.py          ParallelAgent fan-out
@@ -177,13 +177,13 @@ If `adk web --a2a` isn't running, each demo prints `Can't reach the agent: ...` 
 
 ## Agent details
 
-### `negotiation_agents/buyer_agent/` — Buyer (MCPToolset + allowlist)
+### `negotiation_agents/buyer_agent/` — Buyer (McpToolset + allowlist)
 
-Declarative `LlmAgent` with `MCPToolset` connecting to the pricing MCP server. A `before_tool_callback` enforces the buyer's tool allowlist — the buyer can never call `get_minimum_acceptable_price`.
+Declarative `LlmAgent` with `McpToolset` connecting to the pricing MCP server. A `before_tool_callback` enforces the buyer's tool allowlist — the buyer can never call `get_minimum_acceptable_price`.
 
-### `negotiation_agents/seller_agent/` — Seller (dual MCPToolsets + information asymmetry)
+### `negotiation_agents/seller_agent/` — Seller (dual McpToolsets + information asymmetry)
 
-Same pattern, but connects to **two** MCP servers (pricing + inventory). The seller has access to `get_minimum_acceptable_price` — the buyer does not. This is the same information asymmetry from Module 1, now declarative.
+Same pattern, but connects to **two** MCP servers (pricing + inventory). The seller has access to `get_minimum_acceptable_price` — the buyer does not. This is the same information asymmetry from Module 1, now declarative. (In the `negotiation` orchestrator, where both share one session, the buyer also gets `include_contents="none"` — otherwise ADK would show it the seller's tool results as context, floor price included.)
 
 ### `negotiation_agents/negotiation/` — Orchestrator (LoopAgent + SequentialAgent + MCP)
 
@@ -193,10 +193,12 @@ A `LoopAgent` wrapping a `SequentialAgent(buyer → seller)` where both agents h
 
 ## Demos walkthrough
 
+> Tested on ADK 2.11. `SequentialAgent`, `ParallelAgent` and `LoopAgent` (demos 04–06 and the negotiation orchestrator) still work in ADK 2.x but are deprecated in favor of the new graph-based `Workflow`, so they print a `DeprecationWarning` when loaded. `McpToolset` was called `MCPToolset` in ADK 1.x.
+
 | # | ADK concept | Key takeaway |
 |---|---|---|
 | 01 | `LlmAgent` + function tool | Simplest possible agent — declare and go |
-| 02 | `MCPToolset` + auth | ADK connects to a remote MCP server over Streamable HTTP with a bearer token and discovers its tools; the server enforces authentication (401), server authorization (403) and per-tool scopes |
+| 02 | `McpToolset` + auth | ADK connects to a remote MCP server over Streamable HTTP with a bearer token and discovers its tools; the server enforces authentication (401), server authorization (403) and per-tool scopes |
 | 03 | `ToolContext` + state | The key prefix picks the scope: session (this conversation), `user:` (this user), `app:` (everyone) |
 | 04 | `SequentialAgent` | Pipeline: each agent's `output_key` feeds the next via `{placeholder}` |
 | 05 | `ParallelAgent` | Fan-out: concurrent agents write to different state keys |

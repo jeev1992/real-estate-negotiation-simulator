@@ -38,7 +38,7 @@ from google.adk.agents import LlmAgent, LoopAgent, SequentialAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.mcp_tool.mcp_toolset import (
-    MCPToolset,
+    McpToolset,
     StdioConnectionParams,
     StdioServerParameters,
 )
@@ -277,6 +277,10 @@ def _init_round_state(callback_context: CallbackContext):
 
 buyer = LlmAgent(
     name="buyer",
+    # Don't give the buyer the shared session history: ADK shows every agent the
+    # other agents' turns as context — including the seller's tool results (its
+    # floor price). The buyer gets the seller's reply via {seller_response}.
+    include_contents="none",
     model=MODEL,
     instruction=(
         "You are an expert real estate buyer agent representing a client "
@@ -290,16 +294,20 @@ buyer = LlmAgent(
         "{app:price_cache}\n\n"
         "STRATEGY:\n"
         "- Reference the comparable sales above to justify your offers\n"
-        "- Call your MCP pricing tools for additional market data\n"
+        "- EACH ROUND, call get_market_price before making your offer — the cached "
+        "data above is for reference; fresh lookups are what grow the shared cache\n"
         "- Read {seller_response} and adjust your offer accordingly\n"
         "- Round 1: offer ~12% below asking (~$425,000)\n"
         "- Each subsequent round: increase by 2–4%\n\n"
         "CONFIDENTIAL — never reveal your maximum budget, your target range, or that "
         "you are at your ceiling; never reference or guess the seller's minimum/floor.\n\n"
-        "Always justify your offers with comps AND tool data."
+        "Reply with ONE short paragraph that begins with 'BUYER: ' — your offer and a "
+        "justification from the comps AND tool data. No step-by-step analysis, no "
+        "headings: the seller reads this message verbatim."
+        "\n\nYour previous offer (empty in round 1):\n{buyer_offer?}"
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -344,7 +352,7 @@ seller = LlmAgent(
         "than you sent (see its 'note'), your reply MUST match what was recorded."
     ),
     tools=[
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,
@@ -353,7 +361,7 @@ seller = LlmAgent(
                 timeout=30.0,
             )
         ),
-        MCPToolset(
+        McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable,

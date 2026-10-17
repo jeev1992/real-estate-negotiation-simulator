@@ -34,6 +34,7 @@ Requirements:
    > **ADK gotcha:** an `after_agent_callback` only emits an event when it returns content or **changes state**. A bare `callback_context.actions.escalate = True` is silently dropped and the loop keeps running. Every escalate path needs a state write alongside it (e.g. `state['stall_reason']`, or `state['loop_exit_reason'] = 'ACCEPT ...'` for the acceptance check).
 
 4. The buyer/seller agents themselves don't need to change much — just ensure their offers get tracked.
+   Keep the canonical buyer's `submit_offer` tool: it enforces the budget **in code**. With the budget only in the prompt, the model can ignore it in the no-ZOPA demo below, offer above the seller's floor, and close a deal that shouldn't exist. (The solution's `submit_offer` also rejects an offer lower than the previous one, so a buyer holding at its budget really holds — and the stall check sees no movement.)
 
 ## Steps
 

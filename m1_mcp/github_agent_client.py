@@ -9,7 +9,7 @@ prompts — so you can see all three on a server every engineer knows.
 WHY THIS EXISTS:
   This demonstrates the SAME agentic pattern used by our buyer and seller
   agents in Module 2 — but against GitHub's real MCP server. In Module 2,
-  ADK's MCPToolset does steps 3-6 for you; here every step is written out.
+  ADK's McpToolset does steps 3-6 for you; here every step is written out.
 
 HOW IT WORKS — three parties, and only this script talks to both others:
 
@@ -385,6 +385,7 @@ def _http_status(exc: BaseException) -> int | None:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")   # so the output can be piped/redirected on Windows
     parser = argparse.ArgumentParser(description="GitHub MCP agent (tools + host-attached resources).")
     parser.add_argument("query", nargs="*", help="Question for the agent. Omit to run the sample queries.")
     parser.add_argument("--attach", metavar="URI", help="Resource URI the host reads and attaches first, "
