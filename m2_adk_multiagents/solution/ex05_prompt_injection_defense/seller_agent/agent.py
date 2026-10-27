@@ -104,6 +104,9 @@ _HARD_BLOCK_RESPONSE = (
 
 def detect_injection(text: str) -> str | None:
     """Return the matched pattern string, or None if the text is clean."""
+    # Phones and word processors type curly apostrophes ("What’s"), which the
+    # patterns' plain ' wouldn't match.
+    text = text.replace("\u2019", "'").replace("\u2018", "'")
     for pattern in INJECTION_PATTERNS:
         match = pattern.search(text)
         if match:

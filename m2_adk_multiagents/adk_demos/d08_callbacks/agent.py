@@ -13,7 +13,16 @@ admin tool. The callbacks enforce them anyway.
   after_tool_callback    — data filtering: strip the confidential
                            seller_floor_usd field from tool results.
   after_model_callback   — output guardrail: remove phone numbers from the
-                           reply, wherever they came from.
+                           model's reply, wherever they came from. With
+                           streaming on, it also holds back the partial
+                           chunks: a number split across two chunks would
+                           slip past the regex, so only the final, complete
+                           (scrubbed) reply is released.
+
+Note: after_model guards what the MODEL says. The raw tool result is its own
+event in the stream (visible in adk web's event inspector), so a number in a
+tool result is still there. To keep data out of the event stream entirely,
+filter it in after_tool — as we do for seller_floor_usd.
 
 Return-value rules:
   - None              → continue normally
@@ -71,7 +80,11 @@ def get_internal_admin(query: str) -> dict:
 
 def _audit(ctx, hook: str, message: str) -> None:
     """Print and record each callback firing so it shows up in the State tab."""
-    print(f"[{hook}] {message}")
+    line = f"[{hook}] {message}"
+    try:
+        print(line, flush=True)
+    except UnicodeEncodeError:  # e.g. a redirected Windows console (cp1252)
+        print(line.encode("ascii", "backslashreplace").decode("ascii"), flush=True)
     ctx.state["callback_audit"] = ctx.state.get("callback_audit", []) + [f"{hook}: {message}"]
 
 
@@ -121,8 +134,23 @@ def strip_confidential(
 
 
 def scrub_reply(callback_context: CallbackContext, llm_response: LlmResponse):
-    """after_model: never let a phone number leave the agent, whatever its source."""
+    """after_model: never let a phone number appear in the model's reply.
+
+    With streaming, ADK calls this for every partial chunk and then once for
+    the final, complete reply. A number can be split across chunks — "(512) 5"
+    then "55-0143" — and no single chunk matches the regex. So partial text is
+    held back, and the final reply (complete, so the regex sees the whole
+    number) is scrubbed and released.
+    """
     parts = llm_response.content.parts if llm_response.content else None
+    if llm_response.partial:
+        held = False
+        for part in parts or []:
+            if part.text:
+                part.text = ""
+                held = True
+        return llm_response if held else None
+
     changed = False
     for part in parts or []:
         if part.text and PHONE_RE.search(part.text):

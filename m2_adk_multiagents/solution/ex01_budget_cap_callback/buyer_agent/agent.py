@@ -107,14 +107,21 @@ def buyer_guard(
     # Even though submit_decision is on the allowlist, we still inspect
     # the price argument for budget compliance.
     if tool.name == "submit_decision":
-        price = args.get("price")
-        if isinstance(price, (int, float)) and price > BUYER_BUDGET:
+        raw_price = args.get("price")
+        # Fail closed: a price we can't read as a number ("475000", "$475k",
+        # None) is blocked, not waved through unchecked.
+        try:
+            price = float(str(raw_price).replace(",", "").replace("$", "").strip())
+        except ValueError:
+            print(f"[{_ts()}] BLOCK unreadable price {raw_price!r}")
+            return {"error": f"price must be a number of dollars, got {raw_price!r}"}
+        if price > BUYER_BUDGET:
             print(
-                f"[{_ts()}] BLOCK price ${price:,} exceeds budget ${BUYER_BUDGET:,}"
+                f"[{_ts()}] BLOCK price ${price:,.0f} exceeds budget ${BUYER_BUDGET:,}"
             )
             return {
                 "error": (
-                    f"price ${price:,} exceeds buyer budget of "
+                    f"price ${price:,.0f} exceeds buyer budget of "
                     f"${BUYER_BUDGET:,}. Submit an offer at or below "
                     f"${BUYER_BUDGET:,}."
                 )

@@ -8,7 +8,9 @@ Then it sends a BONUS round 4 WITHOUT contextId to prove what happens
 when the seller has no memory of prior rounds.
 
 TASK vs CONTEXT:
-  Every message/send creates a NEW Task (new taskId) — one unit of work.
+  In this demo, every message/send starts a NEW Task (new taskId) — one
+  unit of work. (A2A also lets a client continue an existing task by
+  sending its taskId, e.g. to answer an input-required task; we don't here.)
   The contextId is the conversation those tasks belong to.
 
     round 1  taskId=A  contextId=X   ← server assigns X
@@ -130,8 +132,10 @@ async def main() -> None:
         # ── Step 2: Send 3 rounds with increasing prices ──────────────
         # $432K → $440K → $446K
         # The $446K offer is above the seller's $445K floor, so it should
-        # be accepted — but ONLY if the seller remembers the floor from
-        # the MCP tool call in round 1.
+        # be accepted. Watch the `tools` line: round 1 calls the MCP tools
+        # (incl. get_minimum_acceptable_price); rounds 2-3 usually skip them —
+        # the market data and floor from round 1 are still in this
+        # conversation. Round 4, with no contextId, has to fetch them again.
         for round_num, price in enumerate([432_000, 440_000, 446_000], start=1):
             task = await send(client, buyer_offer_parts(round_num, price), context_id)
             # The server assigns a contextId when it sees None. We save it

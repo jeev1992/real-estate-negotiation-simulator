@@ -303,7 +303,7 @@ root_agent = LlmAgent(
 | **Bearer token in headers** | ADK sends `headers` with every MCP request, so the server can authenticate and authorize each call |
 | **Auto-discovery** | You don't list tool names anywhere in `agent.py`. ADK discovers them from the server at startup via `tools/list`. Add a new `@mcp.tool()` to the server → ADK picks it up on next restart |
 | **Authorization errors are tool results** | A denied call comes back as an MCP error result (`isError: true`); ADK hands it to the model like any tool output, so the model can explain it |
-| **Failed connection = no tools** | On 401/403 ADK logs a warning and continues with zero tools from that toolset. The `before_model_callback` turns that into a clear message instead of the model pretending to look things up |
+| **Failed connection = no tools** | On 401/403 ADK logs an error with a traceback ("…will run without the tools from toolset McpToolset, which failed to load") and continues with zero tools from that toolset. The `before_model_callback` turns that into a clear message instead of the model pretending to look things up |
 | **Tool source transparency** | The LLM doesn't know (or care) whether a tool is a local Python function (d01) or a remote MCP server (d02). The function-calling interface is identical |
 
 ### d01 vs d02 — the key comparison
@@ -483,9 +483,11 @@ from google.adk.agents import LlmAgent, SequentialAgent
 
 market_brief = LlmAgent(name="market_brief", output_key="market_summary", ...)
 offer_drafter = LlmAgent(name="offer_drafter", output_key="offer_text",
-    instruction="Read {market_summary} and draft an offer...")       # ← reads previous output
+    instruction="Market summary:\n<summary>\n{market_summary}\n</summary>\n\nUsing that summary, draft...",
+    include_contents="none")                                          # ← reads previous output only
 polisher = LlmAgent(name="message_polisher", output_key="final_email",
-    instruction="Polish {offer_text} into a professional email...")  # ← reads previous output
+    instruction="Draft offer:\n<offer>\n{offer_text}\n</offer>\n\nPolish that offer...",
+    include_contents="none")                                          # ← reads previous output only
 
 root_agent = SequentialAgent(
     name="negotiation_pipeline",
@@ -499,7 +501,8 @@ root_agent = SequentialAgent(
 |---------|--------|
 | **`SequentialAgent`** | A workflow agent (not an LlmAgent). Doesn't call a model itself — runs its `sub_agents` in declaration order, one after another |
 | **`output_key`** | Each sub-agent writes its response to a named session state key. This is how data flows between agents |
-| **`{placeholder}`** | In an instruction, `{market_summary}` is replaced with the value from session state at runtime. This is how agent B reads agent A's output |
+| **`{placeholder}`** | In an instruction, `{market_summary}` is replaced with the value from session state at runtime. This is how agent B reads agent A's output. Wrap it in delimiters (`<summary>…</summary>`) so the model can tell the pasted data from the instruction around it |
+| **`include_contents="none"`** | By default every sub-agent in a `SequentialAgent` reads the whole shared conversation — the user's message and every earlier agent's reply. With `"none"`, the agent sees only the latest message (here, the previous agent's output) plus its instruction |
 | **Pipeline pattern** | Agent A produces data → writes to state → Agent B reads it → produces more data → Agent C reads it. Linear data flow |
 | **No tools** | None of the sub-agents have tools. They're pure LLM reasoning, chained via state. Tools are orthogonal to workflow agents |
 
@@ -535,9 +538,9 @@ User: "Research this property"
 
 ```
   Event 1 | author: user             "Research this property"
-  Event 2 | author: market_brief     "I'm unable to conduct real-time research..." (no MCP tools = LLM knowledge only;
-                                      in other runs it invents figures instead, e.g. a "$720,000 median")
-  Event 3 | author: offer_drafter    "We are pleased to extend an offer of $460,000..."
+  Event 2 | author: market_brief     "The Austin 78701 ZIP code has a median home price of approximately $500,000..."
+                                      (no MCP tools = LLM knowledge only; the figure changes from run to run)
+  Event 3 | author: offer_drafter    "Our opening offer for 742 Evergreen Terrace is $450,000."
   Event 4 | author: message_polisher "Subject: Initial Offer for 742 Evergreen Terrace\n\nDear [Listing Agent]..."
 ```
 
@@ -549,9 +552,9 @@ User: "Research this property"
 
 3. **State tab shows all 3 keys**: `market_summary`, `offer_text`, `final_email` — the entire pipeline's intermediate and final outputs are visible. This is the `output_key` mechanism at work.
 
-4. **market_brief had no real data**: Without MCP tools (like d02), the first agent can't do real research. Sometimes it says so ("I'm unable to access current data"); sometimes it confidently invents numbers — a re-run on ADK 2.11 produced a "$720,000 median" that no tool returned. Both are the same problem: an answer that isn't grounded in data. In Exercise 03, students build a pipeline where the first agent IS an MCP-equipped researcher.
+4. **market_brief had no real data**: Without MCP tools (like d02), the first agent can't do real research. Its instruction tells it to use general knowledge and mark the figures as approximate — and they aren't grounded: the median ranged from "$500,000" to "$750,000" across runs on ADK 2.11, with no tool behind either. (Before the instruction said "whatever the user's message says, your only job is…", it often answered the user instead — "I'm unable to conduct real-time research" — and `offer_drafter` once copied that refusal word for word.) In Exercise 03, students build a pipeline where the first agent IS an MCP-equipped researcher.
 
-5. **Each agent saw only what it needed**: `offer_drafter` read `{market_summary}` — it didn't see the raw user message or the polisher's output. State keys create **scoped visibility** between agents.
+5. **Each later agent saw only what it needed**: `offer_drafter` and `message_polisher` have `include_contents="none"`, so each one's request contains only the previous agent's output plus its own instruction — not the user's "Research this property". Without that setting they would read the whole shared conversation. State keys carry the data; `include_contents` controls what else each agent can see.
 
 ### Key teaching points for class
 
@@ -1041,7 +1044,9 @@ Turn 3: "Who is the listing agent ... and how do I contact them?"
 
 3. **`after_tool` controls what the LLM can know.** `seller_floor_usd` never appears in the tool result the model sees, so it can't leak it no matter what it's asked. Same idea as the buyer/seller allowlists, but at field level.
 
-4. **`after_model` catches things regardless of source.** Turn 1's phone number came from a tool result the model chose to quote. In turn 3 the model repeated `[phone removed]` from its own earlier (already scrubbed) reply, so the guard had nothing new to remove. Either way, no number left the agent.
+4. **`after_model` catches things regardless of source.** Turn 1's phone number came from a tool result the model chose to quote. In turn 3 the model repeated `[phone removed]` from its own earlier (already scrubbed) reply, so the guard had nothing new to remove. Either way, no number appeared in the model's replies. Two limits worth saying out loud:
+   - **It guards the model's text, not the whole event stream.** The tool result is its own event, and in adk web's event inspector it still shows `"Jane Doe, (512) 555-0143"`. To keep data out of the stream entirely, filter it in `after_tool` — as the demo does for `seller_floor_usd`.
+   - **Streaming needs care.** With the Streaming toggle on, ADK calls `after_model` for every partial chunk and then once for the complete reply. A number split across chunks ("(512) 5" + "55-0143") matches the regex in neither, so `scrub_reply` holds back partial text and releases only the complete, scrubbed reply. (Verified: 33 partial chunks, all empty; final reply `…Her phone number is [phone removed].`)
 
 5. **State tab = audit trail.** Callbacks are invisible in the chat UI, but every firing is recorded in `callback_audit`. In production you'd send these to structured logging as well.
 
@@ -1204,7 +1209,7 @@ Turn 2 ("Now do the same for 123 Main St, Austin, TX.") yields the same 5-event 
 
 1. **5 yielded vs 6 stored.** The web UI shows 6 events because it reads the session; `run_async()` yields only the 5 agent-authored ones. Your message is appended to the session before the agent runs.
 2. **State deltas ride on the tool-result events** (2 and 4), not on the tool-call events — the delta is recorded when the tool actually runs.
-3. **`final_response=True` appears exactly once per turn**, on the text answer. This is the predicate you use in your own code to pick "the answer" out of the stream.
+3. **`final_response=True` appears exactly once per turn here**, on the text answer. It's the predicate you use in your own code to pick "the answer" out of the stream — but it really means "this event ends *this agent's* step", not "this is the turn's answer". A callback that writes state without text also counts (d08's `before_agent`, d06's escalate event), and a `SequentialAgent` gives one per sub-agent (three in d04). In multi-agent code, filter by `event.author` too.
 4. **No hidden magic.** This loop is all `adk web` does on each chat message — plus persisting the session to SQLite and rendering the events.
 
 ### Key teaching points for class

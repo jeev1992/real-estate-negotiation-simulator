@@ -193,12 +193,13 @@ def _cache_price_lookup(
     if tool.name not in _PRICING_TOOLS:
         return None
 
-    # Build cache key from the tool name + arguments
+    # Build cache key from the tool name + what was looked up. get_market_price
+    # has an address; calculate_discount doesn't, so key it on all its args —
+    # otherwise every discount lookup would overwrite one "unknown" entry.
     cache_key = f"{tool.name}"
     if isinstance(args, dict):
-        # Use property_id if available, else use all args
-        prop_id = args.get("property_id", args.get("address", "unknown"))
-        cache_key = f"{tool.name}:{prop_id}"
+        subject = args.get("property_id") or args.get("address") or json.dumps(args, sort_keys=True)
+        cache_key = f"{tool.name}:{subject}"
 
     # Read existing cache
     price_cache = dict(tool_context.state.get("app:price_cache", {}))

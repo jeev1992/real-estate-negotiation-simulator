@@ -19,7 +19,7 @@ A standalone script `multi_round_client.py` that:
    - Round 1: ask the buyer for an opening offer.
    - Round k+1: forward the buyer's offer to the seller, get the seller's response, forward the response back to the buyer for the next offer.
 3. **Threads** conversations with `contextId` — buyer has its own contextId, seller has its own. *They never share context — your script is the matchmaker.*
-4. **Terminates** on `ACCEPT` (regex match in seller's reply) or after `--max-rounds` (default 5).
+4. **Terminates** on `ACCEPT` (the decision the seller recorded with its `submit_decision` tool) or after `--max-rounds` (default 5).
 5. **Logs** clearly: discovery info, each round's offer + response, final outcome.
 
 ## Steps
@@ -32,7 +32,9 @@ A standalone script `multi_round_client.py` that:
 3. Use `A2ACardResolver` to fetch both Agent Cards.
 4. Write the round loop. Maintain `buyer_context_id` and `seller_context_id` separately; pass each one back to its own agent on subsequent calls.
 5. Check each Task's `status.state`: anything other than `completed` (e.g. `failed`) ends the negotiation — see demo 14.
-6. Detect `\bACCEPT\b` (and no `\bCOUNTER\b`) in the seller's reply (regex, word-boundary). Break on match. Also stop if the buyer says WALK AWAY.
+6. Read the seller's decision from the Task, not from its prose. The seller records every decision with its `submit_decision` tool, and ADK puts the tool's result in `history` as a data part: `{"kind": "data", "data": {"name": "submit_decision", "response": {"recorded": "ACCEPT", "price": 450000}}}`. Break when the last one recorded is `ACCEPT`, and report its `price`. Also stop if the buyer says it will WALK AWAY.
+
+   *Why not a regex on the reply?* `\bACCEPT\b` matches *"I cannot ACCEPT $440,000"*, and "the first dollar amount" in *"With $75,000 in upgrades, I accept $446,000"* is $75,000. Structured data for code, text for humans — the same reason demo 13 reads the decision this way.
 
 ## Prerequisites
 
@@ -47,6 +49,8 @@ Then run your script:
 ```bash
 python m2_adk_multiagents/solution/ex03_a2a_multiround_client/multi_round_client.py
 ```
+
+> The Agent Cards come from each agent's `agent.json`, and their `url` is `http://localhost:8000/...`. Your script posts to that `url` — that's the protocol — so if you start `adk web` on another port, update the `url` in those `agent.json` files too.
 
 ## Verify
 

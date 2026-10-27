@@ -58,6 +58,8 @@ def _require_tools(callback_context: CallbackContext, llm_request: LlmRequest):
         f"I can't reach the pricing tools: the MCP server at {PRICING_MCP_URL} rejected "
         "the connection or is not running, so no tools were loaded. Check that the server "
         "is started with --http and that PRICING_MCP_TOKEN is a valid, unexpired token "
+        "with the pricing:read scope — a missing or bad token gets 401, a token without "
+        "pricing:read (e.g. --role guest) gets 403 "
         "(python utils/pricing_auth.py --role buyer --write-env), then restart adk web."
     ))]))
 

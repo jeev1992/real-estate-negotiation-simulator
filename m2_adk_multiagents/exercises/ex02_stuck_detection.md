@@ -27,7 +27,7 @@ Requirements:
 
 1. After each round (i.e., in `after_agent_callback` on the `seller`), append the round's offers to `state['offer_history']`. Each entry should record at least the buyer offer and seller response price.
 
-2. Add a *stall check*: if the last 2 entries in `offer_history` have **price movement < $5,000 across both rounds**, set `escalate=True` (loop exits early) and write `state['stall_reason']` for visibility.
+2. Add a *stall check*: if the buyer's offer moved less than $5,000 between the last 2 entries in `offer_history`, set `escalate=True` (loop exits early) and write `state['stall_reason']` for visibility. Watch the buyer, not the seller: the seller accepts any offer at or above its floor, so only a moving buyer offer can produce a deal — a seller still lowering its counter toward the floor doesn't help.
 
 3. Keep the existing acceptance check — `submit_decision(action='ACCEPT')` should still escalate. Stall is a *second* exit condition, not a replacement.
 
@@ -40,7 +40,7 @@ Requirements:
 
 1. Copy the canonical orchestrator from `negotiation_agents/negotiation/agent.py` as your starting point.
 2. Add a function `_track_round(callback_context)` that runs after the seller and appends to `offer_history`. You can extract prices from `state['buyer_offer']` and `state['seller_decision']`.
-3. Add a function `_check_stall(callback_context)` that inspects the last 3 entries and escalates if movement is below threshold.
+3. Add a function `_check_stall(callback_context)` that inspects the last 2 entries and escalates if the buyer's movement is below threshold.
 4. Combine: `after_agent_callback=_track_round` (which then calls `_check_stall` internally), or use a sequence — your choice.
 5. Run the healthy scenario:
    ```bash

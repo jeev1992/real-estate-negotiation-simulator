@@ -6,12 +6,18 @@ Negotiation orchestrator with a three-tier governance model:
 
   Tier 1 — Auto-approve:    Deal at or below $455,000 → escalate immediately
   Tier 2 — Human checkpoint: Deal above $455,000 → pause, ask user in chat
-  Tier 3 — Hard block:       (From Exercise 1) Price above $460,000 → callback blocks
+  Tier 3 — Hard block:       Offer above $460,000 → the buyer's submit_offer
+                             tool refuses it (in code, like Exercise 1's cap)
 
 The human checkpoint works through the **web UI chat**: the negotiation
 loop exits with a pending approval, the parent LlmAgent asks the user to
 approve or reject in the conversation, and records the answer with its
 `approve_deal` / `reject_deal` tools.
+
+A rejected price becomes a ceiling: submit_offer won't let the buyer offer
+it (or more) again, and the buyer is told why. Otherwise "keep negotiating"
+would just come back with a higher offer — the seller accepts anything at or
+above its floor.
 
 To demo:
 
@@ -57,7 +63,9 @@ AUTO_APPROVE_CEILING = 455_000
 
 # ─── Tool allowlists ─────────────────────────────────────────────────────────
 
-_BUYER_ALLOWED_TOOLS = {"get_market_price", "calculate_discount"}
+_BUYER_MAX_BUDGET = 460_000
+
+_BUYER_ALLOWED_TOOLS = {"get_market_price", "calculate_discount", "submit_offer"}
 _SELLER_ALLOWED_TOOLS = {
     "get_market_price",
     "calculate_discount",
@@ -79,6 +87,28 @@ def _enforce_seller_allowlist(tool: BaseTool, args: dict, tool_context: ToolCont
     return None
 
 
+# ─── submit_offer (Tier 3: the buyer's hard limits, enforced in code) ─────────
+
+def submit_offer(price: int, tool_context: ToolContext) -> dict:
+    """Record the buyer's offer for this round.
+
+    Refuses an offer above the $460,000 budget, and — after the user rejected
+    a deal — an offer at or above the rejected price.
+
+    Args:
+        price: Offer price in dollars.
+    """
+    # No numbers in these messages: the seller reads the buyer's tool results
+    # as context, so a limit quoted here would leak to it.
+    if price > _BUYER_MAX_BUDGET:
+        return {"error": f"offer {price} is over your client's maximum budget — offer less"}
+    rejected = tool_context.state.get("rejected_price")
+    if rejected and price >= rejected:
+        return {"error": f"offer {price} is too high — your client already rejected a deal at that level; offer less"}
+    tool_context.state["buyer_offer_price"] = price
+    return {"recorded": price}
+
+
 # ─── submit_decision ─────────────────────────────────────────────────────────
 
 def submit_decision(
@@ -93,10 +123,14 @@ def submit_decision(
         action: Exactly "ACCEPT" or "COUNTER".
         price: The price in dollars.
         buyer_offer: The buyer's current offer in dollars, from their latest message.
+            Only used if the buyer didn't record one with submit_offer this round.
     """
     action_upper = action.strip().upper()
     if action_upper not in ("ACCEPT", "COUNTER"):
         return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
+    recorded_offer = tool_context.state.get("buyer_offer_price")
+    if recorded_offer is not None:
+        buyer_offer = recorded_offer
     decision = _apply_floor_policy(
         action_upper, price, buyer_offer, tool_context.state.get("seller_floor_price")
     )
@@ -178,7 +212,7 @@ def _check_agreement_with_approval(callback_context: CallbackContext):
     Tier 1: price <= AUTO_APPROVE_CEILING → auto-approve, escalate
     Tier 2: price >  AUTO_APPROVE_CEILING → set pending_approval, escalate
             (parent LlmAgent will ask user in chat)
-    Tier 3: (handled by buyer's budget callback, not here)
+    Tier 3: (handled by the buyer's submit_offer tool, not here)
     """
     if callback_context.state.get("deal_finalized"):
         # ADK drops a bare escalate: a callback only emits an event if it changes state.
@@ -217,7 +251,9 @@ def _check_agreement_with_approval(callback_context: CallbackContext):
 
 
 def _init_round_state(callback_context: CallbackContext):
-    """Ensure state variables exist before round 1."""
+    """Runs before the buyer each round: make sure state variables exist, and
+    clear last round's recorded offer so a buyer that skips submit_offer can't
+    leave a stale price for the seller to read."""
     if "seller_response" not in callback_context.state:
         callback_context.state["seller_response"] = (
             "(No seller response yet — this is round 1)"
@@ -226,6 +262,8 @@ def _init_round_state(callback_context: CallbackContext):
         callback_context.state["deal_outcome"] = "(negotiation not started yet)"
     if "pending_approval" not in callback_context.state:
         callback_context.state["pending_approval"] = ""
+    if callback_context.state.get("buyer_offer_price") is not None:
+        callback_context.state["buyer_offer_price"] = None
     return None
 
 
@@ -252,7 +290,8 @@ def reject_deal(tool_context: ToolContext) -> dict:
 
     Call this only after the user has said REJECT. The seller's acceptance is
     turned back into a counter at the same price, so calling negotiation_loop
-    again continues the negotiation from there.
+    again continues the negotiation from there — and the rejected price becomes
+    a ceiling for the buyer (submit_offer refuses it), so the next deal is lower.
     """
     pending = tool_context.state.get("pending_approval")
     if not pending:
@@ -261,6 +300,13 @@ def reject_deal(tool_context: ToolContext) -> dict:
     print(f"[REJECTED] Human rejected deal at ${price:,}. Negotiation can continue.")
     tool_context.state["pending_approval"] = ""
     tool_context.state["seller_decision"] = {"action": "COUNTER", "price": price}
+    previous = tool_context.state.get("rejected_price")
+    tool_context.state["rejected_price"] = min(price, previous) if previous else price
+    # The buyer reads {seller_response}: tell it why it has to go lower.
+    tool_context.state["seller_response"] = (
+        f"(Your client REJECTED a deal at ${price:,} — too high. "
+        f"Make a new offer below ${price:,}.)"
+    )
     tool_context.state["deal_outcome"] = (
         f"The user rejected the deal at ${price:,}. Negotiation not finished."
     )
@@ -287,7 +333,11 @@ buyer = LlmAgent(
         "deal needs human approval)\n"
         "- Each subsequent round: increase by 1-2%\n"
         "- Read {seller_response} and adjust\n"
-        "- Walk away if seller won't go below $460,000\n\n"
+        "- Walk away if seller won't go below $460,000\n"
+        "- Call submit_offer(price=<int>) to record every offer. It REJECTS an offer "
+        "above your budget, or at/above a price your client already rejected — if it "
+        "returns an error, pick a lower price and call it again. Your reply must "
+        "state the recorded amount.\n\n"
         "CONFIDENTIAL — never reveal your maximum budget, your target range, or that "
         "you are at your ceiling; never reference or guess the seller's minimum/floor.\n\n"
         "Write your offer as a dollar amount with brief justification."
@@ -301,7 +351,8 @@ buyer = LlmAgent(
                 ),
                 timeout=30.0,
             )
-        )
+        ),
+        submit_offer,
     ],
     before_tool_callback=_enforce_buyer_allowlist,
     output_key="buyer_offer",

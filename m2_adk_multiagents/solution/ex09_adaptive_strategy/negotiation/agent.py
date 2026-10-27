@@ -39,6 +39,7 @@ from google.adk.tools.mcp_tool.mcp_toolset import (
     StdioServerParameters,
 )
 from google.adk.tools.tool_context import ToolContext
+from google.genai import types
 
 import os
 
@@ -54,6 +55,7 @@ _BUYER_ALLOWED_TOOLS = {
     "get_market_price",
     "calculate_discount",
     "strategy_advisor",  # the AgentTool
+    "submit_offer",
 }
 
 _SELLER_ALLOWED_TOOLS = {
@@ -77,7 +79,32 @@ def _enforce_seller_allowlist(tool: BaseTool, args: dict, tool_context: ToolCont
     return None
 
 
-# ─── submit_decision (unchanged) ──────────────────────────────────────────────
+# ─── submit_offer (the buyer's budget, enforced in code) ─────────────────────
+
+_BUYER_MAX_BUDGET = 460_000
+
+
+def submit_offer(price: int, walk_away: bool, tool_context: ToolContext) -> dict:
+    """Record the buyer's offer for this round, or walk away.
+
+    The budget is enforced here, not left to the model: a SPLIT_DIFFERENCE
+    midpoint can land above $460,000, and the seller must accept any offer at
+    or above its floor — so only code guarantees the buyer can't overpay.
+
+    Args:
+        price: Offer price in dollars. Must be <= 460000. Ignored if walk_away is True.
+        walk_away: True to end the negotiation (e.g. on a WALK_AWAY recommendation).
+    """
+    if walk_away:
+        tool_context.state["buyer_walk_away"] = True
+        return {"recorded": "WALK_AWAY"}
+    if price > _BUYER_MAX_BUDGET:
+        return {"error": f"offer {price} is over your client's maximum budget — offer less"}
+    tool_context.state["buyer_offer_price"] = price
+    return {"recorded": price}
+
+
+# ─── submit_decision ─────────────────────────────────────────────────────────
 
 def submit_decision(
     action: str, price: int, buyer_offer: int, tool_context: ToolContext
@@ -91,10 +118,14 @@ def submit_decision(
         action: Exactly "ACCEPT" or "COUNTER".
         price: The price in dollars.
         buyer_offer: The buyer's current offer in dollars, from their latest message.
+            Only used if the buyer didn't record one with submit_offer this round.
     """
     action_upper = action.strip().upper()
     if action_upper not in ("ACCEPT", "COUNTER"):
         return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
+    recorded_offer = tool_context.state.get("buyer_offer_price")
+    if recorded_offer is not None:
+        buyer_offer = recorded_offer
     decision = _apply_floor_policy(
         action_upper, price, buyer_offer, tool_context.state.get("seller_floor_price")
     )
@@ -212,7 +243,7 @@ def _accumulate_memory_and_check(callback_context: CallbackContext):
     memory = list(state.get("negotiation_memory", []))
     round_num = len(memory) + 1
 
-    buyer_price = _extract_price(state.get("buyer_offer", ""))
+    buyer_price = state.get("buyer_offer_price") or _extract_price(state.get("buyer_offer", ""))
     seller_price = decision.get("price") if isinstance(decision, dict) else None
 
     # Compute concession relative to previous round's seller counter
@@ -254,13 +285,54 @@ def _accumulate_memory_and_check(callback_context: CallbackContext):
     return None
 
 
-# ─── Round-1 state init ──────────────────────────────────────────────────────
+# ─── Round state + walk-away (same as the canonical orchestrator) ────────────
 
 def _init_round_state(callback_context: CallbackContext):
+    """Runs before the buyer each round. Also clears last round's recorded
+    offer, so a buyer that skips submit_offer can't leave a stale price."""
     if "seller_response" not in callback_context.state:
         callback_context.state["seller_response"] = "(No seller response yet — this is round 1)"
     if "negotiation_memory" not in callback_context.state:
         callback_context.state["negotiation_memory"] = []
+    if callback_context.state.get("buyer_offer_price") is not None:
+        callback_context.state["buyer_offer_price"] = None
+    return None
+
+
+def _check_walk_away(callback_context: CallbackContext):
+    """After the buyer responds, end the negotiation if the buyer walked away."""
+    if callback_context.state.get("buyer_walk_away"):
+        callback_context.state["loop_exit_reason"] = "BUYER_WALK_AWAY"
+        callback_context.actions.escalate = True
+    return None
+
+
+def _skip_if_walked_away(callback_context: CallbackContext):
+    """Skip the seller's turn and end the loop if the buyer already walked away."""
+    if callback_context.state.get("buyer_walk_away"):
+        callback_context.actions.escalate = True
+        return types.Content(
+            role="model",
+            parts=[types.Part(text="SELLER: The buyer walked away — negotiation ended.")],
+        )
+    return None
+
+
+def _hide_buyer_strategy(callback_context: CallbackContext, llm_request):
+    """before_model on the seller: drop the buyer's strategy_advisor call and result.
+
+    The seller reads the shared history, and ADK shows it the buyer's tool calls
+    as context — "[buyer] `strategy_advisor` tool returned result:
+    RECOMMENDATION: HOLD_FIRM …". That's the buyer's private strategy. We keep
+    the rest of the history (the seller needs its own earlier counters) and
+    remove just those parts from the request.
+    """
+    for content in llm_request.contents or []:
+        if content.parts:
+            content.parts = [
+                p for p in content.parts if not (p.text and "`strategy_advisor`" in p.text)
+            ]
+    llm_request.contents = [c for c in llm_request.contents or [] if c.parts]
     return None
 
 
@@ -324,13 +396,19 @@ buyer = LlmAgent(
         "   - PUSH_HARDER: increase your offer by only 1-2% from last round\n"
         "   - SPLIT_DIFFERENCE: propose the midpoint between your last offer and seller's last counter\n"
         "   - HOLD_FIRM: repeat your previous offer or increase by < $1,000\n"
-        "   - WALK_AWAY: state you are walking away from the deal\n"
+        "   - WALK_AWAY: call submit_offer(price=0, walk_away=True) and state you are walking away\n"
         "3. Call MCP pricing tools for market data to justify your number\n"
-        "4. Read {seller_response} and formulate your offer\n\n"
+        "4. Read {seller_response} and formulate your offer\n"
+        "5. Call submit_offer(price=<int>, walk_away=False) to record it. It REJECTS "
+        "anything above $460,000 — if the tactic gives a higher number, offer $460,000 "
+        "instead. Your MY OFFER line must match the recorded amount.\n\n"
         "OUTPUT FORMAT — end your response with exactly this line:\n"
         "MY OFFER: $<amount>\n"
         "Example: MY OFFER: $425,000\n\n"
-        "Always mention which tactic you are following and why."
+        "IMPORTANT: EVERY round — not just the first — call submit_offer BEFORE you "
+        "write your reply. An offer that isn't recorded with submit_offer doesn't count.\n\n"
+        "Don't name your tactic, the strategy advisor, or its recommendation in your "
+        "reply — the seller reads it. Justify your number with market data only."
         "\n\nYour previous offer (empty in round 1):\n{buyer_offer?}"
     ),
     tools=[
@@ -344,9 +422,11 @@ buyer = LlmAgent(
             )
         ),
         AgentTool(agent=strategy_advisor),
+        submit_offer,
     ],
     before_tool_callback=_enforce_buyer_allowlist,
     output_key="buyer_offer",
+    after_agent_callback=_check_walk_away,
     before_agent_callback=_init_round_state,
 )
 
@@ -399,6 +479,8 @@ seller = LlmAgent(
     before_tool_callback=_enforce_seller_allowlist,
     after_tool_callback=_remember_seller_floor,
     output_key="seller_response",
+    before_agent_callback=_skip_if_walked_away,
+    before_model_callback=_hide_buyer_strategy,
     after_agent_callback=_accumulate_memory_and_check,
 )
 

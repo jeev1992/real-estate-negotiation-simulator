@@ -3,8 +3,9 @@ Demo 10 — A2A Wire Format and the Task
 =========================================
 Peek under the hood of the A2A protocol. This script:
   1. Fetches the seller's Agent Card (discovery)
-  2. Sends one offer with message/send and prints the ACTUAL HTTP bytes
-     going out and coming back (via httpx event hooks — nothing re-built)
+  2. Sends one offer with message/send and prints the actual HTTP request
+     and response bodies (captured via httpx event hooks, not rebuilt —
+     pretty-printed and truncated for readability)
   3. Takes the returned Task apart: id, contextId, status, history, artifacts
 
 WHAT IS A2A?

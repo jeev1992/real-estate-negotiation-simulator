@@ -12,7 +12,8 @@ For each Event it prints:
   - text                 model text output
   - state_delta          session-state keys changed by this step
   - escalate / transfer  control-flow signals (loops, agent hand-offs)
-  - final_response       True only for the turn's last text answer
+  - final_response       True when an event ends an agent's step — here, the
+                         turn's last text answer
 
 After each turn it reloads the session and prints the accumulated state,
 so you can watch `offer_count` grow across turns.
@@ -127,6 +128,9 @@ def main() -> None:
     parser.add_argument("turns", nargs="*", help="User messages to send, in order (same session).")
     parser.add_argument("--raw", action="store_true", help="Also print each Event as raw JSON.")
     args = parser.parse_args()
+    # Model text and user messages can contain characters (→, …) that a
+    # redirected Windows console (cp1252) can't encode.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     if not os.environ.get("OPENAI_API_KEY"):
         print("OPENAI_API_KEY not set (add it to .env or your environment).")

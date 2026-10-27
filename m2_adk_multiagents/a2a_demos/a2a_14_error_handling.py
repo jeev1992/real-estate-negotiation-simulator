@@ -58,6 +58,9 @@ from a2a.types import (
 )
 
 TERMINAL = {TaskState.completed, TaskState.failed, TaskState.canceled, TaskState.rejected}
+# Not finished, but polling won't help — the agent is waiting on the client.
+INTERRUPTED = {TaskState.input_required, TaskState.auth_required}
+POLL_TIMEOUT_S = 180.0
 
 
 def header(title: str) -> None:
@@ -83,25 +86,31 @@ async def send_once(client: Client, msg: Message) -> Task:
     raise RuntimeError("no response")
 
 
-async def poll(client: Client, task: Task) -> Task:
-    while task.status.state not in TERMINAL:
+async def poll(client: Client, task: Task, timeout: float = POLL_TIMEOUT_S) -> Task:
+    """Poll tasks/get until the task ends or needs the client; raise TimeoutError after `timeout` seconds."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while task.status.state not in TERMINAL | INTERRUPTED:
+        if asyncio.get_running_loop().time() >= deadline:
+            raise TimeoutError(f"task {task.id[:8]} still {task.status.state.value} after {timeout:.0f}s")
         await asyncio.sleep(1.0)
         task = await client.get_task(TaskQueryParams(id=task.id))
     return task
 
 
-async def expect_error(label: str, call: Callable[[], Awaitable[object]]) -> None:
-    """Run one call that should fail, and show how the failure arrives."""
+async def expect_error(label: str, call: Callable[[], Awaitable[object]]) -> bool:
+    """Run one call that should fail, and show how the failure arrives. Returns True if it raised."""
     print(f"\n▶ {label}")
     try:
         result = await call()
         print(f"  no exception — got {result!r}"[:300])
+        return False
     except A2AClientJSONRPCError as e:
         print(f"  A2AClientJSONRPCError  code={e.error.code}  message={e.error.message!r}")
     except A2AClientTimeoutError as e:
         print(f"  A2AClientTimeoutError  {e.message}")
     except A2AClientHTTPError as e:
         print(f"  A2AClientHTTPError  status={e.status_code}  {e.message[:140]}")
+    return True
 
 
 # ── Layer 1: transport ───────────────────────────────────────────────────────
@@ -141,9 +150,11 @@ async def layer1_transport(http: httpx.AsyncClient, base_url: str, seller: Agent
             client = ClientFactory(ClientConfig(httpx_client=short, streaming=False)).create(seller)
             return await send_once(client, offer)
 
-    await expect_error("Blocking message/send with a 2s timeout", blocking_send_2s)
-    print("  ⚠ The server never heard that we gave up — the seller may still be working on it.")
-    print("    We have no taskId, so we can't check. Resending could repeat the work.")
+    if await expect_error("Blocking message/send with a 2s timeout", blocking_send_2s):
+        print("  ⚠ The server never heard that we gave up — the seller may still be working on it.")
+        print("    We have no taskId, so we can't check. Resending could repeat the work.")
+    else:
+        print("  (the seller answered within 2s this time — normally an LLM + MCP run takes longer)")
 
     # Recovery: send non-blocking. We get the taskId back at once, then poll —
     # each tasks/get is a short request, so the 2s timeout no longer matters.
@@ -172,10 +183,16 @@ async def layer2_protocol(http: httpx.AsyncClient, buyer: AgentCard, seller: Age
 
     # A task that is still running CAN be canceled — no error. Canceled is a
     # final state, so a second cancel is refused like the completed one above.
+    # (Race: if the buyer finishes before our cancel arrives, the cancel is
+    # refused instead — that's the same "not cancelable" error, not a crash.)
     running = await send_once(buyer_client, message(TextPart(text="Make your opening offer for 742 Evergreen Terrace.")))
-    canceled = await buyer_client.cancel_task(TaskIdParams(id=running.id))
     print(f"\n▶ tasks/cancel on task {running.id[:8]}, still {running.status.state.value}")
-    print(f"  no error — task is now {canceled.status.state.value}")
+    try:
+        canceled = await buyer_client.cancel_task(TaskIdParams(id=running.id))
+        print(f"  no error — task is now {canceled.status.state.value}")
+    except A2AClientJSONRPCError as e:
+        print(f"  A2AClientJSONRPCError  code={e.error.code}  message={e.error.message!r}")
+        print("  (the task finished before the cancel arrived)")
     await expect_error(f"tasks/cancel on task {running.id[:8]} again",
                        lambda: buyer_client.cancel_task(TaskIdParams(id=running.id)))
 
@@ -228,6 +245,10 @@ async def layer3_task_failed(http: httpx.AsyncClient, buyer: AgentCard) -> None:
         reason = first_text(task.status.message.parts if task.status.message else [])
         print(f"  reason (status.message): {reason}")
         print("  → don't retry as-is: the same input will fail the same way.")
+    else:
+        # Whether this fails depends on the model provider; some accept or ignore the file.
+        print("  this model/provider handled the file, so the task didn't fail this time.")
+        print("  The lesson still holds: success or failure is in task.status.state, not an exception.")
 
 
 # ── Layer 4: application ─────────────────────────────────────────────────────
@@ -239,16 +260,25 @@ async def layer4_application(http: httpx.AsyncClient, seller: AgentCard) -> None
     task = await send_once(client, message(TextPart(text="broken message with no real offer")))
     print(f"  no exception. task {task.id[:8]} state={task.status.state.value}")
     print(f"  seller: {first_text(task.artifacts[0].parts if task.artifacts else [])[:200]}")
-    # The seller records every real decision with its submit_decision tool,
-    # and ADK puts tool calls in history as DataParts — so code can check.
+    # The seller records every decision with its submit_decision tool, and ADK
+    # puts tool calls in history as DataParts — so code can check what it
+    # actually decided, and against which offer.
     decisions = [
         p.root.data["args"] for m in task.history or [] for p in m.parts
         if isinstance(p.root, DataPart) and p.root.data.get("name") == "submit_decision" and "args" in p.root.data
     ]
-    if decisions:
-        print(f"  submit_decision was called: {decisions[-1]}")
-    else:
+    if not decisions:
         print("  submit_decision was NOT called → completed, but no decision. Treat as 'ask again'.")
+        return
+    decision = decisions[-1]
+    print(f"  submit_decision was called: {decision}")
+    buyer_offer = decision.get("buyer_offer")
+    if not isinstance(buyer_offer, (int, float)) or buyer_offer <= 0:
+        # Typical with gpt-4o: it fills in buyer_offer=0 and counters anyway.
+        print(f"  ⚠ buyer_offer={buyer_offer!r} — there was no real offer, yet the task 'completed' with a")
+        print("    decision. Validate the content, not just the state: treat as 'ask again'.")
+    else:
+        print(f"  decision made against a ${buyer_offer:,.0f} offer — content looks valid.")
 
 
 async def main() -> None:

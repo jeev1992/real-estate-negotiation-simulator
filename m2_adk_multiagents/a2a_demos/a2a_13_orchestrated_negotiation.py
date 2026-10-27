@@ -20,9 +20,10 @@ HOW IT WORKS:
   - Discovers buyer_agent and seller_agent via their Agent Cards
   - Asks the buyer to make an offer (polling: send, then tasks/get until done)
   - Forwards the buyer's offer to the seller (streaming: tool calls arrive live)
-  - Reads the seller's response (ACCEPT or COUNTER)
+  - Reads the seller's decision (ACCEPT or COUNTER) from the structured
+    submit_decision tool result in the task history — not from the prose
   - If COUNTER: sends the counter back to the buyer for next round
-  - Repeats until ACCEPT, WALK AWAY, a failed task, or max rounds
+  - Repeats until ACCEPT, WALK AWAY, a task that doesn't complete, or max rounds
 
   Each agent has its own contextId — the buyer's conversation thread
   and the seller's conversation thread are separate. The script bridges
@@ -49,7 +50,7 @@ import uuid
 
 import httpx
 from a2a.client import A2ACardResolver, Client, ClientConfig, ClientFactory
-from a2a.client.errors import A2AClientHTTPError
+from a2a.client.errors import A2AClientError, A2AClientHTTPError
 from a2a.types import (
     AgentCard,
     DataPart,
@@ -57,6 +58,7 @@ from a2a.types import (
     Role,
     Task,
     TaskArtifactUpdateEvent,
+    TaskIdParams,
     TaskQueryParams,
     TaskState,
     TaskStatusUpdateEvent,
@@ -65,7 +67,10 @@ from a2a.types import (
 
 BASE_URL = "http://127.0.0.1:8000"
 MAX_ROUNDS = 5
+POLL_TIMEOUT_S = 180.0
 TERMINAL = {TaskState.completed, TaskState.failed, TaskState.canceled, TaskState.rejected}
+# Not finished, but polling won't help — the agent is waiting on the client.
+INTERRUPTED = {TaskState.input_required, TaskState.auth_required}
 
 
 def extract_agent_text(task: Task) -> str:
@@ -90,10 +95,22 @@ def extract_agent_text(task: Task) -> str:
     return "(no response)"
 
 
-def extract_price(text: str) -> str | None:
-    """Best-effort extraction of a dollar amount from an agent message."""
-    match = re.search(r"\$\s?([\d,]{4,})", text)
-    return f"${match.group(1)}" if match else None
+def seller_decision(task: Task) -> dict | None:
+    """The seller's last successfully recorded submit_decision result, e.g. {"recorded": "ACCEPT", "price": 446000}.
+
+    ADK puts tool results in history as DataParts ({"name", "response"}). The
+    tool's result is authoritative: it enforces the floor in code and may record
+    a different action than the LLM asked for, and the prose can be ambiguous
+    ("I cannot ACCEPT $440,000").
+    """
+    decision = None
+    for msg in task.history or []:
+        for part in msg.parts:
+            data = part.root.data if isinstance(part.root, DataPart) else {}
+            response = data.get("response")
+            if data.get("name") == "submit_decision" and isinstance(response, dict) and "recorded" in response:
+                decision = response
+    return decision
 
 
 def tool_calls(message: Message | None) -> list[str]:
@@ -119,8 +136,10 @@ def client_for(http: httpx.AsyncClient, card: AgentCard) -> Client:
     return ClientFactory(config).create(card)
 
 
-async def ask(client: Client, agent_name: str, text: str, context_id: str | None) -> Task:
-    """Send one message; follow the task to a final state (stream or poll)."""
+async def ask(
+    client: Client, agent_name: str, text: str, context_id: str | None, poll_timeout: float = POLL_TIMEOUT_S
+) -> Task:
+    """Send one message; follow the task until it ends or needs the client (stream, then poll if needed)."""
     message = Message(
         message_id=f"msg_{uuid.uuid4().hex[:8]}",
         role=Role.user,
@@ -138,11 +157,25 @@ async def ask(client: Client, agent_name: str, text: str, context_id: str | None
         elif isinstance(update, TaskArtifactUpdateEvent):
             print(f"    [{agent_name} ⇢ stream] artifact received")
 
-    # Polling: message/send returned straight away — check back until done
+    if task is None:
+        raise RuntimeError(f"{agent_name} sent no response")
+
+    # Polling: message/send returned straight away — check back until done,
+    # but stop if the agent needs input/auth, and give up after a deadline.
     polls = 0
-    if task.status.state not in TERMINAL:
+    stop_states = TERMINAL | INTERRUPTED
+    if task.status.state not in stop_states:
         print(f"    [{agent_name} ⇠ poll] task {task.id[:8]} {task.status.state.value} — polling tasks/get")
-    while task.status.state not in TERMINAL:
+    deadline = asyncio.get_running_loop().time() + poll_timeout
+    while task.status.state not in stop_states:
+        if asyncio.get_running_loop().time() >= deadline:
+            print(f"    [{agent_name}] task {task.id[:8]} still {task.status.state.value} "
+                  f"after {poll_timeout:.0f}s — canceling it")
+            try:
+                task = await client.cancel_task(TaskIdParams(id=task.id))
+            except A2AClientError as e:
+                print(f"    [{agent_name}] cancel failed: {e}")
+            return task
         await asyncio.sleep(1.0)
         polls += 1
         task = await client.get_task(TaskQueryParams(id=task.id))
@@ -227,7 +260,8 @@ async def main() -> None:
             print(f"← Buyer says (artifact):\n{buyer_offer_text}")
 
             # ── Buyer walked away? End the negotiation ────────────────
-            if re.search(r"\bWALK[\s_-]?AWAY\b", buyer_offer_text, re.IGNORECASE):
+            # (The negated forms "not walk away" / "won't walk away" don't count.)
+            if re.search(r"(?<!not )(?<!n't )\bWALK[\s_-]?AWAY\b", buyer_offer_text, re.IGNORECASE):
                 print(f"\n{'=' * 60}")
                 print(f"BUYER WALKED AWAY in round {round_num} — no deal.")
                 print(f"{'=' * 60}")
@@ -251,20 +285,19 @@ async def main() -> None:
                 break
             print(f"← Seller says (artifact):\n{seller_response_text}")
 
-            # ── Check for acceptance (exactly one keyword expected) ───
-            has_counter = bool(re.search(r"\bCOUNTER\b", seller_response_text, re.IGNORECASE))
-            has_accept = bool(re.search(r"\bACCEPT\b", seller_response_text, re.IGNORECASE))
-            if has_accept and not has_counter:
-                agreed_price = extract_price(seller_response_text)
+            # ── Check the decision the seller's submit_decision tool recorded ─
+            decision = seller_decision(seller_task)
+            if decision is None:
+                print("\n  ⚠ seller did not record a decision with submit_decision — treating it as no deal this round")
+            elif decision["recorded"] == "ACCEPT":
                 print(f"\n{'=' * 60}")
                 print(f"DEAL REACHED in round {round_num}!")
                 print(f"{'=' * 60}")
-                deal_msg = "Buyer's final offer was accepted by the seller."
-                if agreed_price:
-                    deal_msg += f" Agreed price: {agreed_price}."
-                print(deal_msg)
+                print(f"Seller recorded ACCEPT at ${decision['price']:,} (from submit_decision).")
                 outcome = "deal"
                 break
+            else:
+                print(f"\n  seller recorded {decision['recorded']} at ${decision['price']:,}")
         else:
             print(f"\n{'=' * 60}")
             print(f"MAX ROUNDS ({args.max_rounds}) reached — no agreement.")

@@ -437,6 +437,10 @@ parallel_negotiations = ParallelAgent(
 deal_picker = LlmAgent(
     name="deal_picker",
     model=MODEL,
+    # The picker works for the buyer. Without this it would read the whole
+    # shared history — including each seller's get_minimum_acceptable_price
+    # result (its private floor). It gets both outcomes via the placeholders.
+    include_contents="none",
     instruction=(
         "Two property negotiations just completed simultaneously.\n\n"
         "Deal A (742 Evergreen Terrace, 78701 balanced market):\n"

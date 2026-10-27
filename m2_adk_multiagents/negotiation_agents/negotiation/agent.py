@@ -102,9 +102,9 @@ def submit_offer(
         _append_history(tool_context, "buyer", "WALK_AWAY", None)
         return {"recorded": "WALK_AWAY"}
     if price > _BUYER_MAX_BUDGET:
-        return {
-            "error": f"offer {price} exceeds the ${_BUYER_MAX_BUDGET} maximum budget"
-        }
+        # No number in the message: the seller reads the buyer's tool results
+        # as context, so "$460000" here would hand it the buyer's budget.
+        return {"error": f"offer {price} is over your client's maximum budget — offer less"}
     tool_context.state["buyer_offer_price"] = price
     _append_history(tool_context, "buyer", "OFFER", price)
     return {"recorded": price}
@@ -126,10 +126,15 @@ def submit_decision(
     action_upper = action.strip().upper()
     if action_upper not in ("ACCEPT", "COUNTER"):
         return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
+    buyer_offer = tool_context.state.get("buyer_offer_price")
+    if action_upper == "ACCEPT" and buyer_offer is None:
+        # Fail closed: without an offer recorded this round there's nothing to
+        # accept — the model may have misread the buyer's message.
+        return {"error": "The buyer hasn't recorded an offer this round, so there is nothing to ACCEPT. COUNTER instead."}
     decision = _apply_floor_policy(
         action_upper,
         price,
-        buyer_offer=tool_context.state.get("buyer_offer_price"),
+        buyer_offer=buyer_offer,
         floor=tool_context.state.get("seller_floor_price"),
     )
     if "error" in decision:
@@ -242,9 +247,16 @@ def _skip_if_walked_away(callback_context: CallbackContext):
 
 
 def _init_round_state(callback_context: CallbackContext):
-    """Ensure seller_response exists in state before round 1."""
+    """Runs before the buyer each round.
+
+    - Round 1: make sure seller_response exists for the {seller_response} placeholder.
+    - Every round: clear last round's recorded offer, so a buyer that skips
+      submit_offer can't leave a stale price for submit_decision to enforce.
+    """
     if "seller_response" not in callback_context.state:
         callback_context.state["seller_response"] = "(No seller response yet — this is round 1)"
+    if callback_context.state.get("buyer_offer_price") is not None:
+        callback_context.state["buyer_offer_price"] = None
     return None
 
 
@@ -329,7 +341,8 @@ seller = LlmAgent(
         "submit_decision enforces your minimum in code: if it records a different "
         "decision than you sent (see its 'note'), your reply MUST match what was "
         "recorded.\n\n"
-        "The buyer's current offer is ${buyer_offer_price?}.\n"
+        "The buyer's recorded offer this round (blank if it didn't record one): "
+        "{buyer_offer_price?}\n"
         "Full buyer message:\n{buyer_offer}\n\n"
         "Then reply with ONE short paragraph justifying your decision, emphasizing "
         "the $75,000 in upgrades. Begin the paragraph with the literal prefix "

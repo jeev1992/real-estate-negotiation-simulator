@@ -6,7 +6,8 @@ Negotiation orchestrator that exits early when the negotiation stalls.
 
 Three exit conditions, in priority order:
   1. Seller submits action='ACCEPT'  →  deal reached, escalate
-  2. Three consecutive rounds with <$1,000 price movement  →  stalled, escalate
+  2. Two consecutive rounds where the buyer's offer moves less than $5,000
+                                     →  stalled, escalate
   3. max_iterations=5 reached         →  hard cap
 
 The stall check fires AFTER the seller responds, AFTER acceptance is checked.
@@ -48,10 +49,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 _PRICING_SERVER = str(_REPO_ROOT / "m1_mcp" / "pricing_server.py")
 _INVENTORY_SERVER = str(_REPO_ROOT / "m1_mcp" / "inventory_server.py")
 
-# Stall-detection parameters — see the reflection in walkthrough.md for
-# how you would calibrate these in production.
+# Stall-detection parameters — see the reflection question in
+# exercises/ex02_stuck_detection.md for how you would calibrate these in production.
 STALL_WINDOW = 2        # number of consecutive rounds to inspect
-STALL_THRESHOLD = 5_000 # dollars; if all prices move less than this each round, we call it stalled
+STALL_THRESHOLD = 5_000 # dollars; if the buyer's offer moves less than this, we call it stalled
 
 
 # ─── Tool allowlists (unchanged from the canonical orchestrator) ──────────────
@@ -92,10 +93,16 @@ def submit_decision(
         action: Exactly "ACCEPT" or "COUNTER".
         price: The price in dollars.
         buyer_offer: The buyer's current offer in dollars, from their latest message.
+            Only used if the buyer didn't record an offer with submit_offer this
+            round — the recorded offer wins, so a misread number can't flip
+            the decision.
     """
     action_upper = action.strip().upper()
     if action_upper not in ("ACCEPT", "COUNTER"):
         return {"error": f"action must be ACCEPT or COUNTER, got: {action}"}
+    recorded_offer = tool_context.state.get("buyer_offer_price")
+    if recorded_offer is not None:
+        buyer_offer = recorded_offer
     decision = _apply_floor_policy(
         action_upper, price, buyer_offer, tool_context.state.get("seller_floor_price")
     )
@@ -214,7 +221,8 @@ def _track_and_check_stall(callback_context: CallbackContext):
         return None
 
     # ─ Job 2: track this round's offers ──────────────────────────────────
-    # submit_offer records the buyer's price; fall back to parsing its text.
+    # submit_offer records the buyer's price for THIS round (it's cleared at
+    # the start of each round); fall back to parsing its text if it skipped it.
     buyer_price = state.get("buyer_offer_price") or _extract_buyer_offer_price(state.get("buyer_offer", ""))
     seller_price = decision.get("price") if isinstance(decision, dict) else None
 
@@ -227,25 +235,22 @@ def _track_and_check_stall(callback_context: CallbackContext):
         f"seller={seller_price}"
     )
 
-    # ─ Job 3: stall check — last STALL_WINDOW rounds, all moved < THRESHOLD ─
+    # ─ Job 3: stall check — the buyer's offer over the last STALL_WINDOW rounds ─
+    # Watch the buyer, not both sides: the seller accepts any offer at or above
+    # its floor, so only a moving buyer offer can produce a deal. A seller still
+    # lowering its counter toward the floor doesn't help if the buyer is stuck
+    # below it — and it would hide the stall until round 5 if we required both
+    # sides to stop moving.
     if len(history) >= STALL_WINDOW:
-        window = history[-STALL_WINDOW:]
-        # We need a buyer price AND a seller price for each round to compute movement.
-        if all(r["buyer"] is not None and r["seller"] is not None for r in window):
-            buyer_movements = [
-                abs(window[i]["buyer"] - window[i - 1]["buyer"])
-                for i in range(1, len(window))
-            ]
-            seller_movements = [
-                abs(window[i]["seller"] - window[i - 1]["seller"])
-                for i in range(1, len(window))
-            ]
-            max_move = max(buyer_movements + seller_movements)
+        buyer_prices = [r["buyer"] for r in history[-STALL_WINDOW:]]
+        if None not in buyer_prices:
+            buyer_moves = [abs(b - a) for a, b in zip(buyer_prices, buyer_prices[1:])]
+            max_move = max(buyer_moves)
 
             if max_move < STALL_THRESHOLD:
                 state["stall_reason"] = (
-                    f"No-progress detected: last {STALL_WINDOW} rounds had "
-                    f"max movement of ${max_move:,} "
+                    f"No-progress detected: over the last {STALL_WINDOW} rounds the "
+                    f"buyer's offer moved at most ${max_move:,} "
                     f"(threshold ${STALL_THRESHOLD:,})"
                 )
                 print(f"[stall-check] STALL DETECTED — {state['stall_reason']}")
@@ -256,10 +261,20 @@ def _track_and_check_stall(callback_context: CallbackContext):
 
 
 def _init_round_state(callback_context: CallbackContext):
-    """Initialize seller_response on round 1 so the buyer's {seller_response}
-    placeholder doesn't crash (same fix as the canonical orchestrator)."""
-    if "seller_response" not in callback_context.state:
-        callback_context.state["seller_response"] = "(No seller response yet — round 1)"
+    """Runs before the buyer, at the start of every round.
+
+    - Round 1: initialize seller_response so the buyer's {seller_response}
+      placeholder doesn't crash (same fix as the canonical orchestrator).
+    - Every round: move last round's recorded offer to buyer_previous_offer and
+      clear buyer_offer_price, so a buyer that skips submit_offer this round
+      can't leave a stale price for the seller and the stall check to read.
+    """
+    state = callback_context.state
+    if "seller_response" not in state:
+        state["seller_response"] = "(No seller response yet — round 1)"
+    if state.get("buyer_offer_price") is not None:
+        state["buyer_previous_offer"] = state["buyer_offer_price"]
+        state["buyer_offer_price"] = None
     return None
 
 
@@ -288,8 +303,8 @@ def submit_offer(price: int, tool_context: ToolContext) -> dict:
             or be lower than the buyer's previous offer.
     """
     if price > _BUYER_BUDGET:
-        return {"error": f"offer {price} exceeds the ${_BUYER_BUDGET:,} maximum budget"}
-    previous = tool_context.state.get("buyer_offer_price")
+        return {"error": f"offer {price} is over your client's maximum budget — offer less"}
+    previous = tool_context.state.get("buyer_previous_offer")
     if previous and price < previous:
         return {"error": f"offers can't go down: your last offer was ${previous:,}"}
     tool_context.state["buyer_offer_price"] = price
@@ -323,7 +338,7 @@ buyer = LlmAgent(
         "range, or that you are at your ceiling (avoid phrases like 'my maximum', "
         "'the most I can pay', 'my final offer'). Never reference or guess the seller's "
         "minimum or 'minimum acceptable price' — you do NOT have that information."
-        "\n\nYour last recorded offer (empty in round 1): ${buyer_offer_price?} — "
+        "\n\nYour last recorded offer (empty in round 1): ${buyer_previous_offer?} — "
         "never go below it.\nYour previous message:\n{buyer_offer?}"
     ),
     tools=[

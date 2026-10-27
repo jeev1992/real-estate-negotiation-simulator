@@ -13,6 +13,9 @@ Key A2A concepts on display:
   • contextId threading  — each agent has its own thread; we maintain both
   • Checking results     — a JSON-RPC `error` reply, and a Task whose state
                            isn't `completed`, both stop the negotiation
+  • Structured results   — the seller's decision is read from its
+                           submit_decision tool result in the Task history,
+                           not from its prose
 
 Prereq: both agents must already be running:
 
@@ -23,8 +26,12 @@ Then run:
     python m2_adk_multiagents/solution/ex03_a2a_multiround_client/multi_round_client.py
 
 Optional:
-    --base-url http://127.0.0.1:8000      # default
+    --base-url http://127.0.0.1:8000      # default — where the Agent Cards are fetched
     --max-rounds 5                         # default
+
+Messages go to the `url` in each Agent Card (that's the protocol). The cards
+come from negotiation_agents/*/agent.json and say http://localhost:8000/... —
+if you run adk web on another port, update those too.
 """
 
 import argparse
@@ -117,21 +124,30 @@ def task_state(result: dict) -> str:
     return (result.get("status") or {}).get("state", "unknown")
 
 
-def has_acceptance(text: str) -> bool:
-    """Detect ACCEPT in the seller's response — word-boundary, case-insensitive.
+def seller_decision(result: dict) -> dict | None:
+    """The seller's last recorded decision, e.g. {"recorded": "ACCEPT", "price": 446000}.
 
-    Why word-boundary? Because the substring 'accept' appears in 'acceptable',
-    which the seller's tool calls return ('minimum acceptable price'). Without
-    \\b we'd false-trigger on every counter-offer that mentions the floor.
+    The seller records every decision with its submit_decision tool, and ADK
+    puts tool results in the Task history as data parts:
+        {"kind": "data", "data": {"name": "submit_decision", "response": {...}}}
+    That result is authoritative — the tool enforces the seller's floor and can
+    record a different action than the model asked for. The prose isn't: a
+    regex for ACCEPT matches "I cannot ACCEPT $440,000", and the first dollar
+    amount in "With $75,000 in upgrades, I accept $446,000" is $75,000.
     """
-    return bool(re.search(r"\bACCEPT\b", text, re.IGNORECASE)) and \
-           not bool(re.search(r"\bCOUNTER\b", text, re.IGNORECASE))
+    decision = None
+    for msg in result.get("history") or []:
+        for part in msg.get("parts") or []:
+            data = part.get("data") if part.get("kind") == "data" else None
+            response = (data or {}).get("response")
+            if (data or {}).get("name") == "submit_decision" and isinstance(response, dict) \
+                    and "recorded" in response:
+                decision = response
+    return decision
 
 
-def extract_price(text: str) -> str | None:
-    """Best-effort extraction of a dollar amount from an agent message."""
-    match = re.search(r"\$\s?([\d,]{4,})", text)
-    return f"${match.group(1)}" if match else None
+# "WALK AWAY", but not "I will not walk away" / "won't walk away".
+_WALK_AWAY_RE = re.compile(r"(?<!not )(?<!n't )\bWALK[\s_-]?AWAY\b", re.IGNORECASE)
 
 
 # ─── The orchestrator ─────────────────────────────────────────────────────────
@@ -199,7 +215,7 @@ async def run_negotiation(base_url: str, max_rounds: int) -> None:
             print(f"  {buyer_offer_text}")
 
             # ── Buyer walked away? End the negotiation ──────────────────
-            if re.search(r"\bWALK[\s_-]?AWAY\b", buyer_offer_text, re.IGNORECASE):
+            if _WALK_AWAY_RE.search(buyer_offer_text):
                 print(f"\n{'=' * 60}")
                 print(f"BUYER WALKED AWAY in round {round_num} — no deal")
                 print(f"{'=' * 60}")
@@ -224,17 +240,19 @@ async def run_negotiation(base_url: str, max_rounds: int) -> None:
             print(f"\n← SELLER (contextId={(seller_context_id or '')[:8]}...):")
             print(f"  {seller_response_text}")
 
-            # ── Termination check ──────────────────────────────
-            if has_acceptance(seller_response_text):
-                agreed_price = extract_price(seller_response_text)
+            # ── Termination check: the decision submit_decision recorded ──
+            decision = seller_decision(seller_result)
+            if decision is None:
+                print("\n  ⚠ seller recorded no decision with submit_decision — no deal this round")
+            elif decision["recorded"] == "ACCEPT":
                 print(f"\n{'=' * 60}")
-                deal_line = f"DEAL REACHED in round {round_num}"
-                if agreed_price:
-                    deal_line += f" at {agreed_price}"
-                print(deal_line)
+                print(f"DEAL REACHED in round {round_num} at ${decision['price']:,} "
+                      "(from submit_decision)")
                 print(f"{'=' * 60}")
                 outcome = "deal"
                 break
+            else:
+                print(f"\n  seller recorded {decision['recorded']} at ${decision['price']:,}")
         else:
             print(f"\n{'=' * 60}")
             print(f"MAX ROUNDS ({max_rounds}) REACHED — no agreement")
